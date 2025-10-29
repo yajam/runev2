@@ -36,8 +36,41 @@ pub struct PassManager {
 }
 
 impl PassManager {
+    /// Choose the best offscreen format: Rgba16Float if supported, otherwise Rgba8Unorm
+    fn choose_offscreen_format(device: &wgpu::Device) -> wgpu::TextureFormat {
+        // Rgba16Float is widely supported on modern GPUs and provides better gradient quality
+        // It's part of WebGPU core and doesn't require special features for render targets
+        let preferred = wgpu::TextureFormat::Rgba16Float;
+        
+        // Try to create a small test texture to verify support
+        let test_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("format-test"),
+                size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: preferred,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+        }));
+        
+        match test_result {
+            Ok(_) => {
+                eprintln!("Using Rgba16Float for offscreen buffer (higher quality gradients)");
+                preferred
+            }
+            Err(_) => {
+                eprintln!("Rgba16Float not supported, falling back to Rgba8Unorm for offscreen buffer");
+                wgpu::TextureFormat::Rgba8Unorm
+            }
+        }
+    }
+
     pub fn new(device: Arc<wgpu::Device>, target_format: wgpu::TextureFormat) -> Self {
-        let offscreen_format = wgpu::TextureFormat::Rgba8Unorm; // linear offscreen
+        // Try Rgba16Float for better gradient quality, fallback to Rgba8Unorm if not supported
+        let offscreen_format = Self::choose_offscreen_format(&device);
         let msaa_count = 4;
         let solid_offscreen = BasicSolidRenderer::new(device.clone(), offscreen_format, msaa_count);
         let solid_direct = BasicSolidRenderer::new(device.clone(), target_format, msaa_count);
