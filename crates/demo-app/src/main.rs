@@ -46,12 +46,14 @@ fn main() -> Result<()> {
     let mut engine = GraphicsEngine::new(device, queue);
     surface.configure(&engine.device(), &config);
 
-    // Scene selection: default, radial-only (fullscreen), or radial-circle (centered circle)
+    // Scene selection: default, radial-only (fullscreen), radial-circle (centered circle), or linear (angled linear gradient)
     let scene_env = std::env::var("DEMO_SCENE").ok();
     let radial_only = scene_env.as_deref() == Some("radial")
         || std::env::args().any(|a| a == "--scene=radial" || a == "--radial");
     let radial_circle = scene_env.as_deref() == Some("circle")
         || std::env::args().any(|a| a == "--scene=circle" || a == "--circle");
+    let linear_angled = scene_env.as_deref() == Some("linear")
+        || std::env::args().any(|a| a == "--scene=linear" || a == "--linear");
 
     // Build a simple display list and upload once (unless radial-only)
     let mut painter = Painter::begin_frame(Viewport {
@@ -152,14 +154,14 @@ fn main() -> Result<()> {
     }
 
     // Radial-gradient circle centered in the window (multi-stops)
-    // radial_circle uses a full-screen background instead of geometry
+    // radial_circle and linear_angled use full-screen backgrounds instead of geometry
     let mut dlist: DisplayList = painter.finish();
     let queue = engine.queue();
-    let mut gpu_scene = if !radial_only {
+    let mut gpu_scene = if !radial_only && !linear_angled {
         engine_core::upload_display_list(engine.allocator_mut(), &queue, &dlist)
             .expect("upload failed")
     } else {
-        // Dummy empty buffers
+        // Dummy empty buffers for fullscreen gradient scenes
         engine_core::upload_display_list(
             engine.allocator_mut(),
             &queue,
@@ -250,6 +252,18 @@ fn main() -> Result<()> {
                     let center_uv = [0.5f32, 0.5f32];
                     let radius = 0.5f32 / std::f32::consts::SQRT_2; // ~0.35355339
                     passes.paint_root_radial_gradient_multi(&mut encoder, &view, center_uv, radius, stops_ref, &q, size.width, size.height);
+                } else if linear_angled {
+                    let q = engine.queue();
+                    // Multi-stop angled linear gradient (45 degrees, top-left to bottom-right)
+                    let stops_linear = vec![
+                        (0.0, engine_core::ColorLinPremul::from_srgba_u8([0xff, 0x6b, 0x6b, 0xff])),  // coral red
+                        (0.25, engine_core::ColorLinPremul::from_srgba_u8([0xff, 0xd9, 0x3d, 0xff])), // golden yellow
+                        (0.5, engine_core::ColorLinPremul::from_srgba_u8([0x6b, 0xcf, 0x63, 0xff])),  // green
+                        (0.75, engine_core::ColorLinPremul::from_srgba_u8([0x4d, 0x96, 0xff, 0xff])), // blue
+                        (1.0, engine_core::ColorLinPremul::from_srgba_u8([0xc7, 0x7d, 0xff, 0xff])),  // purple
+                    ];
+                    // 45-degree angle: from top-left [0,0] to bottom-right [1,1]
+                    passes.paint_root_linear_gradient_multi(&mut encoder, &view, [0.0, 0.0], [1.0, 1.0], &stops_linear, &q);
                 } else {
                         // Paint root background (solid) cross-platform
                         passes.paint_root_color(
@@ -259,7 +273,7 @@ fn main() -> Result<()> {
                         );
                     }
                     // No reupload needed; viewport uniform will handle the size change.
-                    if !radial_only {
+                    if !radial_only && !linear_angled {
                         let queue = engine.queue();
                         passes.render_frame(
                             &mut encoder,
@@ -312,6 +326,18 @@ fn main() -> Result<()> {
                     let center_uv = [0.5f32, 0.5f32];
                     let radius = 0.5f32 / std::f32::consts::SQRT_2;
                     passes.paint_root_radial_gradient_multi(&mut encoder, &view, center_uv, radius, stops_ref, &q, size.width, size.height);
+                } else if linear_angled {
+                    let q = engine.queue();
+                    // Multi-stop angled linear gradient (45 degrees, top-left to bottom-right)
+                    let stops_linear = vec![
+                        (0.0, engine_core::ColorLinPremul::from_srgba_u8([0xff, 0x6b, 0x6b, 0xff])),  // coral red
+                        (0.25, engine_core::ColorLinPremul::from_srgba_u8([0xff, 0xd9, 0x3d, 0xff])), // golden yellow
+                        (0.5, engine_core::ColorLinPremul::from_srgba_u8([0x6b, 0xcf, 0x63, 0xff])),  // green
+                        (0.75, engine_core::ColorLinPremul::from_srgba_u8([0x4d, 0x96, 0xff, 0xff])), // blue
+                        (1.0, engine_core::ColorLinPremul::from_srgba_u8([0xc7, 0x7d, 0xff, 0xff])),  // purple
+                    ];
+                    // 45-degree angle: from top-left [0,0] to bottom-right [1,1]
+                    passes.paint_root_linear_gradient_multi(&mut encoder, &view, [0.0, 0.0], [1.0, 1.0], &stops_linear, &q);
                 } else {
                     // Root background: multi-stop linear then a subtle radial highlight
                     let queue0 = engine.queue();
@@ -357,7 +383,7 @@ fn main() -> Result<()> {
                     );
                 }
                 if needs_reupload {
-                    if !radial_only && !radial_circle {
+                    if !radial_only && !radial_circle && !linear_angled {
                         gpu_scene = engine_core::upload_display_list(
                             engine.allocator_mut(),
                             &queue,
@@ -367,7 +393,7 @@ fn main() -> Result<()> {
                     }
                     needs_reupload = false;
                 }
-                if !radial_only {
+                if !radial_only && !linear_angled {
                     let queue = engine.queue();
                     passes.render_frame(
                         &mut encoder,
