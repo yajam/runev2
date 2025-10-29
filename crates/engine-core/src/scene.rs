@@ -30,6 +30,19 @@ impl ColorLinPremul {
         Self { r: lin.red * lin.alpha, g: lin.green * lin.alpha, b: lin.blue * lin.alpha, a: lin.alpha }
     }
 
+    /// Create color from sRGB u8 values with float alpha (like CSS rgba)
+    /// Example: `ColorLinPremul::from_srgba(255, 255, 255, 0.08)` for white at 8% alpha
+    pub fn from_srgba(r: u8, g: u8, b: u8, a: f32) -> Self {
+        let s = Srgba::new(
+            r as f32 / 255.0,
+            g as f32 / 255.0,
+            b as f32 / 255.0,
+            a,
+        );
+        let lin: LinSrgba = LinSrgba::from_color(s);
+        Self { r: lin.red * lin.alpha, g: lin.green * lin.alpha, b: lin.blue * lin.alpha, a: lin.alpha }
+    }
+
     pub fn from_lin_rgba(r: f32, g: f32, b: f32, a: f32) -> Self { Self { r: r * a, g: g * a, b: b * a, a } }
 }
 

@@ -1,5 +1,5 @@
 use engine_core::{DisplayList, Painter, PassManager, Viewport};
-use engine_core::{Brush, ColorLinPremul, Rect};
+use engine_core::{Brush, ColorLinPremul, Rect, RoundedRect, RoundedRadii};
 
 use super::{Scene, SceneKind};
 
@@ -101,18 +101,52 @@ impl CenteredRectScene {
             1,
         );
 
-        // White with 4% alpha
-        let white_alpha = ColorLinPremul::from_srgba_u8([255, 255, 255, 10]);
+        // White with 8% alpha for border (CSS-style)
+        let white_border = ColorLinPremul::from_srgba(255, 255, 255, 0.08);
+        
+        // White with 4% alpha for fill (CSS-style)
+        let white_fill = ColorLinPremul::from_srgba(255, 255, 255, 0.04);
 
-        painter.rect(
-            Rect {
-                x,
-                y,
-                w: rect_width,
-                h: rect_height,
+        let border_width = 1.0;
+        
+        // Draw border (outer rounded rectangle with 8% alpha)
+        painter.rounded_rect(
+            RoundedRect {
+                rect: Rect {
+                    x,
+                    y,
+                    w: rect_width,
+                    h: rect_height,
+                },
+                radii: RoundedRadii {
+                    tl: 16.0,
+                    tr: 16.0,
+                    br: 16.0,
+                    bl: 16.0,
+                },
             },
-            Brush::Solid(white_alpha),
-            2, // Higher z to render on top
+            Brush::Solid(white_border),
+            2,
+        );
+
+        // Draw fill (inner rounded rectangle with 4% alpha)
+        painter.rounded_rect(
+            RoundedRect {
+                rect: Rect {
+                    x: x + border_width,
+                    y: y + border_width,
+                    w: rect_width - border_width * 2.0,
+                    h: rect_height - border_width * 2.0,
+                },
+                radii: RoundedRadii {
+                    tl: 15.0,
+                    tr: 15.0,
+                    br: 15.0,
+                    bl: 15.0,
+                },
+            },
+            Brush::Solid(white_fill),
+            3,
         );
 
         painter.finish()
