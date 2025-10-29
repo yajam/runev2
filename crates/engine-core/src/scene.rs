@@ -41,6 +41,11 @@ pub enum Brush {
         end: [f32; 2],
         stops: Vec<(f32, ColorLinPremul)>,
     },
+    RadialGradient {
+        center: [f32; 2],
+        radius: f32,
+        stops: Vec<(f32, ColorLinPremul)>,
+    },
     // Pattern, RadialGradient etc. can be added later.
 }
 

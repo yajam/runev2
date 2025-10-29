@@ -8,7 +8,7 @@ pub struct BasicSolidRenderer {
 }
 
 impl BasicSolidRenderer {
-    pub fn new(device: Arc<wgpu::Device>, target_format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: Arc<wgpu::Device>, target_format: wgpu::TextureFormat, sample_count: u32) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("solid-shader"),
             source: wgpu::ShaderSource::Wgsl(engine_shaders::SOLID_WGSL.into()),
@@ -62,7 +62,7 @@ impl BasicSolidRenderer {
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState { count: sample_count, ..Default::default() },
             multiview: None,
         });
 
@@ -185,16 +185,28 @@ impl BackgroundRenderer {
         });
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("bg-bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: std::num::NonZeroU64::new(64),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: std::num::NonZeroU64::new(64),
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: std::num::NonZeroU64::new(256),
+                    },
+                    count: None,
+                },
+            ],
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("bg-pipeline-layout"),

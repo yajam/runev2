@@ -44,6 +44,40 @@ fn rect_to_verts(rect: Rect, color: [f32; 4], t: Transform2D) -> ([Vertex; 4], [
     )
 }
 
+fn push_rect_linear_gradient(
+    vertices: &mut Vec<Vertex>,
+    indices: &mut Vec<u16>,
+    rect: Rect,
+    stops: &[(f32, [f32; 4])],
+    t: Transform2D,
+) {
+    if stops.len() < 2 { return; }
+    // ensure sorted
+    let mut s = stops.to_vec();
+    s.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let y0 = rect.y;
+    let y1 = rect.y + rect.h;
+    for pair in s.windows(2) {
+        let (t0, c0) = (pair[0].0.clamp(0.0, 1.0), pair[0].1);
+        let (t1, c1) = (pair[1].0.clamp(0.0, 1.0), pair[1].1);
+        if (t1 - t0).abs() < 1e-6 { continue; }
+        let x0 = rect.x + rect.w * t0;
+        let x1 = rect.x + rect.w * t1;
+        let p0 = apply_transform([x0, y0], t);
+        let p1 = apply_transform([x1, y0], t);
+        let p2 = apply_transform([x1, y1], t);
+        let p3 = apply_transform([x0, y1], t);
+        let base = vertices.len() as u16;
+        vertices.extend_from_slice(&[
+            Vertex { pos: p0, color: c0 },
+            Vertex { pos: p1, color: c1 },
+            Vertex { pos: p2, color: c1 },
+            Vertex { pos: p3, color: c0 },
+        ]);
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+}
+
 fn push_ellipse(
     vertices: &mut Vec<Vertex>,
     indices: &mut Vec<u16>,
@@ -68,6 +102,67 @@ fn push_ellipse(
         let i1 = base + 1 + i as u16;
         let i2 = base + 1 + ((i + 1) % segs) as u16;
         indices.extend_from_slice(&[i0, i1, i2]);
+    }
+}
+
+fn push_ellipse_radial_gradient(
+    vertices: &mut Vec<Vertex>,
+    indices: &mut Vec<u16>,
+    center: [f32; 2],
+    radii: [f32; 2],
+    stops: &[(f32, [f32; 4])],
+    t: Transform2D,
+) {
+    if stops.len() < 2 { return; }
+    let mut s = stops.to_vec();
+    s.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let segs = 64u32;
+    let base_center = vertices.len() as u16;
+    // Center vertex with first stop color
+    let cpos = apply_transform(center, t);
+    vertices.push(Vertex { pos: cpos, color: s[0].1 });
+
+    // First ring
+    let mut prev_ring_start = vertices.len() as u16;
+    let mut prev_color = s[0].1;
+    let mut prev_t = s[0].0.clamp(0.0, 1.0);
+    if prev_t <= 0.0 { prev_t = 0.0; }
+    for i in 0..segs {
+        let theta = (i as f32) / (segs as f32) * std::f32::consts::TAU;
+        let p = [center[0] + radii[0] * prev_t * theta.cos(), center[1] + radii[1] * prev_t * theta.sin()];
+        let p = apply_transform(p, t);
+        vertices.push(Vertex { pos: p, color: prev_color });
+    }
+    // Connect center to first ring if needed
+    if prev_t == 0.0 {
+        for i in 0..segs {
+            let i1 = base_center;
+            let i2 = prev_ring_start + i as u16 + 1;
+            let i3 = prev_ring_start + ((i + 1) % segs) as u16 + 1;
+            indices.extend_from_slice(&[i1, i2, i3]);
+        }
+    }
+
+    for si in 1..s.len() {
+        let (tcur, ccur) = (s[si].0.clamp(0.0, 1.0), s[si].1);
+        let ring_start = vertices.len() as u16;
+        for i in 0..segs {
+            let theta = (i as f32) / (segs as f32) * std::f32::consts::TAU;
+            let p = [center[0] + radii[0] * tcur * theta.cos(), center[1] + radii[1] * tcur * theta.sin()];
+            let p = apply_transform(p, t);
+            vertices.push(Vertex { pos: p, color: ccur });
+        }
+        // stitch prev ring to current ring
+        for i in 0..segs {
+            let a0 = prev_ring_start + i as u16;
+            let a1 = prev_ring_start + ((i + 1) % segs) as u16;
+            let b0 = ring_start + i as u16;
+            let b1 = ring_start + ((i + 1) % segs) as u16;
+            indices.extend_from_slice(&[a0, b0, b1, a0, b1, a1]);
+        }
+        prev_ring_start = ring_start;
+        prev_color = ccur;
+        prev_t = tcur;
     }
 }
 
@@ -144,12 +239,33 @@ pub fn upload_display_list(
     for cmd in &list.commands {
         match cmd {
             Command::DrawRect { rect, brush, transform, .. } => {
-                if let Brush::Solid(col) = brush {
-                    let color = [col.r, col.g, col.b, col.a];
-                    let (v, i) = rect_to_verts(*rect, color, *transform);
-                    let base = vertices.len() as u16;
-                    vertices.extend_from_slice(&v);
-                    indices.extend(i.map(|idx| idx + base));
+                match brush {
+                    Brush::Solid(col) => {
+                        let color = [col.r, col.g, col.b, col.a];
+                        let (v, i) = rect_to_verts(*rect, color, *transform);
+                        let base = vertices.len() as u16;
+                        vertices.extend_from_slice(&v);
+                        indices.extend(i.map(|idx| idx + base));
+                    }
+                    Brush::LinearGradient { start, end, stops } => {
+                        // Only handle horizontal gradients for now: map t along x within rect
+                        let mut packed: Vec<(f32, [f32; 4])> = stops
+                            .iter()
+                            .map(|(tpos, c)| (*tpos, [c.r, c.g, c.b, c.a]))
+                            .collect();
+                        if packed.is_empty() { continue; }
+                        // Clamp and ensure 0 and 1 exist
+                        if packed.first().unwrap().0 > 0.0 {
+                            let c = packed.first().unwrap().1;
+                            packed.insert(0, (0.0, c));
+                        }
+                        if packed.last().unwrap().0 < 1.0 {
+                            let c = packed.last().unwrap().1;
+                            packed.push((1.0, c));
+                        }
+                        push_rect_linear_gradient(&mut vertices, &mut indices, *rect, &packed, *transform);
+                    }
+                    _ => {}
                 }
             }
             Command::DrawRoundedRect { rrect, brush, transform, .. } => {
@@ -159,9 +275,25 @@ pub fn upload_display_list(
                 }
             }
             Command::DrawEllipse { center, radii, brush, transform, .. } => {
-                if let Brush::Solid(col) = brush {
-                    let color = [col.r, col.g, col.b, col.a];
-                    push_ellipse(&mut vertices, &mut indices, *center, *radii, color, *transform);
+                match brush {
+                    Brush::Solid(col) => {
+                        let color = [col.r, col.g, col.b, col.a];
+                        push_ellipse(&mut vertices, &mut indices, *center, *radii, color, *transform);
+                    }
+                    Brush::RadialGradient { center: _gcenter, radius: _r, stops } => {
+                        let mut packed: Vec<(f32, [f32;4])> = stops.iter().map(|(t,c)| (*t, [c.r,c.g,c.b,c.a])).collect();
+                        if packed.is_empty() { continue; }
+                        if packed.first().unwrap().0 > 0.0 {
+                            let c = packed.first().unwrap().1;
+                            packed.insert(0, (0.0, c));
+                        }
+                        if packed.last().unwrap().0 < 1.0 {
+                            let c = packed.last().unwrap().1;
+                            packed.push((1.0, c));
+                        }
+                        push_ellipse_radial_gradient(&mut vertices, &mut indices, *center, *radii, &packed, *transform);
+                    }
+                    _ => {}
                 }
             }
             _ => {}
