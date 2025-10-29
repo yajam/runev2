@@ -1,0 +1,15 @@
+[package]
+name = "engine-core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+wgpu = { workspace = true }
+palette = { workspace = true }
+bytemuck = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+engine-shaders = { path = "../engine-shaders" }
