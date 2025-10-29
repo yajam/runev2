@@ -124,9 +124,9 @@ fn push_ellipse_radial_gradient(
 
     // First ring
     let mut prev_ring_start = vertices.len() as u16;
-    let mut prev_color = s[0].1;
-    let mut prev_t = s[0].0.clamp(0.0, 1.0);
-    if prev_t <= 0.0 { prev_t = 0.0; }
+    let prev_color = s[0].1;
+    let prev_t0 = s[0].0.clamp(0.0, 1.0);
+    let prev_t = if prev_t0 <= 0.0 { 0.0 } else { prev_t0 };
     for i in 0..segs {
         let theta = (i as f32) / (segs as f32) * std::f32::consts::TAU;
         let p = [center[0] + radii[0] * prev_t * theta.cos(), center[1] + radii[1] * prev_t * theta.sin()];
@@ -161,8 +161,6 @@ fn push_ellipse_radial_gradient(
             indices.extend_from_slice(&[a0, b0, b1, a0, b1, a1]);
         }
         prev_ring_start = ring_start;
-        prev_color = ccur;
-        prev_t = tcur;
     }
 }
 
@@ -245,9 +243,9 @@ pub fn upload_display_list(
                         let (v, i) = rect_to_verts(*rect, color, *transform);
                         let base = vertices.len() as u16;
                         vertices.extend_from_slice(&v);
-                        indices.extend(i.map(|idx| idx + base));
+                        indices.extend(i.iter().map(|idx| base + idx));
                     }
-                    Brush::LinearGradient { start, end, stops } => {
+                    Brush::LinearGradient { stops, .. } => {
                         // Only handle horizontal gradients for now: map t along x within rect
                         let mut packed: Vec<(f32, [f32; 4])> = stops
                             .iter()

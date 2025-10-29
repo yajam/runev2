@@ -8,6 +8,41 @@ struct VsOut {
 };
 "#;
 
+/// Solid color pipeline for macOS: un-premultiply for straight alpha blending
+pub const SOLID_WGSL_MACOS: &str = r#"
+struct ViewportUniform {
+    scale: vec2<f32>,      // 2/W, -2/H
+    translate: vec2<f32>,  // (-1, +1)
+};
+
+@group(0) @binding(0) var<uniform> vp: ViewportUniform;
+
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+};
+
+@vertex
+fn vs_main(@location(0) in_pos: vec2<f32>, @location(1) in_color: vec4<f32>) -> VsOut {
+    var out: VsOut;
+    let ndc = vec2<f32>(in_pos.x * vp.scale.x + vp.translate.x,
+                        in_pos.y * vp.scale.y + vp.translate.y);
+    out.pos = vec4<f32>(ndc, 0.0, 1.0);
+    out.color = in_color; // premultiplied linear color
+    return out;
+}
+
+@fragment
+fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
+    // Un-premultiply for straight alpha blending on Metal
+    let alpha = inp.color.a;
+    if (alpha > 0.001) {
+        return vec4<f32>(inp.color.rgb / alpha, alpha);
+    }
+    return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+}
+"#;
+
 /// Solid color pipeline: vertices carry color in linear space (premultiplied alpha).
 pub const SOLID_WGSL: &str = r#"
 struct ViewportUniform {

@@ -1,5 +1,4 @@
-use engine_core::{DisplayList, Painter, PassManager, Viewport, RootBackground as _};
-use engine_core::{Brush, ColorLinPremul, Rect};
+use engine_core::{DisplayList, PassManager, Viewport};
 
 pub enum SceneKind {
     Geometry,
@@ -7,7 +6,6 @@ pub enum SceneKind {
 }
 
 pub trait Scene {
-    fn name(&self) -> &'static str;
     fn kind(&self) -> SceneKind;
     fn init_display_list(&mut self, viewport: Viewport) -> Option<DisplayList>;
     fn on_resize(&mut self, viewport: Viewport) -> Option<DisplayList> { let _ = viewport; None }
@@ -26,4 +24,4 @@ pub mod default;
 pub mod circle;
 pub mod radial;
 pub mod linear;
-
+pub mod centered_rect;

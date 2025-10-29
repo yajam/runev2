@@ -31,53 +31,60 @@
 - [x] Implement premultiplied alpha blending rules in compositor
 - [x] Output transform via sRGB surface write
 
-## Phase 5 — Box Shadow Pipeline
+## Phase 5 — Intermediate Texture & Blit Pipeline
+- [ ] Add intermediate render texture allocation (matches surface size)
+- [ ] Implement blit/copy pass from intermediate texture to surface
+- [ ] Refactor rendering to target intermediate texture instead of surface directly
+- [ ] This enables smooth window resizing (Vello-style) by making blit the bottleneck
+- [ ] See `docs/resize-flash-issue.md` for context and motivation
+
+## Phase 6 — Box Shadow Pipeline
 - [ ] Generate shadow mask from rect + spread + offset
 - [ ] Separable Gaussian blur (alpha mask) with configurable radius
 - [ ] Multiply blurred alpha by shadow color (premultiplied)
 - [ ] Composite beneath source layer using compositor
 
-## Phase 6 — Text Rendering (Subpixel AA)
+## Phase 7 — Text Rendering (Subpixel AA)
 - [ ] Fork `fontdue` to emit RGB coverage masks (optionally 16-bit)
 - [ ] Extend `cosmic-text`: `RenderSettings::SubpixelAA` + RGB/BGR toggle
 - [ ] GPU text pass consumes RGB coverage; supports fractional positioning
 - [ ] (Optional) Add FreeType FFI path for hinted masks at small sizes
 
-## Phase 7 — Color Management
+## Phase 8 — Color Management
 - [ ] Enforce linear-light internal computations across passes
 - [ ] Use `palette` for conversions and encoding management
 - [ ] Add HDR-ready paths when 16f/32f targets available
 
-## Phase 8 — Public API
+## Phase 9 — Public API
 - [ ] Implement `GraphicsEngine::new(device: &wgpu::Device) -> Self`
 - [ ] Implement `render_scene(scene: &SceneGraph, target: &wgpu::TextureView)`
 - [ ] Document safety/ownership and lifetime expectations
 
-## Phase 9 — Demo Application
+## Phase 10 — Demo Application
 - [ ] Render gradient gallery (banding comparison + dithering toggle)
 - [ ] Render shadow playground (blur/spread/offset parameters)
 - [ ] Text compare: grayscale vs subpixel AA (RGB/BGR switch)
 - [ ] Showcase persistent atlases (glyphs/gradients/blurs) behavior
 
-## Phase 10 — Documentation
+## Phase 11 — Documentation
 - [ ] API docs for core modules and passes
 - [ ] WGSL shader notes (precision, blending, color space)
 - [ ] Integration guide for Rune IR → SceneGraph
 
-## Phase 11 — Tests (Keep last)
+## Phase 12 — Tests (Keep last)
 - [ ] Unit: linear gradient interpolation correctness (CPU reference)
 - [ ] Unit: premultiplied alpha compositing math
 - [ ] GPU: render tests for gradients, shadows (image-based thresholds)
 - [ ] Text: grayscale vs subpixel AA golden comparisons
 - [ ] Allocator: pooling/reuse invariants and leak checks
 
-## Phase 12 — Performance (Keep last)
+## Phase 13 — Performance (Keep last)
 - [ ] Benchmark: <1ms GPU time @1080p for ~1k elements
 - [ ] Profile pass timings; minimize texture reallocations
 - [ ] Validate atlas policies (glyph/gradient/blur) and cache hit rates
 - [ ] Pipeline/state caching to reduce command overhead
 
-## Phase 13 — Release & Upstream
+## Phase 14 — Release & Upstream
 - [ ] Dual-license MIT/Apache-2.0; add NOTICE
 - [ ] Maintain `cosmic-text` and `fontdue` patch branches
 - [ ] Prepare upstreamable PRs (linear color, subpixel AA)

@@ -38,9 +38,8 @@ pub struct PassManager {
 impl PassManager {
     /// Choose the best offscreen format: Rgba16Float if supported, otherwise Rgba8Unorm
     fn choose_offscreen_format(device: &wgpu::Device) -> wgpu::TextureFormat {
-        // Rgba16Float is widely supported on modern GPUs and provides better gradient quality
-        // It's part of WebGPU core and doesn't require special features for render targets
-        let preferred = wgpu::TextureFormat::Rgba16Float;
+        // WORKAROUND: Use Rgba8UnormSrgb instead of Rgba16Float due to Metal blending bug
+        let preferred = wgpu::TextureFormat::Rgba8UnormSrgb;
         
         // Try to create a small test texture to verify support
         let test_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -58,11 +57,11 @@ impl PassManager {
         
         match test_result {
             Ok(_) => {
-                eprintln!("Using Rgba16Float for offscreen buffer (higher quality gradients)");
+                eprintln!("Using {:?} for offscreen buffer", preferred);
                 preferred
             }
             Err(_) => {
-                eprintln!("Rgba16Float not supported, falling back to Rgba8Unorm for offscreen buffer");
+                eprintln!("{:?} not supported, falling back to Rgba8Unorm for offscreen buffer", preferred);
                 wgpu::TextureFormat::Rgba8Unorm
             }
         }
@@ -117,7 +116,7 @@ impl PassManager {
         PassTargets { color }
     }
 
-    pub fn render_solids_to_offscreen(&self, encoder: &mut wgpu::CommandEncoder, vp_bg: &wgpu::BindGroup, targets: &PassTargets, scene: &GpuScene) {
+    pub fn render_solids_to_offscreen(&self, encoder: &mut wgpu::CommandEncoder, vp_bg: &wgpu::BindGroup, targets: &PassTargets, scene: &GpuScene, clear_color: wgpu::Color) {
         // Multisampled color target with resolve to offscreen color
         let msaa_tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("solid-msaa-offscreen"),
@@ -135,7 +134,7 @@ impl PassManager {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &msaa_view,
                 resolve_target: Some(&targets.color.view),
-                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear_color), store: wgpu::StoreOp::Store },
             })],
             depth_stencil_attachment: None,
             occlusion_query_set: None,
@@ -536,8 +535,8 @@ impl PassManager {
         }
 
         let targets = self.alloc_targets(allocator, width.max(1), height.max(1));
-        self.render_solids_to_offscreen(encoder, &vp_bg_off, &targets, scene);
-        self.composite_to_surface(encoder, surface_view, &targets, if preserve_surface { None } else { Some(clear) });
+        self.render_solids_to_offscreen(encoder, &vp_bg_off, &targets, scene, wgpu::Color::TRANSPARENT);
+        self.composite_to_surface(encoder, surface_view, &targets, None);
         // Return textures to allocator pool to avoid repeated allocations.
         allocator.release_texture(targets.color);
     }

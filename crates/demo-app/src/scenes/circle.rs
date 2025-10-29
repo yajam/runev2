@@ -8,7 +8,6 @@ pub struct CircleScene;
 impl Default for CircleScene { fn default() -> Self { Self } }
 
 impl Scene for CircleScene {
-    fn name(&self) -> &'static str { "circle" }
     fn kind(&self) -> SceneKind { SceneKind::Geometry }
 
     fn init_display_list(&mut self, viewport: Viewport) -> Option<DisplayList> {
@@ -78,4 +77,3 @@ fn build_circle_dl(viewport: Viewport) -> DisplayList {
     );
     painter.finish()
 }
-

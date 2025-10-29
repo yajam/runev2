@@ -7,7 +7,6 @@ pub struct LinearBgScene;
 impl Default for LinearBgScene { fn default() -> Self { Self } }
 
 impl Scene for LinearBgScene {
-    fn name(&self) -> &'static str { "linear" }
     fn kind(&self) -> SceneKind { SceneKind::FullscreenBackground }
 
     fn init_display_list(&mut self, _viewport: Viewport) -> Option<DisplayList> { None }
@@ -39,4 +38,3 @@ impl Scene for LinearBgScene {
         );
     }
 }
-

@@ -7,7 +7,6 @@ pub struct RadialBgScene;
 impl Default for RadialBgScene { fn default() -> Self { Self } }
 
 impl Scene for RadialBgScene {
-    fn name(&self) -> &'static str { "radial" }
     fn kind(&self) -> SceneKind { SceneKind::FullscreenBackground }
 
     fn init_display_list(&mut self, _viewport: Viewport) -> Option<DisplayList> { None }
@@ -41,4 +40,3 @@ impl Scene for RadialBgScene {
         );
     }
 }
-

@@ -8,7 +8,6 @@ pub struct DefaultScene;
 impl Default for DefaultScene { fn default() -> Self { Self } }
 
 impl Scene for DefaultScene {
-    fn name(&self) -> &'static str { "default" }
     fn kind(&self) -> SceneKind { SceneKind::Geometry }
 
     fn init_display_list(&mut self, viewport: Viewport) -> Option<DisplayList> {
@@ -104,4 +103,3 @@ impl Scene for DefaultScene {
         );
     }
 }
-
