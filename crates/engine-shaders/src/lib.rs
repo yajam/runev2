@@ -126,6 +126,47 @@ fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
+/// Fast blit shader for copying intermediate texture to surface (no filtering, nearest neighbor).
+/// This is optimized for the resize use case where we want the fastest possible copy.
+pub const BLIT_WGSL: &str = r#"
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>( 3.0, -1.0),
+        vec2<f32>(-1.0,  3.0),
+    );
+    // Map NDC to UV with correct orientation:
+    // NDC (-1,-1) bottom-left -> UV (0,1) bottom-left  
+    // NDC (1,-1) bottom-right -> UV (1,1) bottom-right
+    // NDC (-1,1) top-left -> UV (0,0) top-left
+    var uv = array<vec2<f32>, 3>(
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(2.0, 1.0),
+        vec2<f32>(0.0, -1.0),
+    );
+    var out: VsOut;
+    out.pos = vec4<f32>(pos[vi], 0.0, 1.0);
+    out.uv = uv[vi];
+    return out;
+}
+
+@group(0) @binding(0) var in_tex: texture_2d<f32>;
+@group(0) @binding(1) var in_smp: sampler;
+
+@fragment
+fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
+    // Direct copy with corrected UV mapping
+    let c = textureSample(in_tex, in_smp, inp.uv);
+    return c;
+}
+"#;
+
 /// Background fill (solid or linear gradient) drawn via fullscreen triangle.
 pub const BACKGROUND_WGSL: &str = r#"
 const MAX_STOPS: u32 = 8u;

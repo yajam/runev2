@@ -101,15 +101,11 @@ impl CenteredRectScene {
             1,
         );
 
-        // White with 8% alpha for border (CSS-style)
-        let white_border = ColorLinPremul::from_srgba(255, 255, 255, 0.08);
-        
-        // White with 4% alpha for fill (CSS-style)
+        // For a bordered rectangle with transparency, we need to draw it as a single shape
+        // with the fill alpha, since layering transparent shapes causes compounding
+        // Just draw the fill - we'll add proper border support later
         let white_fill = ColorLinPremul::from_srgba(255, 255, 255, 0.04);
 
-        let border_width = 1.0;
-        
-        // Draw border (outer rounded rectangle with 8% alpha)
         painter.rounded_rect(
             RoundedRect {
                 rect: Rect {
@@ -125,28 +121,8 @@ impl CenteredRectScene {
                     bl: 16.0,
                 },
             },
-            Brush::Solid(white_border),
-            2,
-        );
-
-        // Draw fill (inner rounded rectangle with 4% alpha)
-        painter.rounded_rect(
-            RoundedRect {
-                rect: Rect {
-                    x: x + border_width,
-                    y: y + border_width,
-                    w: rect_width - border_width * 2.0,
-                    h: rect_height - border_width * 2.0,
-                },
-                radii: RoundedRadii {
-                    tl: 15.0,
-                    tr: 15.0,
-                    br: 15.0,
-                    bl: 15.0,
-                },
-            },
             Brush::Solid(white_fill),
-            3,
+            2,
         );
 
         painter.finish()

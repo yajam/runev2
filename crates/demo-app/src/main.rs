@@ -88,6 +88,11 @@ fn main() -> Result<()> {
         .ok()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
+    // Enable intermediate texture for Vello-style smooth resizing
+    let use_intermediate = std::env::var("USE_INTERMEDIATE")
+        .ok()
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(true); // Default to true for smooth resizing
     let mut needs_reupload = false;
 
     // Basic event loop that clears the frame
@@ -140,20 +145,56 @@ fn main() -> Result<()> {
                     }
                     needs_reupload = false;
                 }
-                if let (SceneKind::Geometry, Some(gpu_scene)) = (scene.kind(), gpu_scene_opt.as_ref()) {
-                    let queue = engine.queue();
-                    passes.render_frame(
-                        &mut encoder,
-                        engine.allocator_mut(),
-                        &view,
-                        size.width,
-                        size.height,
-                        gpu_scene,
-                        wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
-                        bypass,
-                        &queue,
-                        true,
-                    );
+                match scene.kind() {
+                    SceneKind::Geometry => {
+                        if let Some(gpu_scene) = gpu_scene_opt.as_ref() {
+                            let queue = engine.queue();
+                            if use_intermediate {
+                                // Use intermediate texture for Vello-style smooth resizing
+                                passes.render_frame_with_intermediate(
+                                    &mut encoder,
+                                    engine.allocator_mut(),
+                                    &view,
+                                    size.width,
+                                    size.height,
+                                    gpu_scene,
+                                    wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
+                                    bypass,
+                                    &queue,
+                                );
+                            } else {
+                                // Direct rendering (old path)
+                                passes.render_frame(
+                                    &mut encoder,
+                                    engine.allocator_mut(),
+                                    &view,
+                                    size.width,
+                                    size.height,
+                                    gpu_scene,
+                                    wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
+                                    bypass,
+                                    &queue,
+                                    true,
+                                );
+                            }
+                        }
+                    }
+                    SceneKind::FullscreenBackground => {
+                        // Render fullscreen background (gradients, etc.)
+                        let queue = engine.queue();
+                        if use_intermediate {
+                            // Render to intermediate texture then blit
+                            passes.ensure_intermediate_texture(engine.allocator_mut(), size.width, size.height);
+                            // Create a temporary texture view to avoid borrow issues
+                            let intermediate_tex = passes.intermediate_texture.as_ref().unwrap();
+                            let intermediate_view = intermediate_tex.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                            scene.paint_root_background(&mut passes, &mut encoder, &intermediate_view, &queue, size.width, size.height);
+                            passes.blit_to_surface(&mut encoder, &view);
+                        } else {
+                            // Direct rendering to surface
+                            scene.paint_root_background(&mut passes, &mut encoder, &view, &queue, size.width, size.height);
+                        }
+                    }
                 }
                 engine.queue().submit(std::iter::once(encoder.finish()));
                 frame.present();

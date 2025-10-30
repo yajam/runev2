@@ -3,7 +3,7 @@ use std::sync::Arc;
 // use anyhow::Result;
 
 use crate::allocator::{RenderAllocator, TexKey};
-use crate::pipeline::{BackgroundRenderer, BasicSolidRenderer, Compositor};
+use crate::pipeline::{BackgroundRenderer, BasicSolidRenderer, Blitter, Compositor};
 use crate::upload::GpuScene;
 
 pub struct PassTargets {
@@ -25,6 +25,7 @@ pub struct PassManager {
     pub solid_offscreen: BasicSolidRenderer,
     pub solid_direct: BasicSolidRenderer,
     pub compositor: Compositor,
+    pub blitter: Blitter,
     offscreen_format: wgpu::TextureFormat,
     surface_format: wgpu::TextureFormat,
     vp_buffer: wgpu::Buffer,
@@ -33,6 +34,8 @@ pub struct PassManager {
     bg_stops_buffer: wgpu::Buffer,
     // Platform DPI scale factor (used for mac-specific radial centering fix)
     scale_factor: f32,
+    // Intermediate texture for Vello-style smooth resizing
+    pub intermediate_texture: Option<crate::OwnedTexture>,
 }
 
 impl PassManager {
@@ -74,6 +77,7 @@ impl PassManager {
         let solid_offscreen = BasicSolidRenderer::new(device.clone(), offscreen_format, msaa_count);
         let solid_direct = BasicSolidRenderer::new(device.clone(), target_format, msaa_count);
         let compositor = Compositor::new(device.clone(), target_format);
+        let blitter = Blitter::new(device.clone(), target_format);
         let bg = BackgroundRenderer::new(device.clone(), target_format);
         let vp_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("viewport-uniform"),
@@ -93,7 +97,7 @@ impl PassManager {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self { device, solid_offscreen, solid_direct, compositor, offscreen_format, surface_format: target_format, vp_buffer, bg, bg_param_buffer, bg_stops_buffer, scale_factor: 1.0 }
+        Self { device, solid_offscreen, solid_direct, compositor, blitter, offscreen_format, surface_format: target_format, vp_buffer, bg, bg_param_buffer, bg_stops_buffer, scale_factor: 1.0, intermediate_texture: None }
     }
 
     /// Set the platform DPI scale factor. On macOS this is used to correct
@@ -114,6 +118,59 @@ impl PassManager {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         });
         PassTargets { color }
+    }
+
+    /// Allocate or reuse intermediate texture matching the surface size.
+    /// This texture is used for Vello-style smooth resizing.
+    pub fn ensure_intermediate_texture(&mut self, allocator: &mut RenderAllocator, width: u32, height: u32) {
+        let needs_realloc = match &self.intermediate_texture {
+            Some(tex) => tex.key.width != width || tex.key.height != height,
+            None => true,
+        };
+
+        if needs_realloc {
+            // Release old texture if it exists
+            if let Some(old_tex) = self.intermediate_texture.take() {
+                allocator.release_texture(old_tex);
+            }
+
+            // Allocate new intermediate texture with surface format
+            let tex = allocator.allocate_texture(TexKey {
+                width,
+                height,
+                format: self.surface_format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            });
+            self.intermediate_texture = Some(tex);
+        }
+    }
+
+    /// Blit the intermediate texture to the surface. This is a very fast operation
+    /// that enables smooth window resizing (Vello-style).
+    pub fn blit_to_surface(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        surface_view: &wgpu::TextureView,
+    ) {
+        let intermediate = self.intermediate_texture.as_ref()
+            .expect("intermediate texture must be allocated before blitting");
+        
+        let bg = self.blitter.bind_group(&self.device, &intermediate.view);
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("blit-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: surface_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+        self.blitter.record(&mut pass, &bg);
     }
 
     pub fn render_solids_to_offscreen(&self, encoder: &mut wgpu::CommandEncoder, vp_bg: &wgpu::BindGroup, targets: &PassTargets, scene: &GpuScene, clear_color: wgpu::Color) {
@@ -166,6 +223,14 @@ impl PassManager {
             timestamp_writes: None,
         });
         self.compositor.record(&mut pass, &bg);
+    }
+
+    /// Paint background to intermediate texture instead of directly to surface.
+    /// This enables smooth resizing when combined with blit_to_surface.
+    pub fn paint_root_to_intermediate(&self, encoder: &mut wgpu::CommandEncoder, bg: &Background, queue: &wgpu::Queue) {
+        let intermediate = self.intermediate_texture.as_ref()
+            .expect("intermediate texture must be allocated before painting");
+        self.paint_root(encoder, &intermediate.view, bg, queue);
     }
 
     pub fn paint_root(&self, encoder: &mut wgpu::CommandEncoder, surface_view: &wgpu::TextureView, bg: &Background, queue: &wgpu::Queue) {
@@ -245,6 +310,20 @@ impl PassManager {
         self.bg.record(&mut pass, &bg_bind);
     }
 
+    /// Paint linear gradient to intermediate texture.
+    pub fn paint_root_linear_gradient_multi_to_intermediate(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        start_uv: [f32; 2],
+        end_uv: [f32; 2],
+        stops_in: &[(f32, crate::scene::ColorLinPremul)],
+        queue: &wgpu::Queue,
+    ) {
+        let intermediate = self.intermediate_texture.as_ref()
+            .expect("intermediate texture must be allocated before painting");
+        self.paint_root_linear_gradient_multi(encoder, &intermediate.view, start_uv, end_uv, stops_in, queue);
+    }
+
     /// Multi-stop linear gradient background
     pub fn paint_root_linear_gradient_multi(
         &self,
@@ -300,6 +379,22 @@ impl PassManager {
             timestamp_writes: None,
         });
         self.bg.record(&mut pass, &bg_bind);
+    }
+
+    /// Paint radial gradient to intermediate texture.
+    pub fn paint_root_radial_gradient_multi_to_intermediate(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        center_uv: [f32; 2],
+        radius: f32,
+        stops_in: &[(f32, crate::scene::ColorLinPremul)],
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+    ) {
+        let intermediate = self.intermediate_texture.as_ref()
+            .expect("intermediate texture must be allocated before painting");
+        self.paint_root_radial_gradient_multi(encoder, &intermediate.view, center_uv, radius, stops_in, queue, width, height);
     }
 
     /// Multi-stop radial gradient background
@@ -471,6 +566,113 @@ impl PassManager {
             timestamp_writes: None,
         });
         self.bg.record(&mut pass, &bg_bind);
+    }
+
+    /// Render the scene to intermediate texture, then blit to surface.
+    /// This is the Vello-style approach that enables smooth window resizing.
+    pub fn render_frame_with_intermediate(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        allocator: &mut RenderAllocator,
+        surface_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+        scene: &GpuScene,
+        clear: wgpu::Color,
+        _direct: bool,
+        queue: &wgpu::Queue,
+    ) {
+        // Ensure intermediate texture is allocated and matches surface size
+        self.ensure_intermediate_texture(allocator, width, height);
+
+        // Get intermediate texture view
+        let intermediate_view = &self.intermediate_texture.as_ref().unwrap().view;
+
+        // IMPORTANT: Always render directly to intermediate texture (no compositor step)
+        // The blit shader will handle the final flip when copying to surface
+        self.render_frame_internal(
+            encoder,
+            allocator,
+            intermediate_view,
+            width,
+            height,
+            scene,
+            clear,
+            true, // Force direct rendering to avoid double-flip from compositor
+            queue,
+            false, // Don't preserve intermediate texture
+        );
+
+        // Blit intermediate texture to surface (very fast operation)
+        self.blit_to_surface(encoder, surface_view);
+    }
+
+    /// Internal render method that can target any texture view.
+    fn render_frame_internal(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        allocator: &mut RenderAllocator,
+        target_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+        scene: &GpuScene,
+        clear: wgpu::Color,
+        direct: bool,
+        queue: &wgpu::Queue,
+        preserve_target: bool,
+    ) {
+        // Update viewport uniform
+        let scale = [2.0f32 / (width.max(1) as f32), -2.0f32 / (height.max(1) as f32)];
+        let translate = [-1.0f32, 1.0f32];
+        let vp_data = [scale[0], scale[1], translate[0], translate[1]];
+        let data = bytemuck::bytes_of(&vp_data);
+        queue.write_buffer(&self.vp_buffer, 0, data);
+        let vp_bg_off = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("vp-bg-offscreen"),
+            layout: self.solid_offscreen.viewport_bgl(),
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: self.vp_buffer.as_entire_binding() }],
+        });
+        let vp_bg_direct = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("vp-bg-direct"),
+            layout: self.solid_direct.viewport_bgl(),
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: self.vp_buffer.as_entire_binding() }],
+        });
+        if direct {
+            // MSAA render directly to target with resolve
+            let msaa_tex = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("solid-msaa-direct"),
+                size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 4,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.surface_format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let msaa_view = msaa_tex.create_view(&wgpu::TextureViewDescriptor::default());
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("direct-solid-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &msaa_view,
+                    resolve_target: Some(target_view),
+                    ops: wgpu::Operations {
+                        load: if preserve_target { wgpu::LoadOp::Load } else { wgpu::LoadOp::Clear(clear) },
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            self.solid_direct.record(&mut pass, &vp_bg_direct, scene);
+            return;
+        }
+
+        let targets = self.alloc_targets(allocator, width.max(1), height.max(1));
+        self.render_solids_to_offscreen(encoder, &vp_bg_off, &targets, scene, wgpu::Color::TRANSPARENT);
+        self.composite_to_surface(encoder, target_view, &targets, None);
+        // Return textures to allocator pool to avoid repeated allocations.
+        allocator.release_texture(targets.color);
     }
 
     /// Render the scene either via offscreen+composite, or directly to the surface when `direct` is true.

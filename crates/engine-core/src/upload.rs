@@ -199,16 +199,17 @@ fn push_rounded_rect(
     if tl > 0.0 { arc_append(&mut ring, [rect.x + tl, rect.y + tl], tl, std::f32::consts::FRAC_PI_2, std::f32::consts::PI, segs, true); }
     else { ring.push([rect.x + 0.0, rect.y + 0.0]); }
 
-    // BL: 180° -> 270° (left -> bottom), skip start to avoid duplicate
-    if bl > 0.0 { arc_append(&mut ring, [rect.x + bl, rect.y + rect.h - bl], bl, std::f32::consts::PI, std::f32::consts::FRAC_PI_2 * 3.0, segs, false); }
+    // BL: 180° -> 270° (left -> bottom)
+    // Include start point so straight edges between corners are preserved.
+    if bl > 0.0 { arc_append(&mut ring, [rect.x + bl, rect.y + rect.h - bl], bl, std::f32::consts::PI, std::f32::consts::FRAC_PI_2 * 3.0, segs, true); }
     else { ring.push([rect.x + 0.0, rect.y + rect.h]); }
 
     // BR: 270° -> 360° (bottom -> right)
-    if br > 0.0 { arc_append(&mut ring, [rect.x + rect.w - br, rect.y + rect.h - br], br, std::f32::consts::FRAC_PI_2 * 3.0, std::f32::consts::TAU, segs, false); }
+    if br > 0.0 { arc_append(&mut ring, [rect.x + rect.w - br, rect.y + rect.h - br], br, std::f32::consts::FRAC_PI_2 * 3.0, std::f32::consts::TAU, segs, true); }
     else { ring.push([rect.x + rect.w, rect.y + rect.h]); }
 
     // TR: 0° -> 90° (right -> top)
-    if tr > 0.0 { arc_append(&mut ring, [rect.x + rect.w - tr, rect.y + tr], tr, 0.0, std::f32::consts::FRAC_PI_2, segs, false); }
+    if tr > 0.0 { arc_append(&mut ring, [rect.x + rect.w - tr, rect.y + tr], tr, 0.0, std::f32::consts::FRAC_PI_2, segs, true); }
     else { ring.push([rect.x + rect.w, rect.y + 0.0]); }
 
     let base = vertices.len() as u16;

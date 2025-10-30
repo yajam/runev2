@@ -102,3 +102,4 @@ pub use upload::*;
 pub use pipeline::*;
 pub use pass_manager::*;
 pub use pass_manager::Background as RootBackground;
+pub use pipeline::Blitter;

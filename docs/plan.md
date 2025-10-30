@@ -32,17 +32,34 @@
 - [x] Output transform via sRGB surface write
 
 ## Phase 5 — Intermediate Texture & Blit Pipeline
-- [ ] Add intermediate render texture allocation (matches surface size)
-- [ ] Implement blit/copy pass from intermediate texture to surface
-- [ ] Refactor rendering to target intermediate texture instead of surface directly
-- [ ] This enables smooth window resizing (Vello-style) by making blit the bottleneck
-- [ ] See `docs/resize-flash-issue.md` for context and motivation
+- [x] Add intermediate render texture allocation (matches surface size)
+- [x] Implement blit/copy pass from intermediate texture to surface
+- [x] Refactor rendering to target intermediate texture instead of surface directly
+- [x] This enables smooth window resizing (Vello-style) by making blit the bottleneck
+- [x] See `docs/resize-flash-issue.md` for context and motivation
 
-## Phase 6 — Box Shadow Pipeline
-- [ ] Generate shadow mask from rect + spread + offset
-- [ ] Separable Gaussian blur (alpha mask) with configurable radius
-- [ ] Multiply blurred alpha by shadow color (premultiplied)
-- [ ] Composite beneath source layer using compositor
+## Phase 6 — Borders & Box Shadow Pipeline
+- [ ] **Borders/Strokes**: Add stroke primitive for rendering outlines
+  - [ ] Add `Stroke` shape variant with width and brush
+  - [ ] Tessellate border rings (not filled rectangles) for rounded rects
+  - [ ] Support different border widths per side (optional)
+- [ ] **Box Shadows**: Implement shadow rendering
+  - [ ] Generate shadow mask from rect + spread + offset
+  - [ ] Separable Gaussian blur (alpha mask) with configurable radius
+  - [ ] Multiply blurred alpha by shadow color (premultiplied)
+  - [ ] Composite beneath source layer using compositor
+- [ ] Note: Both need proper alpha handling - no layering transparent shapes
+
+## Phase 6.5 — Hit Testing & Event Handling
+- [ ] **Hit Testing**: Implement spatial queries for mouse/touch events
+  - [ ] Build spatial index from display list (z-index already supported)
+  - [ ] Point-in-shape tests for rect, rounded rect, ellipse, etc.
+  - [ ] Return hit shape + z-layer for topmost element at position
+  - [ ] Handle transforms and clipping regions
+- [ ] **Event Integration**: Connect to winit event loop
+  - [ ] Map winit mouse/touch events to hit test queries
+  - [ ] Emit custom events with hit layer info
+  - [ ] Support hover, click, drag interactions per layer
 
 ## Phase 7 — Text Rendering (Subpixel AA)
 - [ ] Fork `fontdue` to emit RGB coverage masks (optionally 16-bit)
