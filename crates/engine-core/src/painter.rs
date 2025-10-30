@@ -30,6 +30,16 @@ impl Painter {
         self.list.commands.push(Command::DrawRoundedRect { rrect, brush, z, transform: t });
     }
 
+    pub fn stroke_rect(&mut self, rect: Rect, stroke: Stroke, brush: Brush, z: i32) {
+        let t = self.current_transform();
+        self.list.commands.push(Command::StrokeRect { rect, stroke, brush, z, transform: t });
+    }
+
+    pub fn stroke_rounded_rect(&mut self, rrect: RoundedRect, stroke: Stroke, brush: Brush, z: i32) {
+        let t = self.current_transform();
+        self.list.commands.push(Command::StrokeRoundedRect { rrect, stroke, brush, z, transform: t });
+    }
+
     pub fn text(&mut self, run: TextRun, z: i32) {
         let t = self.current_transform();
         self.list.commands.push(Command::DrawText { run, z, transform: t });
@@ -42,6 +52,33 @@ impl Painter {
 
     pub fn circle(&mut self, center: [f32; 2], radius: f32, brush: Brush, z: i32) {
         self.ellipse(center, [radius, radius], brush, z);
+    }
+
+    pub fn box_shadow(&mut self, rrect: RoundedRect, spec: BoxShadowSpec, z: i32) {
+        let t = self.current_transform();
+        self.list.commands.push(Command::BoxShadow { rrect, spec, z, transform: t });
+    }
+
+    /// Fill a path with a solid color. For now we only support solid color fills for paths.
+    pub fn fill_path(&mut self, path: Path, color: ColorLinPremul, z: i32) {
+        let t = self.current_transform();
+        self.list.commands.push(Command::FillPath { path, color, z, transform: t });
+    }
+
+    // --- Hit-only regions (do not render) ---
+    pub fn hit_region_rect(&mut self, id: u32, rect: Rect, z: i32) {
+        let t = self.current_transform();
+        self.list.commands.push(Command::HitRegionRect { id, rect, z, transform: t });
+    }
+
+    pub fn hit_region_rounded_rect(&mut self, id: u32, rrect: RoundedRect, z: i32) {
+        let t = self.current_transform();
+        self.list.commands.push(Command::HitRegionRoundedRect { id, rrect, z, transform: t });
+    }
+
+    pub fn hit_region_ellipse(&mut self, id: u32, center: [f32; 2], radii: [f32; 2], z: i32) {
+        let t = self.current_transform();
+        self.list.commands.push(Command::HitRegionEllipse { id, center, radii, z, transform: t });
     }
 
     pub fn finish(self) -> DisplayList { self.list }

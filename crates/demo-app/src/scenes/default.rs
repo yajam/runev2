@@ -12,6 +12,16 @@ impl Scene for DefaultScene {
 
     fn init_display_list(&mut self, viewport: Viewport) -> Option<DisplayList> {
         let mut painter = Painter::begin_frame(viewport);
+        // Optional text demo (requires DEMO_FONT env var to draw)
+        painter.text(
+            engine_core::TextRun {
+                text: "Hello Subpixel".to_string(),
+                pos: [60.0, 36.0],
+                size: 28.0,
+                color: ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
+            },
+            1,
+        );
         // Solid rect
         painter.rect(
             Rect { x: 60.0, y: 60.0, w: 300.0, h: 200.0 },

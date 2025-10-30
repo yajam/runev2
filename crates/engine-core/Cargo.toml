@@ -13,3 +13,12 @@ bytemuck = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 engine-shaders = { path = "../engine-shaders" }
+fontdue = { workspace = true }
+lyon_tessellation = "1.0"
+lyon_path = "1.0"
+lyon_geom = "1.0"
+
+[features]
+default = []
+# Enable when using a patched fontdue fork that can emit RGB/16-bit masks directly.
+fontdue-rgb-patch = []

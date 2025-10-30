@@ -141,10 +141,8 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
         vec2<f32>( 3.0, -1.0),
         vec2<f32>(-1.0,  3.0),
     );
-    // Map NDC to UV with correct orientation:
-    // NDC (-1,-1) bottom-left -> UV (0,1) bottom-left  
-    // NDC (1,-1) bottom-right -> UV (1,1) bottom-right
-    // NDC (-1,1) top-left -> UV (0,0) top-left
+    // Map NDC to UV with correct orientation without needing a fragment flip
+    // (-1,-1) -> (0,1), (3,-1) -> (2,1), (-1,3) -> (0,-1)
     var uv = array<vec2<f32>, 3>(
         vec2<f32>(0.0, 1.0),
         vec2<f32>(2.0, 1.0),
@@ -161,9 +159,7 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
 
 @fragment
 fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
-    // Direct copy with corrected UV mapping
-    let c = textureSample(in_tex, in_smp, inp.uv);
-    return c;
+    return textureSample(in_tex, in_smp, inp.uv);
 }
 "#;
 
@@ -299,5 +295,211 @@ fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
         return vec4<f32>(t, t, t, 1.0);
     }
     return eval_stops(t);
+} 
+"#;
+
+/// Separable Gaussian blur for single-channel mask (R channel). Output is written to the target
+/// format; when using `R8Unorm`, only the R component is used.
+pub const SHADOW_BLUR_WGSL: &str = r#"
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>( 3.0, -1.0),
+        vec2<f32>(-1.0,  3.0),
+    );
+    var uv = array<vec2<f32>, 3>(
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(2.0, 0.0),
+        vec2<f32>(0.0, 2.0),
+    );
+    var out: VsOut;
+    out.pos = vec4<f32>(pos[vi], 0.0, 1.0);
+    out.uv = uv[vi];
+    return out;
+}
+
+@group(0) @binding(0) var in_tex: texture_2d<f32>;
+@group(0) @binding(1) var in_smp: sampler;
+
+struct BlurParams {
+    dir: vec2<f32>,      // direction (1,0) or (0,1)
+    texel: vec2<f32>,    // 1/width, 1/height
+    sigma: f32,          // blur sigma (radius ~ 3*sigma)
+    _pad: f32,
+};
+@group(0) @binding(2) var<uniform> params: BlurParams;
+
+fn gauss(w: f32, s: f32) -> f32 { return exp(-0.5 * (w*w) / max(1e-6, s*s)); }
+
+@fragment
+fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
+    // Fixed radius based on sigma
+    let sigma = max(0.25, params.sigma);
+    // Use a slightly wider kernel to better match CSS box-shadow tails
+    // and avoid a "band" look at modest blur values.
+    let r = i32(clamp(ceil(6.0 * sigma), 1.0, 64.0));
+    var acc: f32 = 0.0;
+    var norm: f32 = 0.0;
+    for (var i: i32 = -r; i <= r; i = i + 1) {
+        let fi = f32(i);
+        let w = gauss(fi, sigma);
+        let ofs = params.dir * params.texel * fi;
+        let c = textureSample(in_tex, in_smp, inp.uv + ofs).r;
+        acc = acc + c * w;
+        norm = norm + w;
+    }
+    let v = acc / max(1e-6, norm);
+    return vec4<f32>(v, v, v, v);
+}
+"#;
+
+/// Composite blurred mask tinted with a premultiplied color onto the target.
+pub const SHADOW_COMPOSITE_WGSL: &str = r#"
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>( 3.0, -1.0),
+        vec2<f32>(-1.0,  3.0),
+    );
+    var uv = array<vec2<f32>, 3>(
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(2.0, 0.0),
+        vec2<f32>(0.0, 2.0),
+    );
+    var out: VsOut;
+    out.pos = vec4<f32>(pos[vi], 0.0, 1.0);
+    out.uv = uv[vi];
+    return out;
+}
+
+@group(0) @binding(0) var mask_tex: texture_2d<f32>;
+@group(0) @binding(1) var mask_smp: sampler;
+
+struct ShadowColor {
+    color: vec4<f32>, // premultiplied linear RGBA
+};
+@group(0) @binding(2) var<uniform> sc: ShadowColor;
+
+@fragment
+fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
+    // Match compositor orientation: flip V when sampling render-targets as textures
+    let uv = vec2<f32>(inp.uv.x, 1.0 - inp.uv.y);
+    let a = textureSample(mask_tex, mask_smp, uv).r;
+    return vec4<f32>(sc.color.rgb * a, sc.color.a * a);
+} 
+"#;
+
+/// Text rendering shader: samples an RGB coverage mask (subpixel AA) and tints with a
+/// premultiplied linear text color. The output is premultiplied.
+///
+/// Bindings:
+/// - @group(0) @binding(0): Viewport uniform (shared layout with solids)
+/// - @group(1) @binding(0): Mask texture (Rgba8Unorm or Rgba16Unorm)
+/// - @group(1) @binding(1): Sampler (nearest recommended)
+/// - @group(1) @binding(2): Text color uniform (premultiplied linear RGBA)
+pub const TEXT_WGSL: &str = r#"
+struct ViewportUniform {
+    scale: vec2<f32>,      // 2/W, -2/H
+    translate: vec2<f32>,  // (-1, +1)
+};
+
+@group(0) @binding(0) var<uniform> vp: ViewportUniform;
+
+struct VsIn {
+    @location(0) pos: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+};
+
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(inp: VsIn) -> VsOut {
+    var out: VsOut;
+    let ndc = vec2<f32>(inp.pos.x * vp.scale.x + vp.translate.x,
+                        inp.pos.y * vp.scale.y + vp.translate.y);
+    out.pos = vec4<f32>(ndc, 0.0, 1.0);
+    out.uv = inp.uv;
+    return out;
+}
+
+@group(1) @binding(0) var mask_tex: texture_2d<f32>;
+@group(1) @binding(1) var mask_smp: sampler;
+
+struct TextColor { color: vec4<f32> }; // premultiplied linear RGBA
+@group(1) @binding(2) var<uniform> text: TextColor;
+
+@fragment
+fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
+    // Nearest sampling prevents color bleeding across subpixels
+    let m = textureSample(mask_tex, mask_smp, inp.uv);
+    // RGB subpixel coverage; tint the premultiplied color per channel.
+    let rgb = vec3<f32>(text.color.r * m.r, text.color.g * m.g, text.color.b * m.b);
+    // Derive alpha from the maximum of coverage channels, scaled by color alpha.
+    let cov = max(m.r, max(m.g, m.b));
+    let a = text.color.a * cov;
+    return vec4<f32>(rgb, a);
+} 
+"#;
+
+/// Image rendering shader: samples an sRGB texture, converts to linear automatically via
+/// the sampler, and returns premultiplied color for correct blending. Intended for PNG/JPEG
+/// raster images uploaded as `Rgba8UnormSrgb`.
+///
+/// Bindings:
+/// - @group(0) @binding(0): Viewport uniform (shared layout with solids)
+/// - @group(1) @binding(0): Source texture (Rgba8UnormSrgb)
+/// - @group(1) @binding(1): Sampler (linear recommended)
+pub const IMAGE_WGSL: &str = r#"
+struct ViewportUniform {
+    scale: vec2<f32>,      // 2/W, -2/H
+    translate: vec2<f32>,  // (-1, +1)
+};
+
+@group(0) @binding(0) var<uniform> vp: ViewportUniform;
+
+struct VsIn {
+    @location(0) pos: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+};
+
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(inp: VsIn) -> VsOut {
+    var out: VsOut;
+    let ndc = vec2<f32>(inp.pos.x * vp.scale.x + vp.translate.x,
+                        inp.pos.y * vp.scale.y + vp.translate.y);
+    out.pos = vec4<f32>(ndc, 0.0, 1.0);
+    out.uv = inp.uv;
+    return out;
+}
+
+@group(1) @binding(0) var src_tex: texture_2d<f32>;
+@group(1) @binding(1) var src_smp: sampler;
+
+@fragment
+fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
+    let c = textureSample(src_tex, src_smp, inp.uv);
+    // Convert straight alpha to premultiplied for correct blending
+    let a = c.a;
+    return vec4<f32>(c.rgb * a, a);
 }
 "#;

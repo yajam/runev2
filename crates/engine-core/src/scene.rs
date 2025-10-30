@@ -62,7 +62,7 @@ pub enum Brush {
     // Pattern, RadialGradient etc. can be added later.
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
     pub x: f32,
     pub y: f32,
@@ -70,7 +70,7 @@ pub struct Rect {
     pub h: f32,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct RoundedRadii {
     pub tl: f32,
     pub tr: f32,
@@ -78,7 +78,7 @@ pub struct RoundedRadii {
     pub bl: f32,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RoundedRect {
     pub rect: Rect,
     pub radii: RoundedRadii,
@@ -86,6 +86,19 @@ pub struct RoundedRect {
 
 #[derive(Clone, Copy, Debug)]
 pub struct ClipRect(pub Rect);
+
+#[derive(Clone, Copy, Debug)]
+pub struct Stroke {
+    pub width: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct BoxShadowSpec {
+    pub offset: [f32; 2],
+    pub spread: f32,
+    pub blur_radius: f32,
+    pub color: ColorLinPremul,
+}
 
 #[derive(Clone, Debug)]
 pub enum Shape {
@@ -99,4 +112,24 @@ pub struct TextRun {
     pub pos: [f32; 2],
     pub size: f32,
     pub color: ColorLinPremul,
+}
+
+// --- Path geometry (for SVG import / lyon) ---
+
+#[derive(Clone, Copy, Debug)]
+pub enum FillRule { NonZero, EvenOdd }
+
+#[derive(Clone, Debug)]
+pub enum PathCmd {
+    MoveTo([f32; 2]),
+    LineTo([f32; 2]),
+    QuadTo([f32; 2], [f32; 2]),
+    CubicTo([f32; 2], [f32; 2], [f32; 2]),
+    Close,
+}
+
+#[derive(Clone, Debug)]
+pub struct Path {
+    pub cmds: Vec<PathCmd>,
+    pub fill_rule: FillRule,
 }

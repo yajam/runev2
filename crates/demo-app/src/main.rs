@@ -3,7 +3,7 @@ use engine_core::{
     GraphicsEngine, PassManager, Viewport, make_surface_config,
 };
 use pollster::FutureExt;
-use winit::event::{Event, WindowEvent};
+use winit::event::{ElementState, Event, MouseButton, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
 
@@ -66,6 +66,30 @@ fn main() -> Result<()> {
         || std::env::args().any(|a| a == "--scene=centered" || a == "--centered")
     {
         Box::new(scenes::centered_rect::CenteredRectScene::default())
+    } else if scene_env.as_deref() == Some("shadow")
+        || std::env::args().any(|a| a == "--scene=shadow" || a == "--shadow")
+    {
+        Box::new(scenes::shadow::ShadowScene::default())
+    } else if scene_env.as_deref() == Some("overlay")
+        || std::env::args().any(|a| a == "--scene=overlay" || a == "--overlay")
+    {
+        Box::new(scenes::overlay::OverlayScene::default())
+    } else if scene_env.as_deref() == Some("zones")
+        || std::env::args().any(|a| a == "--scene=zones" || a == "--zones")
+    {
+        Box::new(scenes::zones::ZonesScene::default())
+    } else if scene_env.as_deref() == Some("text")
+        || std::env::args().any(|a| a == "--scene=text" || a == "--text" || a == "--scene=text-demo")
+    {
+        Box::new(scenes::text_demo::TextDemoScene::default())
+    } else if scene_env.as_deref() == Some("images")
+        || std::env::args().any(|a| a == "--scene=images" || a == "--images")
+    {
+        Box::new(scenes::images::ImagesScene::default())
+    } else if scene_env.as_deref() == Some("path")
+        || std::env::args().any(|a| a == "--scene=path" || a == "--path" || a == "--scene=path-demo")
+    {
+        Box::new(scenes::path_demo::PathDemoScene::default())
     } else {
         Box::new(scenes::default::DefaultScene::default())
     };
@@ -78,6 +102,11 @@ fn main() -> Result<()> {
             Some(engine_core::upload_display_list(engine.allocator_mut(), &queue, dl).expect("upload failed"))
         }
         SceneKind::FullscreenBackground => None,
+    };
+    // Build initial hit-test index if the scene is geometry-based
+    let mut hit_index_opt: Option<engine_core::HitIndex> = match (&scene.kind(), &dlist_opt) {
+        (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
+        _ => None,
     };
     let mut passes = PassManager::new(engine.device(), config.format);
     #[cfg(target_os = "macos")]
@@ -94,6 +123,25 @@ fn main() -> Result<()> {
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(true); // Default to true for smooth resizing
     let mut needs_reupload = false;
+    let mut hovered_id: Option<usize> = None;
+    let mut pressed_id: Option<usize> = None;
+    let mut last_cursor_pos: [f32; 2] = [0.0, 0.0];
+
+    // Optional: font providers for text rendering (set DEMO_FONT to a .ttf path)
+    // Build RGB, BGR subpixel providers and a grayscale provider for comparisons.
+    let text_providers: Option<(
+        engine_core::SimpleFontdueProvider,
+        engine_core::SimpleFontdueProvider,
+        engine_core::GrayscaleFontdueProvider,
+    )> = std::env::var("DEMO_FONT")
+        .ok()
+        .and_then(|path| std::fs::read(path).ok())
+        .and_then(|bytes| {
+            let rgb = engine_core::SimpleFontdueProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::RGB).ok()?;
+            let bgr = engine_core::SimpleFontdueProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::BGR).ok()?;
+            let gray = engine_core::GrayscaleFontdueProvider::from_bytes(&bytes).ok()?;
+            Some((rgb, bgr, gray))
+        });
 
     // Basic event loop that clears the frame
     event_loop.run(move |event, target| match event {
@@ -120,10 +168,120 @@ fn main() -> Result<()> {
                         } else if let Some(dl) = &mut dlist_opt {
                             dl.viewport = vp;
                         }
+                        // Rebuild hit-test index for updated display list
+                        hit_index_opt = match (&scene.kind(), &dlist_opt) {
+                            (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
+                            _ => None,
+                        };
                     }
                     SceneKind::FullscreenBackground => {}
                 }
                 needs_reupload = true;
+            }
+        }
+        // Map mouse moves to hit-test queries
+        Event::WindowEvent { event: WindowEvent::CursorMoved { position, .. }, window_id } if window_id == window.id() => {
+            if let Some(index) = hit_index_opt.as_ref() {
+                let pos = [position.x as f32, position.y as f32];
+                last_cursor_pos = pos;
+                let res = index.topmost_at(pos);
+                let new_hover = res.as_ref().map(|r| r.id);
+                if new_hover != hovered_id {
+                    hovered_id = new_hover;
+                    if let Some(ref r) = res {
+                        let title = format!("Rune Draw Demo — Hover: {:?} (id={}, z={})", r.kind, r.id, r.z);
+                        window.set_title(&title);
+                        eprintln!("hover -> kind={:?} id={} z={}", r.kind, r.id, r.z);
+                    } else {
+                        window.set_title("Rune Draw Demo");
+                    }
+                }
+                // Scene event: pointer move (may update DL for hover highlight)
+                if let SceneKind::Geometry = scene.kind() {
+                    if let Some(new_dl) = scene.on_pointer_move(pos, res.as_ref()) {
+                        dlist_opt = Some(new_dl);
+                        hit_index_opt = match (&scene.kind(), &dlist_opt) {
+                            (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
+                            _ => None,
+                        };
+                        needs_reupload = true;
+                        window.request_redraw();
+                    }
+                }
+                if pressed_id.is_some() {
+                    if let Some(ref r) = res {
+                        eprintln!("dragging over kind={:?} id={} z={}", r.kind, r.id, r.z);
+                    }
+                    // Scene drag update
+                    if let SceneKind::Geometry = scene.kind() {
+                        if let Some(new_dl) = scene.on_drag(pos, res.as_ref()) {
+                            dlist_opt = Some(new_dl);
+                            hit_index_opt = match (&scene.kind(), &dlist_opt) {
+                                (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
+                                _ => None,
+                            };
+                            needs_reupload = true;
+                            window.request_redraw();
+                        }
+                    }
+                }
+            }
+        }
+        // Mouse press/release -> click/drag bookkeeping
+        Event::WindowEvent { event: WindowEvent::MouseInput { state, button, .. }, window_id } if window_id == window.id() => {
+            if let (Some(index), MouseButton::Left) = (hit_index_opt.as_ref(), button) {
+                if state == ElementState::Pressed {
+                    let res = index.topmost_at(last_cursor_pos);
+                    pressed_id = res.as_ref().map(|r| r.id);
+                    if let Some(ref r) = res { eprintln!("pressed kind={:?} id={} z={}", r.kind, r.id, r.z); }
+                    // Scene pointer down
+                    if let SceneKind::Geometry = scene.kind() {
+                        if let Some(new_dl) = scene.on_pointer_down(last_cursor_pos, res.as_ref()) {
+                            dlist_opt = Some(new_dl);
+                            hit_index_opt = match (&scene.kind(), &dlist_opt) {
+                                (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
+                                _ => None,
+                            };
+                            needs_reupload = true;
+                            window.request_redraw();
+                        }
+                    }
+                } else {
+                    let res = index.topmost_at(last_cursor_pos);
+                    if let (Some(pid), Some(r)) = (pressed_id.take(), res.clone()) {
+                        if pid == r.id {
+                            eprintln!("clicked kind={:?} id={} z={}", r.kind, r.id, r.z);
+                            // Scene click
+                            if let SceneKind::Geometry = scene.kind() {
+                                if let Some(new_dl) = scene.on_click(last_cursor_pos, res.as_ref()) {
+                                    dlist_opt = Some(new_dl);
+                                    hit_index_opt = match (&scene.kind(), &dlist_opt) {
+                                        (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
+                                        _ => None,
+                                    };
+                                    needs_reupload = true;
+                                    window.request_redraw();
+                                }
+                            }
+                        } else {
+                            eprintln!("released over different target kind={:?} id={} z={} (pressed id={})", r.kind, r.id, r.z, pid);
+                        }
+                    } else {
+                        pressed_id = None;
+                    }
+                    // Scene pointer up
+                    if let SceneKind::Geometry = scene.kind() {
+                        if let Some(new_dl) = scene.on_pointer_up(last_cursor_pos, res.as_ref()) {
+                            dlist_opt = Some(new_dl);
+                            hit_index_opt = match (&scene.kind(), &dlist_opt) {
+                                (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
+                                _ => None,
+                            };
+                            needs_reupload = true;
+                            window.request_redraw();
+                        }
+                    }
+                }
             }
         }
         Event::WindowEvent {
@@ -150,31 +308,87 @@ fn main() -> Result<()> {
                         if let Some(gpu_scene) = gpu_scene_opt.as_ref() {
                             let queue = engine.queue();
                             if use_intermediate {
-                                // Use intermediate texture for Vello-style smooth resizing
-                                passes.render_frame_with_intermediate(
+                                if let (Some(dl), Some(provider)) = (dlist_opt.as_ref(), text_providers.as_ref().map(|(rgb, _, _)| rgb)) {
+                                    passes.render_frame_with_intermediate_and_text(
+                                        &mut encoder,
+                                        engine.allocator_mut(),
+                                        &view,
+                                        size.width,
+                                        size.height,
+                                        gpu_scene,
+                                        wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
+                                        &queue,
+                                        dl,
+                                        provider as &dyn engine_core::TextProvider,
+                                    );
+                                } else {
+                                    passes.render_frame_with_intermediate(
+                                        &mut encoder,
+                                        engine.allocator_mut(),
+                                        &view,
+                                        size.width,
+                                        size.height,
+                                        gpu_scene,
+                                        wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
+                                        bypass,
+                                        &queue,
+                                    );
+                                }
+                            } else {
+                                if let (Some(dl), Some(provider)) = (dlist_opt.as_ref(), text_providers.as_ref().map(|(rgb, _, _)| rgb)) {
+                                    passes.render_frame_and_text(
+                                        &mut encoder,
+                                        engine.allocator_mut(),
+                                        &view,
+                                        size.width,
+                                        size.height,
+                                        gpu_scene,
+                                        wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
+                                        bypass,
+                                        &queue,
+                                        true,
+                                        dl,
+                                        provider as &dyn engine_core::TextProvider,
+                                    );
+                                } else {
+                                    passes.render_frame(
+                                        &mut encoder,
+                                        engine.allocator_mut(),
+                                        &view,
+                                        size.width,
+                                        size.height,
+                                        gpu_scene,
+                                        wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
+                                        bypass,
+                                        &queue,
+                                        true,
+                                    );
+                                }
+                            }
+                            // After solids (and any default text), let the scene optionally paint a text overlay
+                            if let Some((ref rgb, ref bgr, ref gray)) = text_providers {
+                                scene.paint_text_overlay(
+                                    &mut passes,
                                     &mut encoder,
-                                    engine.allocator_mut(),
                                     &view,
+                                    &queue,
                                     size.width,
                                     size.height,
-                                    gpu_scene,
-                                    wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
-                                    bypass,
-                                    &queue,
+                                    Some(rgb as &dyn engine_core::TextProvider),
+                                    Some(bgr as &dyn engine_core::TextProvider),
+                                    Some(gray as &dyn engine_core::TextProvider),
                                 );
                             } else {
-                                // Direct rendering (old path)
-                                passes.render_frame(
+                                scene.paint_text_overlay(
+                                    &mut passes,
                                     &mut encoder,
-                                    engine.allocator_mut(),
                                     &view,
+                                    &queue,
                                     size.width,
                                     size.height,
-                                    gpu_scene,
-                                    wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
-                                    bypass,
-                                    &queue,
-                                    true,
+                                    None,
+                                    None,
+                                    None,
                                 );
                             }
                         }
@@ -185,6 +399,8 @@ fn main() -> Result<()> {
                         if use_intermediate {
                             // Render to intermediate texture then blit
                             passes.ensure_intermediate_texture(engine.allocator_mut(), size.width, size.height);
+                            // Clear intermediate texture before rendering
+                            passes.clear_intermediate_texture(&mut encoder, wgpu::Color::TRANSPARENT);
                             // Create a temporary texture view to avoid borrow issues
                             let intermediate_tex = passes.intermediate_texture.as_ref().unwrap();
                             let intermediate_view = intermediate_tex.texture.create_view(&wgpu::TextureViewDescriptor::default());
