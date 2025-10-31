@@ -52,3 +52,4 @@ pub mod zones;
 pub mod text_demo;
 pub mod path_demo;
 pub mod images;
+pub mod svg_geom;

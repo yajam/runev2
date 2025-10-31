@@ -20,6 +20,7 @@ This document describes what the current engine supports and how to use it in yo
 - Display list commands (see `crates/engine-core/src/display_list.rs:10`):
   - `DrawRect`, `DrawRoundedRect`, `DrawEllipse`, `DrawText`
   - `StrokeRect`, `StrokeRoundedRect`
+  - `FillPath` (solid), `StrokePath` (width only; round cap/join)
   - `BoxShadow` for rounded rects (rendered by a dedicated pass)
   - `PushClip`/`PopClip` with `ClipRect`
   - `PushTransform`/`PopTransform` with `Transform2D`
@@ -40,6 +41,7 @@ This document describes what the current engine supports and how to use it in yo
 - Upload CPU geometry to GPU buffers:
   - `let gpu_scene = engine_core::upload_display_list(allocator, &queue, &dl)?;`
   - Returns `GpuScene` with vertex/index buffers used by renderers.
+  - Lyon tessellation tolerance can be tuned via `LYON_TOLERANCE` (default `0.1`).
 
 - Pass manager (`crates/engine-core/src/pass_manager.rs:1`):
   - `PassManager::new(device, target_format)` sets up pipelines for solids, compositor, blur/shadow, backgrounds.
@@ -74,6 +76,7 @@ This document describes what the current engine supports and how to use it in yo
   - `local_uv`: normalized [0..1] coordinates in shape’s bounding box when applicable.
 - Supported hit tests:
   - Rect, RoundedRect (with corner radii), Ellipse, StrokeRect, StrokeRoundedRect.
+  - Path (coarse bbox only).
   - Text currently returns no hit.
   - Nested clip rects are respected. Transforms are inverted to local space for geometric checks.
 - Rebuild the `HitIndex` whenever your display list changes (including on resize).
@@ -136,14 +139,16 @@ Notes:
   - `overlay` demonstrates a modal overlay and uses the root hit region (`region_id = u32::MAX`) to close when clicking the background.
   - `zones` demonstrates two-column layout (sidebar + main) with red and blue zone rectangles. Clicking a zone reports coordinates in that zone’s local coordinate system and places a marker at the clicked point.
   - `text` shows grayscale vs subpixel text side-by-side. Click the RGB/BGR buttons (top-right) to switch subpixel orientation. Requires `DEMO_FONT` to be set to a `.ttf` path.
-  - `images` displays all images from the `images/` folder in a grid. Supports PNG, JPEG, SVG (rasterized via resvg), and GIF (animated). Drop files into `images/` and run with `--scene=images`.
+  - `images` displays all images from the `images/` folder in a grid. Supports PNG, JPEG, SVG (rasterized via resvg), GIF (animated), and WebP (static and some animated files). Drop files into `images/` and run with `--scene=images`.
+  - `svg` imports `.svg` files from the same `images/` folder as vector geometry using lyon tessellation (solid fills). Run with `--scene=svg`.
 - Environment toggles:
   - `USE_INTERMEDIATE=1` (default) enables intermediate texture for smooth resizing.
   - `BYPASS_COMPOSITOR=1` forces direct rendering path for solids.
   - `DEBUG_RADIAL=1` enables internal debug visualization for some backgrounds.
-  - `DEMO_FONT=/path/to/font.ttf` enables text rendering for `DrawText` commands in the demo via a simple fontdue provider.
-  - `DEMO_SUBPIXEL_OFFSET=0.33` controls a fractional X offset applied to subpixel text in the `text` scene to accentuate orientation differences. Default is `0.33`.
-  - `DEMO_SNAP_X=1` rounds the run X to integer pixels for stricter alignment (useful for small text or fonts with fractional advances).
+  - `DEMO_FONT=/path/to/font.ttf` sets the font used by the demo text providers. With the default cosmic-text shaper, the demo uses system fonts when this is unset; when set, both the cosmic providers and the grayscale (fontdue) provider use the specified font.
+- `DEMO_SUBPIXEL_OFFSET=0.33` controls a fractional X offset applied to subpixel text in the `text` scene to accentuate orientation differences. Default is `0.33`.
+- `DEMO_SNAP_X=1` rounds the run X to integer pixels for stricter alignment (useful for small text or fonts with fractional advances).
+- `DEMO_LINE_PAD=<px>` extra baseline spacing between the first and second sample lines in the text demo. Defaults to `size * 0.25`.
 - Interactions
   - Hover: window title shows `kind`, `id`, and `z`. Centered scene highlights hovered elements.
   - Click/Drag: events are logged to stdout. Scenes can opt-in to react visually by returning updated `DisplayList`s.
@@ -192,6 +197,7 @@ Two ways to draw text
   - Implement `engine_core::TextProvider` or use the built-ins:
     - `SimpleFontdueProvider::from_bytes(bytes, SubpixelOrientation::RGB|BGR)`
     - `GrayscaleFontdueProvider::from_bytes(bytes)`
+    - `CosmicTextProvider::from_bytes(bytes, SubpixelOrientation::RGB|BGR)` (feature `cosmic_text_shaper`)
   - Render: `passes.render_text_for_list(encoder, target_view, &display_list, &queue, provider)`.
   - Or render solids + text together:
     - `render_frame_and_text` (direct or offscreen)
@@ -233,6 +239,30 @@ Notes
 - If you only have a grayscale mask, convert it with `grayscale_to_rgb_equal`.
 - 16-bit masks are supported via `grayscale_to_subpixel_rgb16`/`grayscale_to_rgb_equal16`; `draw_text_mask` uploads as `Rgba16Unorm` when provided.
 - For zero-copy subpixel masks, enable the `fontdue-rgb-patch` feature and use `PatchedFontdueProvider`.
+- `TextRun::pos` is baseline-anchored. If you want to position using top-left, add the provider’s ascent: `pos_y = top_y + provider.line_metrics(px).map(|m| m.ascent).unwrap_or(px*0.8)`.
+
+Enabling the cosmic-text shaper
+
+- Add the feature to `engine-core` and include the dep:
+  - `[dependencies] engine-core = { path = "...", features = ["cosmic_text_shaper"] }`
+- Construct a provider from bytes or system fonts:
+  - `let provider = engine_core::CosmicTextProvider::from_bytes(ttf_bytes, SubpixelOrientation::RGB)?;`
+  - or `let provider = engine_core::CosmicTextProvider::from_system_fonts(SubpixelOrientation::RGB);`
+- The provider uses cosmic-text for shaping (ligatures, bidi, fallback) and swash for rasterization,
+  then converts grayscale coverage to RGB subpixel masks for the GPU text pass.
+
+Enabling the FreeType FFI rasterizer
+
+- Enable the feature on `engine-core` (and forward it from the demo if desired):
+  - `[dependencies] engine-core = { path = "...", features = ["cosmic_text_shaper", "freetype_ffi"] }`
+  - Demo: add `freetype_ffi` feature or run with `--features demo-app/freetype_ffi`
+- Construct a provider from bytes using FreeType for hinted LCD masks, shaped by cosmic-text:
+  - `let provider = engine_core::FreeTypeProvider::from_bytes(ttf_bytes, SubpixelOrientation::RGB)?;`
+- Demo toggle: set `DEMO_FREETYPE=1` to use the FreeType-backed provider for the subpixel column when `DEMO_FONT` is provided.
+- Notes:
+  - Uses FreeType’s LCD filter (Normal) and hinting for small font clarity.
+  - Orientation `RGB/BGR` is respected by channel order mapping.
+  - Currently supports `from_bytes`; system font fallback remains via the cosmic-text path.
 
 Enabling the patched fontdue provider
 

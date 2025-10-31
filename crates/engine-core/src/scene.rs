@@ -8,6 +8,19 @@ pub struct Transform2D {
 
 impl Transform2D {
     pub fn identity() -> Self { Self { m: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0] } }
+
+    /// Compose two transforms: self ∘ other (apply `other`, then `self`).
+    pub fn concat(self, other: Self) -> Self {
+        let [a1, b1, c1, d1, e1, f1] = self.m;
+        let [a2, b2, c2, d2, e2, f2] = other.m;
+        let a = a1 * a2 + c1 * b2;
+        let b = b1 * a2 + d1 * b2;
+        let c = a1 * c2 + c1 * d2;
+        let d = b1 * c2 + d1 * d2;
+        let e = a1 * e2 + c1 * f2 + e1;
+        let f = b1 * e2 + d1 * f2 + f1;
+        Self { m: [a, b, c, d, e, f] }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]

@@ -16,6 +16,8 @@ pub enum Command {
     DrawEllipse { center: [f32; 2], radii: [f32; 2], brush: Brush, z: i32, transform: Transform2D },
     /// Filled path (solid color only for now)
     FillPath { path: Path, color: ColorLinPremul, z: i32, transform: Transform2D },
+    /// Stroked path (width only; round join/cap for now)
+    StrokePath { path: Path, stroke: Stroke, color: ColorLinPremul, z: i32, transform: Transform2D },
     /// Box shadow for a rounded rectangle. This is handled by a dedicated pass in PassManager,
     /// not by the generic solid fill pipeline.
     BoxShadow { rrect: RoundedRect, spec: BoxShadowSpec, z: i32, transform: Transform2D },

@@ -86,6 +86,10 @@ fn main() -> Result<()> {
         || std::env::args().any(|a| a == "--scene=images" || a == "--images")
     {
         Box::new(scenes::images::ImagesScene::default())
+    } else if scene_env.as_deref() == Some("svg")
+        || std::env::args().any(|a| a == "--scene=svg" || a == "--svg" || a == "--scene=svg-geom")
+    {
+        Box::new(scenes::svg_geom::SvgGeomScene::default())
     } else if scene_env.as_deref() == Some("path")
         || std::env::args().any(|a| a == "--scene=path" || a == "--path" || a == "--scene=path-demo")
     {
@@ -130,18 +134,71 @@ fn main() -> Result<()> {
     // Optional: font providers for text rendering (set DEMO_FONT to a .ttf path)
     // Build RGB, BGR subpixel providers and a grayscale provider for comparisons.
     let text_providers: Option<(
-        engine_core::SimpleFontdueProvider,
-        engine_core::SimpleFontdueProvider,
-        engine_core::GrayscaleFontdueProvider,
-    )> = std::env::var("DEMO_FONT")
-        .ok()
-        .and_then(|path| std::fs::read(path).ok())
-        .and_then(|bytes| {
-            let rgb = engine_core::SimpleFontdueProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::RGB).ok()?;
-            let bgr = engine_core::SimpleFontdueProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::BGR).ok()?;
-            let gray = engine_core::GrayscaleFontdueProvider::from_bytes(&bytes).ok()?;
-            Some((rgb, bgr, gray))
-        });
+        Box<dyn engine_core::TextProvider>,
+        Box<dyn engine_core::TextProvider>,
+        Box<dyn engine_core::TextProvider>,
+    )> = {
+        // Prefer cosmic-text by default; fall back to fontdue if feature is off
+        #[cfg(feature = "cosmic_text_shaper")]
+        {
+            let use_freetype = std::env::var("DEMO_FREETYPE").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+            if let Ok(path) = std::env::var("DEMO_FONT") {
+                if let Ok(bytes) = std::fs::read(path) {
+                    #[cfg(feature = "freetype_ffi")]
+                    let (rgb_res, bgr_res) = if use_freetype {
+                        (
+                            engine_core::FreeTypeProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::RGB)
+                                .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
+                            engine_core::FreeTypeProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::BGR)
+                                .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
+                        )
+                    } else {
+                        (
+                            engine_core::CosmicTextProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::RGB)
+                                .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
+                            engine_core::CosmicTextProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::BGR)
+                                .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
+                        )
+                    };
+                    #[cfg(not(feature = "freetype_ffi"))]
+                    let (rgb_res, bgr_res) = (
+                        engine_core::CosmicTextProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::RGB)
+                            .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
+                        engine_core::CosmicTextProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::BGR)
+                            .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
+                    );
+                    let gray_res = engine_core::GrayscaleFontdueProvider::from_bytes(&bytes)
+                        .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) });
+                    if let (Ok(rgb), Ok(bgr), Ok(gray)) = (rgb_res, bgr_res, gray_res) {
+                        Some((rgb, bgr, gray))
+                    } else {
+                        None
+                    }
+                } else { None }
+            } else {
+                // Use system fonts for cosmic provider when DEMO_FONT is not set
+                let rgb = engine_core::CosmicTextProvider::from_system_fonts(engine_core::SubpixelOrientation::RGB);
+                let bgr = engine_core::CosmicTextProvider::from_system_fonts(engine_core::SubpixelOrientation::BGR);
+                // For grayscale comparison, reuse RGB provider (subpixel), if no DEMO_FONT available
+                Some((Box::new(rgb), Box::new(bgr), Box::new(engine_core::CosmicTextProvider::from_system_fonts(engine_core::SubpixelOrientation::RGB))))
+            }
+        }
+        #[cfg(not(feature = "cosmic_text_shaper"))]
+        {
+            std::env::var("DEMO_FONT")
+                .ok()
+                .and_then(|path| std::fs::read(path).ok())
+                .and_then(|bytes| {
+                    let rgb = engine_core::SimpleFontdueProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::RGB).ok();
+                    let bgr = engine_core::SimpleFontdueProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::BGR).ok();
+                    let gray = engine_core::GrayscaleFontdueProvider::from_bytes(&bytes).ok();
+                    match (rgb, bgr, gray) {
+                        (Some(rgb), Some(bgr), Some(gray)) => Some((Box::new(rgb), Box::new(bgr), Box::new(gray))),
+                        _ => None,
+                    }
+                })
+        }
+    };
 
     // Basic event loop that clears the frame
     event_loop.run(move |event, target| match event {
@@ -308,7 +365,7 @@ fn main() -> Result<()> {
                         if let Some(gpu_scene) = gpu_scene_opt.as_ref() {
                             let queue = engine.queue();
                             if use_intermediate {
-                                if let (Some(dl), Some(provider)) = (dlist_opt.as_ref(), text_providers.as_ref().map(|(rgb, _, _)| rgb)) {
+                                if let (Some(dl), Some(provider)) = (dlist_opt.as_ref(), text_providers.as_ref().map(|(rgb, _, _)| &**rgb)) {
                                     passes.render_frame_with_intermediate_and_text(
                                         &mut encoder,
                                         engine.allocator_mut(),
@@ -335,7 +392,7 @@ fn main() -> Result<()> {
                                     );
                                 }
                             } else {
-                                if let (Some(dl), Some(provider)) = (dlist_opt.as_ref(), text_providers.as_ref().map(|(rgb, _, _)| rgb)) {
+                                if let (Some(dl), Some(provider)) = (dlist_opt.as_ref(), text_providers.as_ref().map(|(rgb, _, _)| &**rgb)) {
                                     passes.render_frame_and_text(
                                         &mut encoder,
                                         engine.allocator_mut(),
@@ -374,9 +431,9 @@ fn main() -> Result<()> {
                                     &queue,
                                     size.width,
                                     size.height,
-                                    Some(rgb as &dyn engine_core::TextProvider),
-                                    Some(bgr as &dyn engine_core::TextProvider),
-                                    Some(gray as &dyn engine_core::TextProvider),
+                                    Some(&**rgb),
+                                    Some(&**bgr),
+                                    Some(&**gray),
                                 );
                             } else {
                                 scene.paint_text_overlay(

@@ -75,12 +75,14 @@
 - [x] `TextProvider` API with `SimpleFontdueProvider` (RGB/BGR) and `GrayscaleFontdueProvider`
 - [x] Baseline alignment fixed: snap run baseline using line metrics ascent so descenders render correctly
 - [x] Demo toggles: RGB/BGR orientation, color, and size; `DEMO_SNAP_X`, `DEMO_SUBPIXEL_OFFSET`
+- [x] `CosmicTextProvider` (feature `cosmic_text_shaper`, enabled by default) for advanced shaping (ligatures, RTL/bidi, fallback) using cosmic-text + swash
 - [ ] Fork `fontdue` to emit native RGB/16‑bit masks (avoid CPU conversion)
   - [x] Engine plumbing: `SubpixelMask` supports RGBA8/RGBA16, uploader selects `Rgba8Unorm`/`Rgba16Unorm`
   - [x] Add `PatchedFontdueProvider` behind `fontdue-rgb-patch` feature
   - [ ] Publish/point to patched `fontdue` crate and enable feature in builds
-- [ ] Extend `cosmic-text`: `RenderSettings::SubpixelAA` + RGB/BGR toggle
-- [ ] Add FreeType FFI path for hinted masks at small sizes
+- [ ] Extend `cosmic-text`: `RenderSettings::SubpixelAA` + RGB/BGR toggle (nice-to-have; provider already converts grayscale→RGB)
+ - [x] Add FreeType FFI path for hinted masks at small sizes
+   - Implemented `FreeTypeProvider` behind the `freetype_ffi` feature. Shapes via `cosmic-text`, rasterizes via FreeType LCD with hinting; respects RGB/BGR orientation.
 
 ## Phase 7.5 - Image rendering SVG including
 
@@ -91,9 +93,9 @@
 
 ### Phase 7.5.1 — SVG Rasterization & Caching (usvg + resvg)
 
-- [ ] Integrate usvg+resvg raster pipeline in engine-core (not just demo)
-- [ ] Raster cache keyed by scale (DPI × zoom) with bucketed scales (e.g. 0.5×/1×/2×)
-- [ ] Memory guardrails: max texture size, cache size, LRU eviction
+- [x] Integrate usvg+resvg raster pipeline in engine-core (not just demo)
+- [x] Raster cache keyed by scale (DPI × zoom) with bucketed scales (e.g. 0.5×/1×/2×)
+- [x] Memory guardrails: max texture size, cache size, LRU eviction
 - [ ] Threshold policy integration:
   - [ ] < 1k paths → prefer geometry
   - [ ] 1k–10k paths → rasterize once per scale, cache
@@ -105,30 +107,32 @@
 ### Phase 7.5.2 — SVG Geometry Import (lyon)
 
 - [ ] Basic shapes → primitives
-  - [ ] Rect / RoundedRect / Ellipse → Painter primitives
-- [ ] Path support (lyon)
-  - [ ] Convert usvg path data → PathCmd (move/line/quad/cubic/close)
-  - [ ] Map fill rule (nonzero/even-odd) and tessellate via lyon
-  - [ ] Configurable tessellation tolerance
-- [ ] Stroke support
-  - [ ] Width, join, cap; basic dash (optional)
+  - [x] Rect → Painter primitive (axis‑aligned detection from usvg path)
+  - [ ] RoundedRect / Ellipse → Painter primitives
+- [x] Path support (lyon)
+  - [x] Convert usvg path data → PathCmd (move/line/quad/cubic/close)
+  - [x] Map fill rule (nonzero/even-odd) and tessellate via lyon
+  - [x] Configurable tessellation tolerance
+- [x] Stroke support
+  - [x] Width, join, cap (round defaults); basic dash — pending
 - [ ] Paint mapping
-  - [ ] Solid fill → Brush::Solid (sRGB→linear premultiplied)
+  - [x] Solid fill → Brush::Solid (sRGB→linear premultiplied)
   - [ ] Linear/Radial gradients → Brush::{LinearGradient, RadialGradient}
 - [ ] Transforms, groups, and z-order
-  - [ ] Push/pop transform per group/node
+  - [x] Push/pop transform per node (absolute transform per path)
   - [ ] Group opacity handling (premultiplied blend)
 - [ ] Clip integration
   - [ ] Rect clip → push_clip_rect
-  - [ ] Simple shape clipPath (optional); fallback otherwise
+  - [ ] Simple shape clipPath; fallback otherwise
 - [ ] Fallback policy
   - [ ] If unsupported attributes present (filters/masks/patterns/text/complex clipPath), rasterize that subtree
 - [ ] Hit testing
   - [ ] Geometry: re-use existing hit paths (rect/rrect/ellipse)
-  - [ ] Path: coarse bbox hit (phase 1), optional lyon point-in-path (phase 2)
-- [ ] Demo: import selected SVGs as geometry and compare to raster fallback
+  - [x] Path: coarse bbox hit (phase 1), optional lyon point-in-path (phase 2)
+- [x] Demo: import selected SVGs as geometry and compare to raster fallback
+  - Geometry scene added (`--scene=svg`); raster toggle/compare pending.
 
-- [ ] move caching into engine-core, make scenes reference lightweight handles, and eventually back it with a shared GPU atlas.
+- [x] move caching into engine-core, make scenes reference lightweight handles, and eventually back it with a shared GPU atlas.
 
 ## Phase 8 — Color Management
 
@@ -176,6 +180,18 @@
 - [ ] Maintain `cosmic-text` and `fontdue` patch branches
 - [ ] Prepare upstreamable PRs (linear color, subpixel AA)
 - [ ] Tag crates and publish demo instructions
+
+## Phase 15 — SVG Animation Runtime (Declarative)
+
+- [ ] Declarative subset (SMIL): `\<animate\>`, `\<animateTransform\>`
+  - [ ] Properties: `opacity`, `transform` (translate/scale/rotate), `stroke-dashoffset`
+  - [ ] Optional: `fill`/`stroke` color interpolation (linear RGB)
+- [ ] Timing model: `begin`/`dur`/`end`, `repeatCount`, `keyTimes`, `keySplines`, `calcMode` (linear/spline)
+- [ ] Node binding: attach animations to imported geometry (7.5.2) and compute per‑frame state
+- [ ] Scheduler: timeline engine (vsync‑driven), pause/resume, fixed timestep option
+- [ ] Integration policy: geometry path first; raster fallback for unsupported filters/masks/patterns/text
+- [ ] Controls & debug: env toggles (`SVG_ANIM_ENABLE`, `SVG_ANIM_FPS`), counters/logging, HUD overlay
+- [ ] Demo: add animated SVG scene with per‑file toggle and a simple scrubber
 
 ## Backlog / Future Extensions
 

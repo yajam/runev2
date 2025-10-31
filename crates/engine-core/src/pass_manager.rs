@@ -38,6 +38,7 @@ pub struct PassManager {
     pub shadow_comp: ShadowCompositeRenderer,
     pub text: TextRenderer,
     pub image: crate::pipeline::ImageRenderer,
+    pub svg_cache: crate::svg::SvgRasterCache,
     offscreen_format: wgpu::TextureFormat,
     surface_format: wgpu::TextureFormat,
     vp_buffer: wgpu::Buffer,
@@ -105,6 +106,7 @@ impl PassManager {
         let shadow_comp = ShadowCompositeRenderer::new(device.clone(), target_format);
         let text = TextRenderer::new(device.clone(), target_format);
         let image = crate::pipeline::ImageRenderer::new(device.clone(), target_format);
+        let svg_cache = crate::svg::SvgRasterCache::new(device.clone());
         let bg = BackgroundRenderer::new(device.clone(), target_format);
         let vp_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("viewport-uniform"),
@@ -136,6 +138,7 @@ impl PassManager {
             shadow_comp,
             text,
             image,
+            svg_cache,
             offscreen_format,
             surface_format: target_format,
             vp_buffer,
@@ -219,6 +222,19 @@ impl PassManager {
             timestamp_writes: None,
         });
         self.image.record(&mut pass, &vp_bg, &tex_bg, &vbuf, &ibuf, idx.len() as u32);
+    }
+
+    /// Rasterize an SVG file to a cached texture for the given scale.
+    /// Returns a texture view and its pixel dimensions on success.
+    pub fn rasterize_svg_to_view(
+        &mut self,
+        path: &std::path::Path,
+        scale: f32,
+        queue: &wgpu::Queue,
+    ) -> Option<(wgpu::TextureView, u32, u32)> {
+        let (tex, w, h) = self.svg_cache.get_or_rasterize(path, scale, queue)?;
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        Some((view, w, h))
     }
 
     /// Draw an RGB subpixel coverage text mask tinted with the given premultiplied color

@@ -96,6 +96,7 @@ mod pipeline;
 mod pass_manager;
 mod hit_test;
 mod text;
+mod svg;
 
 pub use scene::*;
 pub use display_list::*;
@@ -107,3 +108,4 @@ pub use pass_manager::Background as RootBackground;
 pub use pipeline::Blitter;
 pub use hit_test::*;
 pub use text::*;
+pub use svg::*;

@@ -140,6 +140,9 @@ impl CenteredRectScene {
                 HitShape::Ellipse { center, radii } => {
                     painter.ellipse(*center, *radii, Brush::Solid(ColorLinPremul::from_srgba(0, 255, 255, 0.12)), 10);
                 }
+                HitShape::PathBBox { rect } => {
+                    painter.stroke_rect(*rect, Stroke { width: 2.0 }, highlight.clone(), 10);
+                }
                 HitShape::Text | HitShape::BoxShadow { .. } => {}
             }
         }

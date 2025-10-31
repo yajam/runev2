@@ -47,7 +47,7 @@ Achieve a production-grade, GPU-native 2D renderer (Rune Engine Core) with full 
 | Subpixel AA (RGB mask)         | ✅     | ⚙️ Medium  | Provider + GPU pass integrated      |
 | Fractional glyph positioning   | 🟡     | ⚙️ Medium  | Needed for small font crispness     |
 | Baseline alignment             | ✅     | ⚙️ Easy    | Fixed via run baseline snapping     |
-| Font hinting (FreeType bridge) | ⏳     | ⚙️ Medium  | Optional per-size toggle            |
+| Font hinting (FreeType bridge) | 🟡     | ⚙️ Medium  | Implemented via `freetype_ffi` (bytes only); demo toggle `DEMO_FREETYPE=1` |
 | Decorations (underline/strike) | ⏳     | ⚙️ Easy    | Vector line or shader pass          |
 
 ---
@@ -57,6 +57,7 @@ Achieve a production-grade, GPU-native 2D renderer (Rune Engine Core) with full 
 | Feature                     | Status | Difficulty | Notes                               |
 | --------------------------- | ------ | ---------- | ----------------------------------- |
 | PNG / JPEG raster sampling  | 🟡     | ⚙️ Easy    | GPU texture upload, sRGB correction |
+| SVG rasterization + caching | 🟢     | ⚙️ Medium  | usvg+resvg raster; bucketed scale cache in engine-core |
 | SVG path import             | ⏳     | ⚙️ Hard    | Convert `usvg` → geometry IR        |
 | Gradient & mask integration | ⏳     | ⚙️ Medium  | SVG paint servers mapped to brushes |
 | Image caching / atlas       | ⏳     | ⚙️ Medium  | Prevent re-uploads on redraw        |
@@ -106,6 +107,18 @@ Achieve a production-grade, GPU-native 2D renderer (Rune Engine Core) with full 
 | Layer visualization     | ⏳     | ⚙️ Medium  | Show blend passes / offscreen buffers |
 | GPU capture integration | ⏳     | ⚙️ Easy    | RenderDoc marker scopes               |
 | Validation scenes       | ⏳     | ⚙️ Medium  | Automated diff vs. reference images   |
+
+---
+
+## 🔟 Stage 10: SVG Animation Runtime
+
+| Feature                                  | Status | Difficulty | Notes                                                              |
+| ---------------------------------------- | ------ | ---------- | ------------------------------------------------------------------ |
+| Declarative SMIL subset                   | ⏳     | ⚙️ Hard    | Support `<animate>` and `<animateTransform>`                        |
+| Properties: opacity, transform, dashoffset| ⏳     | ⚙️ Medium  | Translate to engine primitives; linear RGB for color, if added     |
+| Timing model (dur/repeat/keyTimes/splines)| ⏳     | ⚙️ Medium  | Timeline + easing; per-node state updates per frame                |
+| Scheduler + integration                   | ⏳     | ⚙️ Medium  | Vsync-driven loop, pause/resume, fixed timestep option             |
+| Non-goal: JS/CSS animation                | 🚫     | —          | No script execution; fallback to raster for unsupported features   |
 
 ---
 

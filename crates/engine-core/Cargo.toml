@@ -17,8 +17,19 @@ fontdue = { workspace = true }
 lyon_tessellation = "1.0"
 lyon_path = "1.0"
 lyon_geom = "1.0"
+usvg = { version = "0.42", default-features = true }
+resvg = { version = "0.42", default-features = true }
+tiny-skia = "0.11"
+# Optional: advanced shaping + raster via cosmic-text (HarfBuzz/Swash)
+cosmic-text = { version = "0.15", default-features = true, features = ["swash"], optional = true }
+freetype-rs = { version = "0.38", optional = true }
 
 [features]
-default = []
+default = ["cosmic_text_shaper"]
 # Enable when using a patched fontdue fork that can emit RGB/16-bit masks directly.
 fontdue-rgb-patch = []
+# Enable integration with cosmic-text shaper/rasterizer
+cosmic_text_shaper = ["dep:cosmic-text"]
+# Optional FreeType FFI for high-fidelity LCD subpixel AA + hinting.
+# Depends on the cosmic_text_shaper for shaping; FreeType is used only for rasterization.
+freetype_ffi = ["dep:freetype-rs", "cosmic_text_shaper"]

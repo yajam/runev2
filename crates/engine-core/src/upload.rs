@@ -180,18 +180,29 @@ fn tessellate_path_fill(
     let mut started = false;
     for cmd in &path.cmds {
         match *cmd {
-            PathCmd::MoveTo(p) => { builder.begin(point(p[0], p[1])); started = true; }
+            PathCmd::MoveTo(p) => {
+                if started { builder.end(false); }
+                builder.begin(point(p[0], p[1]));
+                started = true;
+            }
             PathCmd::LineTo(p) => { if !started { builder.begin(point(p[0], p[1])); started = true; } else { builder.line_to(point(p[0], p[1])); } }
             PathCmd::QuadTo(c, p) => { builder.quadratic_bezier_to(point(c[0], c[1]), point(p[0], p[1])); }
             PathCmd::CubicTo(c1, c2, p) => { builder.cubic_bezier_to(point(c1[0], c1[1]), point(c2[0], c2[1]), point(p[0], p[1])); }
             PathCmd::Close => { builder.end(true); started = false; }
         }
     }
+    // If the last sub-path wasn't explicitly closed, end it as open.
+    if started {
+        builder.end(false);
+    }
     let lyon_path: LyonPath = builder.build();
     let mut tess = FillTessellator::new();
+    // Configurable tessellation tolerance via LYON_TOLERANCE (default 0.1)
+    let tol = std::env::var("LYON_TOLERANCE").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.1);
+    let base_opts = FillOptions::default().with_tolerance(tol);
     let options = match path.fill_rule {
-        FillRule::NonZero => FillOptions::default().with_fill_rule(lyon_tessellation::FillRule::NonZero),
-        FillRule::EvenOdd => FillOptions::default().with_fill_rule(lyon_tessellation::FillRule::EvenOdd),
+        FillRule::NonZero => base_opts.with_fill_rule(lyon_tessellation::FillRule::NonZero),
+        FillRule::EvenOdd => base_opts.with_fill_rule(lyon_tessellation::FillRule::EvenOdd),
     };
     let mut geom: VertexBuffers<[f32; 2], u16> = VertexBuffers::new();
     let result = tess.tessellate_path(
@@ -204,6 +215,66 @@ fn tessellate_path_fill(
     );
     if result.is_err() { return; }
     // Transform and append
+    let base = vertices.len() as u16;
+    for p in &geom.vertices {
+        let tp = apply_transform(*p, t);
+        vertices.push(Vertex { pos: tp, color });
+    }
+    indices.extend(geom.indices.iter().map(|i| base + *i));
+}
+
+fn tessellate_path_stroke(
+    vertices: &mut Vec<Vertex>,
+    indices: &mut Vec<u16>,
+    path: &Path,
+    stroke: Stroke,
+    color: [f32; 4],
+    t: Transform2D,
+){
+    use lyon_path::Path as LyonPath;
+    use lyon_tessellation::{BuffersBuilder, StrokeOptions, StrokeTessellator, StrokeVertex, VertexBuffers, LineJoin, LineCap};
+    use lyon_geom::point;
+
+    // Build lyon path
+    let mut builder = lyon_path::Path::builder();
+    let mut started = false;
+    for cmd in &path.cmds {
+        match *cmd {
+            PathCmd::MoveTo(p) => {
+                if started { builder.end(false); }
+                builder.begin(point(p[0], p[1]));
+                started = true;
+            }
+            PathCmd::LineTo(p) => { if !started { builder.begin(point(p[0], p[1])); started = true; } else { builder.line_to(point(p[0], p[1])); } }
+            PathCmd::QuadTo(c, p) => { builder.quadratic_bezier_to(point(c[0], c[1]), point(p[0], p[1])); }
+            PathCmd::CubicTo(c1, c2, p) => { builder.cubic_bezier_to(point(c1[0], c1[1]), point(c2[0], c2[1]), point(p[0], p[1])); }
+            PathCmd::Close => { builder.end(true); started = false; }
+        }
+    }
+    // End any open sub-path
+    if started {
+        builder.end(false);
+    }
+    let lyon_path: LyonPath = builder.build();
+
+    let mut tess = StrokeTessellator::new();
+    let tol = std::env::var("LYON_TOLERANCE").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.1);
+    let options = StrokeOptions::default()
+        .with_line_width(stroke.width.max(0.0))
+        .with_tolerance(tol)
+        .with_line_join(LineJoin::Round)
+        .with_start_cap(LineCap::Round)
+        .with_end_cap(LineCap::Round);
+    let mut geom: VertexBuffers<[f32; 2], u16> = VertexBuffers::new();
+    let result = tess.tessellate_path(
+        lyon_path.as_slice(),
+        &options,
+        &mut BuffersBuilder::new(&mut geom, |sv: StrokeVertex| {
+            let p = sv.position();
+            [p.x, p.y]
+        }),
+    );
+    if result.is_err() { return; }
     let base = vertices.len() as u16;
     for p in &geom.vertices {
         let tp = apply_transform(*p, t);
@@ -496,6 +567,10 @@ pub fn upload_display_list(
             Command::FillPath { path, color, transform, .. } => {
                 let col = [color.r, color.g, color.b, color.a];
                 tessellate_path_fill(&mut vertices, &mut indices, path, col, *transform);
+            }
+            Command::StrokePath { path, stroke, color, transform, .. } => {
+                let col = [color.r, color.g, color.b, color.a];
+                tessellate_path_stroke(&mut vertices, &mut indices, path, *stroke, col, *transform);
             }
             // BoxShadow commands are handled by PassManager as a separate pipeline.
             Command::BoxShadow { .. } => {}

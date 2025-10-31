@@ -16,6 +16,7 @@ pub struct ImagesScene {
 enum LoadedImage {
     Static(ImageTex),
     Animated(AnimatedImageTex),
+    Svg(SvgImage),
 }
 
 struct ImageTex {
@@ -39,6 +40,11 @@ struct AnimatedImageTex {
     name: String,
 }
 
+struct SvgImage {
+    path: PathBuf,
+    name: String,
+}
+
 impl Default for ImagesScene { fn default() -> Self { Self { loaded: Cell::new(false), images: RefCell::new(Vec::new()) } } }
 
 impl ImagesScene {
@@ -51,6 +57,166 @@ impl ImagesScene {
             // Decide by extension
             let ext = path.extension().and_then(|e| e.to_str()).map(|s| s.to_ascii_lowercase());
             match ext.as_deref() {
+                Some("webp") => {
+                    // Try animated WebP first, fall back to static decode via image::open
+                    match std::fs::File::open(&path) {
+                        Ok(file) => {
+                            let reader = std::io::BufReader::new(file);
+                            match image::codecs::webp::WebPDecoder::new(reader) {
+                                Ok(decoder) => {
+                                    let frames_iter = decoder.into_frames();
+                                    match frames_iter.collect_frames() {
+                                        Ok(frames) if !frames.is_empty() && frames.len() > 1 => {
+                                            // Animated WebP
+                                            let first_buf = frames[0].buffer().clone();
+                                            let (w, h) = (first_buf.width(), first_buf.height());
+                                            let mut texs = Vec::with_capacity(frames.len());
+                                            let mut views = Vec::with_capacity(frames.len());
+                                            let mut durs = Vec::with_capacity(frames.len());
+                                            for f in frames {
+                                                let mut dur = Duration::from_millis(100);
+                                                let _ = f.delay();
+                                                if dur.as_millis() == 0 { dur = Duration::from_millis(100); }
+
+                                                let buf = f.into_buffer();
+                                                let (fw, fh) = buf.dimensions();
+                                                let raw = buf.as_raw();
+                                                let tw = w.max(1);
+                                                let th = h.max(1);
+                                                let tex = device.create_texture(&wgpu::TextureDescriptor {
+                                                    label: Some(&format!("webp:{}", name)),
+                                                    size: wgpu::Extent3d { width: tw, height: th, depth_or_array_layers: 1 },
+                                                    mip_level_count: 1,
+                                                    sample_count: 1,
+                                                    dimension: wgpu::TextureDimension::D2,
+                                                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                                                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                                                    view_formats: &[],
+                                                });
+                                                let write_w = fw.min(w);
+                                                let write_h = fh.min(h);
+                                                queue.write_texture(
+                                                    wgpu::ImageCopyTexture {
+                                                        texture: &tex,
+                                                        mip_level: 0,
+                                                        origin: wgpu::Origin3d::ZERO,
+                                                        aspect: wgpu::TextureAspect::All,
+                                                    },
+                                                    raw,
+                                                    wgpu::ImageDataLayout {
+                                                        offset: 0,
+                                                        bytes_per_row: Some(write_w * 4),
+                                                        rows_per_image: Some(write_h),
+                                                    },
+                                                    wgpu::Extent3d { width: write_w, height: write_h, depth_or_array_layers: 1 },
+                                                );
+                                                let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+                                                texs.push(tex);
+                                                views.push(view);
+                                                durs.push(dur);
+                                            }
+                                            self.images.borrow_mut().push(LoadedImage::Animated(AnimatedImageTex {
+                                                frames: texs,
+                                                views,
+                                                durations: durs,
+                                                current: 0,
+                                                accum: Duration::from_millis(0),
+                                                last_tick: None,
+                                                width: w,
+                                                height: h,
+                                                name,
+                                            }));
+                                            found_any = true;
+                                        }
+                                        Ok(frames) if !frames.is_empty() => {
+                                            // Single-frame WebP; treat as static
+                                            let buf = frames[0].buffer().clone();
+                                            let (w, h) = buf.dimensions();
+                                            let tex = device.create_texture(&wgpu::TextureDescriptor {
+                                                label: Some(&format!("webp:{}", name)),
+                                                size: wgpu::Extent3d { width: w.max(1), height: h.max(1), depth_or_array_layers: 1 },
+                                                mip_level_count: 1,
+                                                sample_count: 1,
+                                                dimension: wgpu::TextureDimension::D2,
+                                                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                                                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                                                view_formats: &[],
+                                            });
+                                            queue.write_texture(
+                                                wgpu::ImageCopyTexture { texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                                                buf.as_raw(),
+                                                wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(w * 4), rows_per_image: Some(h) },
+                                                wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                                            );
+                                            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+                                            self.images.borrow_mut().push(LoadedImage::Static(ImageTex { tex, view, width: w, height: h, name }));
+                                            found_any = true;
+                                        }
+                                        _ => {
+                                            // Fallback to generic open
+                                            match image::open(&path) {
+                                                Ok(img) => {
+                                                    let rgba = img.to_rgba8();
+                                                    let (w, h) = rgba.dimensions();
+                                                    let tex = device.create_texture(&wgpu::TextureDescriptor {
+                                                        label: Some(&format!("webp:{}", name)),
+                                                        size: wgpu::Extent3d { width: w.max(1), height: h.max(1), depth_or_array_layers: 1 },
+                                                        mip_level_count: 1,
+                                                        sample_count: 1,
+                                                        dimension: wgpu::TextureDimension::D2,
+                                                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                                                        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                                                        view_formats: &[],
+                                                    });
+                                                    queue.write_texture(
+                                                        wgpu::ImageCopyTexture { texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                                                        &rgba,
+                                                        wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(w * 4), rows_per_image: Some(h) },
+                                                        wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                                                    );
+                                                    let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+                                                    self.images.borrow_mut().push(LoadedImage::Static(ImageTex { tex, view, width: w, height: h, name }));
+                                                    found_any = true;
+                                                }
+                                                Err(err) => { eprintln!("Failed to load WEBP {:?}: {err}", path); }
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(_err) => {
+                                    // Fallback to generic open
+                                    match image::open(&path) {
+                                        Ok(img) => {
+                                            let rgba = img.to_rgba8();
+                                            let (w, h) = rgba.dimensions();
+                                            let tex = device.create_texture(&wgpu::TextureDescriptor {
+                                                label: Some(&format!("webp:{}", name)),
+                                                size: wgpu::Extent3d { width: w.max(1), height: h.max(1), depth_or_array_layers: 1 },
+                                                mip_level_count: 1,
+                                                sample_count: 1,
+                                                dimension: wgpu::TextureDimension::D2,
+                                                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                                                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                                                view_formats: &[],
+                                            });
+                                            queue.write_texture(
+                                                wgpu::ImageCopyTexture { texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                                                &rgba,
+                                                wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(w * 4), rows_per_image: Some(h) },
+                                                wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                                            );
+                                            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+                                            self.images.borrow_mut().push(LoadedImage::Static(ImageTex { tex, view, width: w, height: h, name }));
+                                            found_any = true;
+                                        }
+                                        Err(err) => { eprintln!("Failed to load WEBP {:?}: {err}", path); }
+                                    }
+                                }
+                            }
+                        }
+                        Err(err) => { eprintln!("Failed to read WEBP {:?}: {err}", path); }
+                    }
+                }
                 Some("gif") => {
                     // Decode animated GIF via image crate (collect frames + durations)
                     match std::fs::File::open(&path) {
@@ -150,63 +316,9 @@ impl ImagesScene {
                     }
                 }
                 Some("svg") => {
-                    // Load and rasterize SVG using usvg + resvg
-                    match std::fs::read(&path) {
-                        Ok(data) => {
-                            let mut opt = usvg::Options::default();
-                            // Use file directory for relative hrefs
-                            opt.resources_dir = path.parent().map(|p| p.to_path_buf());
-                            let tree = match usvg::Tree::from_data(&data, &opt) {
-                                Ok(t) => t,
-                                Err(err) => { eprintln!("Failed to parse SVG {:?}: {err}", path); return; }
-                            };
-                            let size = tree.size().to_int_size();
-                            let (w, h) = (size.width(), size.height());
-                            if w == 0 || h == 0 {
-                                eprintln!("SVG has zero size: {:?}", path);
-                                return;
-                            }
-                            let mut pixmap = match tiny_skia::Pixmap::new(w, h) {
-                                Some(p) => p,
-                                None => { eprintln!("Failed to create pixmap for {:?}", path); return; }
-                            };
-                            // Render at original size into pixmap
-                            let mut pm = pixmap.as_mut();
-                            resvg::render(&tree, tiny_skia::Transform::identity(), &mut pm);
-                            let rgba = pixmap.data();
-                            let tex = device.create_texture(&wgpu::TextureDescriptor {
-                                label: Some(&format!("svg:{}", name)),
-                                size: wgpu::Extent3d { width: w.max(1) as u32, height: h.max(1) as u32, depth_or_array_layers: 1 },
-                                mip_level_count: 1,
-                                sample_count: 1,
-                                dimension: wgpu::TextureDimension::D2,
-                                format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                                view_formats: &[],
-                            });
-                            queue.write_texture(
-                                wgpu::ImageCopyTexture {
-                                    texture: &tex,
-                                    mip_level: 0,
-                                    origin: wgpu::Origin3d::ZERO,
-                                    aspect: wgpu::TextureAspect::All,
-                                },
-                                &rgba,
-                                wgpu::ImageDataLayout {
-                                    offset: 0,
-                                    bytes_per_row: Some((w as u32) * 4),
-                                    rows_per_image: Some(h as u32),
-                                },
-                                wgpu::Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
-                            );
-                            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-                            self.images.borrow_mut().push(LoadedImage::Static(ImageTex { tex, view, width: w as u32, height: h as u32, name }));
-                            found_any = true;
-                        }
-                        Err(err) => {
-                            eprintln!("Failed to read SVG {:?}: {err}", path);
-                        }
-                    }
+                    // Defer rasterization to engine-core's SVG cache.
+                    self.images.borrow_mut().push(LoadedImage::Svg(SvgImage { path: path.clone(), name }));
+                    found_any = true;
                 }
                 _ => {
                     // PNG/JPEG via image crate
@@ -258,7 +370,7 @@ impl ImagesScene {
             files.sort();
             for p in files {
                 if let Some(ext) = p.extension().and_then(|e| e.to_str()).map(|s| s.to_ascii_lowercase()) {
-                    if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "svg" | "gif") { load_file(p); }
+                    if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "svg" | "gif" | "webp") { load_file(p); }
                 }
             }
         } else {
@@ -330,7 +442,8 @@ impl Scene for ImagesScene {
             let y0 = margin + r as f32 * (cell_h + margin);
 
             // Resolve dimensions and view
-            let (iw, ih, view) = match item {
+            let mut temp_view: Option<wgpu::TextureView> = None;
+            let (iw, ih, view_ref): (f32, f32, &wgpu::TextureView) = match item {
                 LoadedImage::Static(img) => (img.width as f32, img.height as f32, &img.view),
                 LoadedImage::Animated(anim) => {
                     // Advance animation timers
@@ -351,6 +464,25 @@ impl Scene for ImagesScene {
                     }
                     (anim.width as f32, anim.height as f32, &anim.views[anim.current])
                 }
+                LoadedImage::Svg(svg) => {
+                    // First, get intrinsic 1x size
+                    let (_view1x, base_w, base_h) = match passes.rasterize_svg_to_view(&svg.path, 1.0, queue) {
+                        Some((v, w, h)) => (v, w as f32, h as f32),
+                        None => { eprintln!("Failed to rasterize SVG {:?}", svg.path); continue; }
+                    };
+                    // Compute target scale for this cell
+                    let scale_guess = (cell_w / base_w).min(cell_h / base_h).max(0.0);
+                    // Request a cached raster at the appropriate bucketed scale
+                    let (view_scaled, sw, sh) = match passes.rasterize_svg_to_view(&svg.path, scale_guess, queue) {
+                        Some((v, w, h)) => (v, w as f32, h as f32),
+                        None => match passes.rasterize_svg_to_view(&svg.path, 1.0, queue) {
+                            Some((v, w, h)) => (v, w as f32, h as f32),
+                            None => { continue; }
+                        },
+                    };
+                    temp_view = Some(view_scaled);
+                    (sw, sh, temp_view.as_ref().unwrap())
+                }
             };
 
             let scale = (cell_w / iw).min(cell_h / ih).max(0.0);
@@ -364,7 +496,7 @@ impl Scene for ImagesScene {
                 surface_view,
                 [ox, oy],
                 [draw_w, draw_h],
-                view,
+                view_ref,
                 queue,
                 width,
                 height,

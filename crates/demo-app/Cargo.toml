@@ -11,7 +11,7 @@ winit = { workspace = true }
 pollster = { workspace = true }
 engine-core = { path = "../engine-core" }
 engine-shaders = { path = "../engine-shaders" }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 usvg = { version = "0.42", default-features = true }
 resvg = { version = "0.42", default-features = true }
 tiny-skia = "0.11"
@@ -19,3 +19,8 @@ tiny-skia = "0.11"
 [[bin]]
 name = "demo-app"
 path = "src/main.rs"
+[features]
+# Forward engine-core's cosmic_text_shaper so demo can cfg on it
+default = ["cosmic_text_shaper"]
+cosmic_text_shaper = ["engine-core/cosmic_text_shaper"]
+freetype_ffi = ["engine-core/freetype_ffi"]

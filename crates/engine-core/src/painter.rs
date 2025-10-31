@@ -14,7 +14,12 @@ impl Painter {
 
     fn current_transform(&self) -> Transform2D { *self.transform_stack.last().unwrap() }
 
-    pub fn push_transform(&mut self, t: Transform2D) { self.list.commands.push(Command::PushTransform(t)); self.transform_stack.push(t); }
+    pub fn push_transform(&mut self, t: Transform2D) {
+        // Compose with current transform so nested pushes multiply.
+        let composed = self.current_transform().concat(t);
+        self.list.commands.push(Command::PushTransform(composed));
+        self.transform_stack.push(composed);
+    }
     pub fn pop_transform(&mut self) { self.list.commands.push(Command::PopTransform); let _ = self.transform_stack.pop(); }
 
     pub fn push_clip_rect(&mut self, rect: Rect) { self.clip_depth += 1; self.list.commands.push(Command::PushClip(ClipRect(rect))); }
@@ -63,6 +68,12 @@ impl Painter {
     pub fn fill_path(&mut self, path: Path, color: ColorLinPremul, z: i32) {
         let t = self.current_transform();
         self.list.commands.push(Command::FillPath { path, color, z, transform: t });
+    }
+
+    /// Stroke a path with uniform width and a solid color.
+    pub fn stroke_path(&mut self, path: Path, stroke: Stroke, color: ColorLinPremul, z: i32) {
+        let t = self.current_transform();
+        self.list.commands.push(Command::StrokePath { path, stroke, color, z, transform: t });
     }
 
     // --- Hit-only regions (do not render) ---

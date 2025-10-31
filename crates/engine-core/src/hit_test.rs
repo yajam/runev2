@@ -30,6 +30,7 @@ pub enum HitKind {
     Text,
     StrokeRect,
     StrokeRoundedRect,
+    Path,
     BoxShadow,
     HitRegion,
 }
@@ -42,6 +43,7 @@ pub enum HitShape {
     Ellipse { center: [f32; 2], radii: [f32; 2] },
     StrokeRect { rect: Rect, width: f32 },
     StrokeRoundedRect { rrect: RoundedRect, width: f32 },
+    PathBBox { rect: Rect },
     Text,
     BoxShadow { rrect: RoundedRect },
 }
@@ -65,6 +67,7 @@ enum HitData {
     Ellipse { center: [f32; 2], radii: [f32; 2] },
     StrokeRect { rect: Rect, width: f32 },
     StrokeRoundedRect { rrect: RoundedRect, width: f32 },
+    PathBBox(Rect),
     Text(TextRun),
     BoxShadow { rrect: RoundedRect },
 }
@@ -178,7 +181,37 @@ impl HitIndex {
                     next_id += 1;
                 }
                 Command::FillPath { .. } => {
-                    // Path hit-testing not implemented; skip indexing for now.
+                    // Coarse bbox hit: compute path bounding box (approximate using control/end points).
+                    if let Command::FillPath { path, z, transform, .. } = cmd {
+                        if let Some(rect) = bbox_for_path(path) {
+                            items.push(HitItem {
+                                id: next_id,
+                                z: *z,
+                                kind: HitKind::Path,
+                                transform: *transform,
+                                data: HitData::PathBBox(rect),
+                                clips: clips.clone(),
+                                region_id: None,
+                            });
+                            next_id += 1;
+                        }
+                    }
+                }
+                Command::StrokePath { path, z, transform, .. } => {
+                    if let Some(mut rect) = bbox_for_path(path) {
+                        // Expand bbox by half of stroke width conservatively
+                        if let Command::StrokePath { stroke, .. } = cmd { let w = stroke.width.max(0.0) * 0.5; rect.x -= w; rect.y -= w; rect.w += w * 2.0; rect.h += w * 2.0; }
+                        items.push(HitItem {
+                            id: next_id,
+                            z: *z,
+                            kind: HitKind::Path,
+                            transform: *transform,
+                            data: HitData::PathBBox(rect),
+                            clips: clips.clone(),
+                            region_id: None,
+                        });
+                        next_id += 1;
+                    }
                 }
                 Command::BoxShadow { rrect, z, transform, .. } => {
                     items.push(HitItem {
@@ -279,6 +312,7 @@ impl HitIndex {
                 HitData::Ellipse { center, radii } => HitShape::Ellipse { center: *center, radii: *radii },
                 HitData::StrokeRect { rect, width } => HitShape::StrokeRect { rect: *rect, width: *width },
                 HitData::StrokeRoundedRect { rrect, width } => HitShape::StrokeRoundedRect { rrect: *rrect, width: *width },
+                HitData::PathBBox(r) => HitShape::PathBBox { rect: *r },
                 HitData::Text(_) => HitShape::Text,
                 HitData::BoxShadow { rrect } => HitShape::BoxShadow { rrect: *rrect },
             },
@@ -288,6 +322,37 @@ impl HitIndex {
             local_uv,
         }
         })
+    }
+}
+
+fn bbox_for_path(path: &Path) -> Option<Rect> {
+    let mut minx = f32::INFINITY;
+    let mut miny = f32::INFINITY;
+    let mut maxx = f32::NEG_INFINITY;
+    let mut maxy = f32::NEG_INFINITY;
+    let mut any = false;
+    for cmd in &path.cmds {
+        match *cmd {
+            PathCmd::MoveTo(p) | PathCmd::LineTo(p) => {
+                minx = minx.min(p[0]); miny = miny.min(p[1]);
+                maxx = maxx.max(p[0]); maxy = maxy.max(p[1]);
+                any = true;
+            }
+            PathCmd::QuadTo(c, p) => {
+                for q in [c, p] { minx = minx.min(q[0]); miny = miny.min(q[1]); maxx = maxx.max(q[0]); maxy = maxy.max(q[1]); }
+                any = true;
+            }
+            PathCmd::CubicTo(c1, c2, p) => {
+                for q in [c1, c2, p] { minx = minx.min(q[0]); miny = miny.min(q[1]); maxx = maxx.max(q[0]); maxy = maxy.max(q[1]); }
+                any = true;
+            }
+            PathCmd::Close => {}
+        }
+    }
+    if any {
+        Some(Rect { x: minx, y: miny, w: (maxx - minx).max(0.0), h: (maxy - miny).max(0.0) })
+    } else {
+        None
     }
 }
 
@@ -309,6 +374,7 @@ fn hit_item_contains(item: &HitItem, world: [f32; 2]) -> bool {
         HitData::StrokeRoundedRect { rrect, width } => {
             point_in_stroke_rounded_rect_local(world, &item.transform, *rrect, *width)
         }
+        HitData::PathBBox(rect) => point_in_rect_local(world, &item.transform, *rect),
         HitData::Text(_run) => false, // Text hit testing not yet implemented
         HitData::BoxShadow { rrect } => point_in_rounded_rect_local(world, &item.transform, *rrect),
     }
@@ -539,6 +605,14 @@ fn compute_locals(item: &HitItem, world: [f32; 2]) -> (Option<[f32; 2]>, Option<
             (Some(local), None)
         }
         HitData::Text(_) => (None, None),
+        HitData::PathBBox(r) => {
+            let local = [p[0] - r.x, p[1] - r.y];
+            let uv = [
+                if r.w.abs() > 1e-6 { (local[0] / r.w).clamp(0.0, 1.0) } else { 0.0 },
+                if r.h.abs() > 1e-6 { (local[1] / r.h).clamp(0.0, 1.0) } else { 0.0 },
+            ];
+            (Some(local), Some(uv))
+        }
         HitData::BoxShadow { rrect } => {
             let r = rrect.rect;
             let local = [p[0] - r.x, p[1] - r.y];

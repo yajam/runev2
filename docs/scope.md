@@ -80,11 +80,11 @@ Design and implement a **custom GPU-native 2D graphics engine** in Rust with ful
 
 ## 5. Text Rendering and Cosmic-Text Patch
 
-### 5.1 Current Issue
+### 5.1 Current Status / Issue
 
-- Cosmic-text uses `fontdue` grayscale coverage (8-bit), which looks soft at small font sizes.
-- No subpixel AA → horizontal stems lose clarity.
-- No hinting → poor alignment at 10–12 px.
+- Cosmic-text shapes via HarfRust and rasterizes via Swash, which by default yields 8-bit grayscale coverage.
+- Without subpixel AA, small sizes can look softer; we convert grayscale → RGB subpixel coverage in-engine.
+- No true hinting yet; we apply baseline snap + small-size pseudo-hinting for stability.
 
 ### 5.2 Patch Goals
 
@@ -99,11 +99,13 @@ Design and implement a **custom GPU-native 2D graphics engine** in Rust with ful
    - Modify rasterizer to emit 3-channel (RGB) coverage per pixel.
    - Provide optional 16-bit mask generation.
 
-2. **Extend `cosmic-text`**:
+2. **Engine integration with cosmic-text (done)**:
 
-   - Add `SubpixelAA` render mode in `RenderSettings`.
-   - Pass RGB coverage texture to GPU text pass.
-   - Add runtime toggle for RGB/BGR order.
+   - Default provider uses cosmic-text for shaping and swash for raster.
+   - Convert grayscale coverage to RGB subpixel masks on CPU, respecting RGB/BGR.
+   - Runtime toggle for RGB/BGR orientation.
+
+   Optional (future): upstream cosmic-text extensions for native subpixel AA output and 16-bit masks.
 
 3. **WGSL Shader Changes**:
 

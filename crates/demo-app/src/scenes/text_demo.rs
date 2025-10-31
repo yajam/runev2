@@ -476,9 +476,36 @@ impl Scene for TextDemoScene {
         provider_gray: Option<&dyn engine_core::TextProvider>,
     ) {
         let vp = Viewport { width, height };
+        // Helper to measure actual run extents (relative to baseline)
+        let measure_extents = |provider: &dyn engine_core::TextProvider, text: &str, size: f32| -> Option<(f32, f32)> {
+            let run = engine_core::TextRun {
+                text: text.to_string(),
+                pos: [0.0, 0.0], // baseline at 0
+                size,
+                color: ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
+            };
+            let glyphs = provider.rasterize_run(&run);
+            if glyphs.is_empty() { return None; }
+            let mut top = f32::INFINITY;
+            let mut bottom = f32::NEG_INFINITY;
+            for g in glyphs.iter() {
+                top = top.min(g.offset[1]);
+                bottom = bottom.max(g.offset[1] + g.mask.height as f32);
+            }
+            Some((top, bottom))
+        };
+
         // Left column: grayscale
         if let Some(pgray) = provider_gray {
             let mut p = Painter::begin_frame(vp);
+            let small_sz = (self.text_size * 0.64).max(10.0);
+            let (_top1, bottom1) = measure_extents(pgray, SAMPLE_TEXT1, self.text_size)
+                .unwrap_or((-self.text_size * 0.8, self.text_size * 0.2));
+            let (top2, _bottom2) = measure_extents(pgray, SAMPLE_TEXT2, small_sz)
+                .unwrap_or((-small_sz * 0.8, small_sz * 0.2));
+            let baseline1 = 160.0;
+            let pad = std::env::var("DEMO_LINE_PAD").ok().and_then(|s| s.parse::<f32>().ok()).unwrap_or(self.text_size * 0.25);
+            let baseline2 = baseline1 + bottom1 + (-top2) + pad;
             p.text(
                 engine_core::TextRun {
                     text: "Grayscale AA".to_string(),
@@ -491,7 +518,7 @@ impl Scene for TextDemoScene {
             p.text(
                 engine_core::TextRun {
                     text: SAMPLE_TEXT1.to_string(),
-                    pos: [60.0, 160.0],
+                    pos: [60.0, baseline1],
                     size: self.text_size,
                     color: ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
                 },
@@ -500,8 +527,8 @@ impl Scene for TextDemoScene {
             p.text(
                 engine_core::TextRun {
                     text: SAMPLE_TEXT2.to_string(),
-                    pos: [60.0, 210.0],
-                    size: (self.text_size * 0.64).max(10.0),
+                    pos: [60.0, baseline2],
+                    size: small_sz,
                     color: ColorLinPremul::from_srgba_u8([255, 255, 255, 200]),
                 },
                 2,
@@ -526,6 +553,14 @@ impl Scene for TextDemoScene {
                 engine_core::SubpixelOrientation::RGB => "Subpixel AA (RGB)",
                 engine_core::SubpixelOrientation::BGR => "Subpixel AA (BGR)",
             };
+            let small_sz = (self.text_size * 0.64).max(10.0);
+            let (_top1, bottom1) = measure_extents(psub, SAMPLE_TEXT1, self.text_size)
+                .unwrap_or((-self.text_size * 0.8, self.text_size * 0.2));
+            let (top2, _bottom2) = measure_extents(psub, SAMPLE_TEXT2, small_sz)
+                .unwrap_or((-small_sz * 0.8, small_sz * 0.2));
+            let baseline1 = 160.0;
+            let pad = std::env::var("DEMO_LINE_PAD").ok().and_then(|s| s.parse::<f32>().ok()).unwrap_or(self.text_size * 0.25);
+            let baseline2 = baseline1 + bottom1 + (-top2) + pad;
             p.text(
                 engine_core::TextRun {
                     text: label.to_string(),
@@ -538,7 +573,7 @@ impl Scene for TextDemoScene {
             p.text(
                 engine_core::TextRun {
                     text: SAMPLE_TEXT1.to_string(),
-                    pos: [px + frac_off, 160.0],
+                    pos: [px + frac_off, baseline1],
                     size: self.text_size,
                     color: self.text_color,
                 },
@@ -547,8 +582,8 @@ impl Scene for TextDemoScene {
             p.text(
                 engine_core::TextRun {
                     text: SAMPLE_TEXT2.to_string(),
-                    pos: [px + frac_off, 210.0],
-                    size: (self.text_size * 0.64).max(10.0),
+                    pos: [px + frac_off, baseline2],
+                    size: small_sz,
                     color: self.text_color,
                 },
                 2,
