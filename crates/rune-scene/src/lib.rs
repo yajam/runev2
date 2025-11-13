@@ -3,6 +3,9 @@ use engine_core::{Brush, ColorLinPremul};
 use rune_surface::RuneSurface;
 use rune_window::{events::RuneWindowEvent, EventHandler, RuneWindow, WindowCtx};
 
+pub mod elements;
+pub mod text;
+
 struct SimpleScene {
     surface: Option<RuneSurface>,
     bg: ColorLinPremul,
@@ -43,4 +46,3 @@ pub fn run() -> Result<()> {
     let win = RuneWindow::new("Rune Scene")?;
     win.run(SimpleScene::default())
 }
-

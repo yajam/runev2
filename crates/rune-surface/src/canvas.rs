@@ -3,7 +3,7 @@ use std::sync::Arc;
 use engine_core::{
     Viewport,
     Painter,
-    Brush, ColorLinPremul, Path, Rect, Stroke, TextRun, Transform2D,
+    Brush, ColorLinPremul, Path, Rect, Stroke, TextRun, Transform2D, RoundedRect,
     RasterizedGlyph, TextProvider,
 };
 
@@ -14,6 +14,7 @@ pub struct Canvas {
     pub(crate) clear_color: Option<ColorLinPremul>,
     pub(crate) text_provider: Option<Arc<dyn TextProvider + Send + Sync>>, // optional high-level text shaper
     pub(crate) glyph_draws: Vec<([f32; 2], RasterizedGlyph, ColorLinPremul)>, // low-level glyph masks
+    pub(crate) svg_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)>, // (path, origin, max_size, z)
 }
 
 impl Canvas {
@@ -32,6 +33,31 @@ impl Canvas {
         self.painter.stroke_path(path, Stroke { width }, color, z);
     }
 
+    /// Fill a path with a solid color.
+    pub fn fill_path(&mut self, path: Path, color: ColorLinPremul, z: i32) {
+        self.painter.fill_path(path, color, z);
+    }
+
+    /// Draw an ellipse (y-down coordinates).
+    pub fn ellipse(&mut self, center: [f32; 2], radii: [f32; 2], brush: Brush, z: i32) {
+        self.painter.ellipse(center, radii, brush, z);
+    }
+
+    /// Draw a circle (y-down coordinates).
+    pub fn circle(&mut self, center: [f32; 2], radius: f32, brush: Brush, z: i32) {
+        self.painter.circle(center, radius, brush, z);
+    }
+
+    /// Draw a rounded rectangle fill.
+    pub fn rounded_rect(&mut self, rrect: RoundedRect, brush: Brush, z: i32) {
+        self.painter.rounded_rect(rrect, brush, z);
+    }
+
+    /// Stroke a rounded rectangle.
+    pub fn stroke_rounded_rect(&mut self, rrect: RoundedRect, width: f32, brush: Brush, z: i32) {
+        self.painter.stroke_rounded_rect(rrect, Stroke { width }, brush, z);
+    }
+
     /// Push a high-level text run into the display list. Requires a text provider at end_frame.
     pub fn draw_text_run(&mut self, origin: [f32; 2], text: String, size_px: f32, color: ColorLinPremul, z: i32) {
         self.painter.text(TextRun { text, pos: origin, size: size_px, color }, z);
@@ -48,6 +74,11 @@ impl Canvas {
         for g in glyphs.iter().cloned() {
             self.glyph_draws.push((origin, g, color));
         }
+    }
+
+    /// Queue an SVG to be rasterized and drawn at origin, scaled to fit within max_size.
+    pub fn draw_svg<P: Into<std::path::PathBuf>>(&mut self, path: P, origin: [f32; 2], max_size: [f32; 2], z: i32) {
+        self.svg_draws.push((path.into(), origin, max_size, z));
     }
 
     // Expose some painter helpers for advanced users

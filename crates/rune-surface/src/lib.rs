@@ -2,7 +2,7 @@
 
 mod canvas;
 mod surface;
+pub mod shapes;
 
 pub use canvas::Canvas;
 pub use surface::RuneSurface;
-

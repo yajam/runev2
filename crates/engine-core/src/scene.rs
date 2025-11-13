@@ -31,7 +31,12 @@ pub struct ColorLinPremul {
     pub a: f32,
 }
 
+/// Alias for the premultiplied linear color type, for a friendlier name in APIs.
+pub type Color = ColorLinPremul;
+
 impl ColorLinPremul {
+    /// Convenience: construct from sRGB u8 RGBA. Equivalent to from_srgba_u8.
+    pub fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self { Self::from_srgba_u8([r, g, b, a]) }
     pub fn from_srgba_u8(c: [u8; 4]) -> Self {
         let s = Srgba::new(
             c[0] as f32 / 255.0,

@@ -71,6 +71,7 @@ impl RuneSurface {
             clear_color: None,
             text_provider: None,
             glyph_draws: Vec::new(),
+            svg_draws: Vec::new(),
         }
     }
 
@@ -143,6 +144,32 @@ impl RuneSurface {
                 *color,
                 &self.queue,
             );
+        }
+
+        // Rasterize and draw any queued SVGs
+        for (path, origin, max_size, _z) in canvas.svg_draws.iter() {
+            // First get 1x size
+            if let Some((_view1x, w1, h1)) = self.pass.rasterize_svg_to_view(std::path::Path::new(path), 1.0, &self.queue) {
+                let base_w = w1.max(1) as f32;
+                let base_h = h1.max(1) as f32;
+                let scale = (max_size[0] / base_w).min(max_size[1] / base_h).max(0.0);
+                let (view_scaled, sw, sh) = if let Some((v, w, h)) = self.pass.rasterize_svg_to_view(std::path::Path::new(path), scale, &self.queue) {
+                    (v, w as f32, h as f32)
+                } else {
+                    continue;
+                };
+                // Draw at origin with scaled size
+                self.pass.draw_image_quad(
+                    &mut encoder,
+                    &view,
+                    *origin,
+                    [sw, sh],
+                    &view_scaled,
+                    &self.queue,
+                    width,
+                    height,
+                );
+            }
         }
 
         // Submit and present
