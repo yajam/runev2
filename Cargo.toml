@@ -1,8 +1,20 @@
+[package]
+name = "rune"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+rune-scene = { path = "crates/rune-scene" }
+
 [workspace]
 members = [
     "crates/engine-core",
     "crates/engine-shaders",
     "crates/demo-app",
+    "crates/rune-surface",
+    "crates/rune-window",
+    "crates/rune-scene",
 ]
 resolver = "2"
 

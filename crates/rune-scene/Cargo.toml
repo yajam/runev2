@@ -1,0 +1,15 @@
+[package]
+name = "rune-scene"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "rune-scene"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+engine-core = { path = "../engine-core" }
+rune-surface = { path = "../rune-surface" }
+rune-window = { path = "../rune-window" }
+winit = { workspace = true }

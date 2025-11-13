@@ -244,8 +244,6 @@ impl PassManager {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         target_view: &wgpu::TextureView,
-        width: u32,
-        height: u32,
         origin: [f32; 2],
         mask: &crate::text::SubpixelMask,
         color: crate::scene::ColorLinPremul,
@@ -488,8 +486,6 @@ impl PassManager {
                     self.draw_text_mask(
                         encoder,
                         target_view,
-                        list.viewport.width,
-                        list.viewport.height,
                         origin,
                         &rg.mask,
                         run.color,

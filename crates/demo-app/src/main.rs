@@ -141,6 +141,7 @@ fn main() -> Result<()> {
         // Prefer cosmic-text by default; fall back to fontdue if feature is off
         #[cfg(feature = "cosmic_text_shaper")]
         {
+            #[cfg(feature = "freetype_ffi")]
             let use_freetype = std::env::var("DEMO_FREETYPE").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
             if let Ok(path) = std::env::var("DEMO_FONT") {
                 if let Ok(bytes) = std::fs::read(path) {

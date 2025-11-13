@@ -1,0 +1,12 @@
+[package]
+name = "rune-surface"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+engine-core = { path = "../engine-core" }
+

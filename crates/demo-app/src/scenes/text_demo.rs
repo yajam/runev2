@@ -382,8 +382,8 @@ impl Scene for TextDemoScene {
         encoder: &mut wgpu::CommandEncoder,
         surface_view: &wgpu::TextureView,
         queue: &wgpu::Queue,
-        width: u32,
-        height: u32,
+        _width: u32,
+        _height: u32,
     ) {
         // Soft gradient background
         passes.paint_root_linear_gradient_multi(

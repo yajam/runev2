@@ -25,6 +25,7 @@ impl Default for CenteredRectScene {
 impl CenteredRectScene {
     /// Helper to pre-calculate blended color for macOS/Metal workaround
     /// Blends foreground color with alpha over background color
+    #[allow(dead_code)]
     fn blend_colors_srgb(fg: [u8; 3], alpha: f32, bg: [u8; 3]) -> [u8; 4] {
         let r = (fg[0] as f32 * alpha + bg[0] as f32 * (1.0 - alpha)).round() as u8;
         let g = (fg[1] as f32 * alpha + bg[1] as f32 * (1.0 - alpha)).round() as u8;
@@ -34,6 +35,7 @@ impl CenteredRectScene {
 
     /// Convert perceived alpha (like in browsers) to linear space alpha
     /// Linear blending makes colors appear more opaque, so we need lower values
+    #[allow(dead_code)]
     fn srgb_alpha_to_linear(alpha: f32) -> f32 {
         // Approximate compensation for linear space blending
         // This is a heuristic - may need tuning

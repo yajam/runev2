@@ -20,16 +20,16 @@ enum LoadedImage {
 }
 
 struct ImageTex {
-    tex: wgpu::Texture,
+    _tex: wgpu::Texture,
     view: wgpu::TextureView,
     width: u32,
     height: u32,
-    name: String,
+    _name: String,
 }
 
 struct AnimatedImageTex {
     // One texture/view per frame (simple and robust for demo scale)
-    frames: Vec<wgpu::Texture>,
+    _frames: Vec<wgpu::Texture>,
     views: Vec<wgpu::TextureView>,
     durations: Vec<Duration>,
     current: usize,
@@ -37,12 +37,12 @@ struct AnimatedImageTex {
     last_tick: Option<Instant>,
     width: u32,
     height: u32,
-    name: String,
+    _name: String,
 }
 
 struct SvgImage {
     path: PathBuf,
-    name: String,
+    _name: String,
 }
 
 impl Default for ImagesScene { fn default() -> Self { Self { loaded: Cell::new(false), images: RefCell::new(Vec::new()) } } }
@@ -442,7 +442,7 @@ impl Scene for ImagesScene {
             let y0 = margin + r as f32 * (cell_h + margin);
 
             // Resolve dimensions and view
-            let mut temp_view: Option<wgpu::TextureView> = None;
+            let mut _temp_view: Option<wgpu::TextureView> = None;
             let (iw, ih, view_ref): (f32, f32, &wgpu::TextureView) = match item {
                 LoadedImage::Static(img) => (img.width as f32, img.height as f32, &img.view),
                 LoadedImage::Animated(anim) => {
@@ -480,8 +480,8 @@ impl Scene for ImagesScene {
                             None => { continue; }
                         },
                     };
-                    temp_view = Some(view_scaled);
-                    (sw, sh, temp_view.as_ref().unwrap())
+                    _temp_view = Some(view_scaled);
+                    (sw, sh, _temp_view.as_ref().unwrap())
                 }
             };
 

@@ -1,0 +1,15 @@
+[package]
+name = "rune-window"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+winit = { workspace = true }
+pollster = { workspace = true }
+engine-core = { path = "../engine-core" }
+rune-surface = { path = "../rune-surface" }
+

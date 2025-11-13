@@ -30,7 +30,7 @@ impl ZonesScene {
     }
 
     fn zone_rects(&self) -> [(u32, Rect); 4] {
-        let (sidebar, main) = self.layout();
+        let (sidebar, _main) = self.layout();
         // Sidebar zones with margins
         let margin = 20.0f32;
         let zone_w = (sidebar.w - margin * 2.0).max(20.0);
