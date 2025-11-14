@@ -1,4 +1,4 @@
-use engine_core::{Brush, ColorLinPremul, Rect, RoundedRadii, RoundedRect, Path, PathCmd, FillRule, Color};
+use engine_core::{Brush, ColorLinPremul, Rect, RoundedRadii, RoundedRect, Color};
 use rune_surface::shapes;
 use rune_surface::Canvas;
 

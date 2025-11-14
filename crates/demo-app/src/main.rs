@@ -138,6 +138,12 @@ fn main() -> Result<()> {
         .ok()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(true); // Default to true for smooth resizing
+    
+    // Initialize intermediate texture for fullscreen backgrounds
+    if use_intermediate && matches!(scene.kind(), SceneKind::FullscreenBackground) {
+        passes.ensure_intermediate_texture(engine.allocator_mut(), size.width, size.height);
+    }
+    
     let mut needs_reupload = false;
     let mut hovered_id: Option<usize> = None;
     let mut pressed_id: Option<usize> = None;
@@ -244,7 +250,9 @@ fn main() -> Result<()> {
                             _ => None,
                         };
                     }
-                    SceneKind::FullscreenBackground => {}
+                    SceneKind::FullscreenBackground => {
+                        // Intermediate texture will be reallocated in RedrawRequested if size changed
+                    }
                 }
                 needs_reupload = true;
             }
@@ -467,7 +475,7 @@ fn main() -> Result<()> {
                         // Render fullscreen background (gradients, etc.)
                         let queue = engine.queue();
                         if use_intermediate {
-                            // Render to intermediate texture then blit
+                            // Ensure intermediate texture exists and matches current size
                             passes.ensure_intermediate_texture(engine.allocator_mut(), size.width, size.height);
                             // Clear intermediate texture before rendering
                             passes.clear_intermediate_texture(&mut encoder, wgpu::Color::TRANSPARENT);

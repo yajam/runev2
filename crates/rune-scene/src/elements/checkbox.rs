@@ -1,4 +1,4 @@
-use engine_core::{Brush, Color, ColorLinPremul, Rect, RoundedRadii, RoundedRect, Stroke};
+use engine_core::{Brush, Color, ColorLinPremul, Rect, RoundedRadii, RoundedRect};
 use rune_surface::Canvas;
 
 pub struct Checkbox {

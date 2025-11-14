@@ -1,5 +1,5 @@
-use engine_core::{Brush, Rect, Path, PathCmd, FillRule, Color, ColorLinPremul, RoundedRadii, RoundedRect};
-use rune_surface::shapes::{self, BorderStyle, BorderWidths, RectStyle};
+use engine_core::{Brush, Rect, Color, ColorLinPremul, RoundedRadii, RoundedRect};
+use rune_surface::shapes::{self};
 use rune_surface::Canvas;
 
 pub struct Select {

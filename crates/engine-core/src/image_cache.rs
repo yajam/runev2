@@ -8,6 +8,7 @@ struct CacheKey {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 enum CacheEntry {
     Loading,
     Ready {

@@ -2,7 +2,7 @@ use anyhow::Result;
 use winit::event::{Event, WindowEvent};
 use winit::window::WindowBuilder;
 use winit::event_loop::EventLoop;
-use engine_core::{make_surface_config, SubpixelOrientation, Color, Brush, Rect, ColorLinPremul};
+use engine_core::{make_surface_config, SubpixelOrientation, Color, Rect, ColorLinPremul};
 
 pub mod elements;
 pub mod text;
@@ -93,6 +93,7 @@ struct ImageData {
 }
 
 // Unified UI element enum for mixed rendering
+#[allow(dead_code)]
 enum UIElement {
     Text(TextData),
     Checkbox(CheckboxData),
@@ -106,6 +107,9 @@ enum UIElement {
 }
 
 // Direct port of working ui_canvas.rs from demo-app
+// KNOWN ISSUE: Background scaling during resize may appear slightly less smooth compared to
+// demo-app's geometry-based scenes. This is due to the full UI element rendering overhead.
+// Current mitigation: continuous redraws for 100ms after resize events.
 pub fn run() -> Result<()> {
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
@@ -124,7 +128,7 @@ pub fn run() -> Result<()> {
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None))?;
 
     let mut size = window.inner_size();
-    let mut scale_factor = window.scale_factor() as f32;
+    let scale_factor = window.scale_factor() as f32;
     let mut config = make_surface_config(&adapter, &surface, size.width, size.height);
     surface.configure(&device, &config);
 
@@ -145,6 +149,8 @@ pub fn run() -> Result<()> {
 
     // Dirty flag: only redraw when something changes
     let mut needs_redraw = true;
+    // Track last resize time to enable frequent redraws during resize
+    let mut last_resize_time: Option<std::time::Instant> = None;
 
     // UI Layout constants
     let col1_x = 40.0f32;
@@ -318,7 +324,7 @@ pub fn run() -> Result<()> {
     ];
 
     // Track checkbox states for overlay rendering
-    let cb_size = 18.0f32;
+    let _cb_size = 18.0f32;
 
     // Set overlay callback for crisp SVG tick rendering
     let checkboxes_for_overlay = checkboxes.clone();
@@ -371,12 +377,13 @@ pub fn run() -> Result<()> {
                             config.height = size.height;
                             surface.configure(surf.device().as_ref(), &config);
                         }
+                        last_resize_time = Some(std::time::Instant::now());
                         needs_redraw = true;
                         window.request_redraw();
                     }
                     WindowEvent::ScaleFactorChanged { scale_factor: sf, .. } => {
-                        scale_factor = sf as f32;
-                        surf.set_dpi_scale(scale_factor);
+                        let new_scale = sf as f32;
+                        surf.set_dpi_scale(new_scale);
                         needs_redraw = true;
                         window.request_redraw();
                     }
@@ -387,13 +394,10 @@ pub fn run() -> Result<()> {
                             Err(_) => { window.request_redraw(); return; }
                         };
                         let mut canvas = surf.begin_frame(size.width, size.height);
-                        // Background
+                        // Background - use clear() for efficient GPU clear operation
                         let bg = Color::rgba(26, 31, 51, 255);
                         canvas.clear(bg);
                         canvas.set_text_provider(provider.clone());
-
-                        let w = size.width as f32;
-                        canvas.fill_rect(0.0, 0.0, w, size.height as f32, Brush::Solid(bg), 0);
 
                         // Render all text elements (z=10 for top-level text)
                         for text in texts.iter() {
@@ -501,13 +505,26 @@ pub fn run() -> Result<()> {
                             };
                             image.render(&mut canvas, 90);
                         }
+                        
                         surf.end_frame(frame, canvas).ok();
                         needs_redraw = false;
                     }
                     _ => {}
                 }
             }
-            Event::AboutToWait => { /* no continuous redraw; only when needs_redraw is set */ }
+            Event::AboutToWait => {
+                // During active resize (within 100ms of last resize event), request continuous redraws
+                if let Some(last_time) = last_resize_time {
+                    if last_time.elapsed() < std::time::Duration::from_millis(100) {
+                        needs_redraw = true;
+                        window.request_redraw();
+                    } else {
+                        last_resize_time = None;
+                    }
+                } else if needs_redraw {
+                    window.request_redraw();
+                }
+            }
             _ => {}
         }
     })?)
