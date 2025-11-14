@@ -164,6 +164,7 @@ pub fn run() -> Result<()> {
     let select_y = 520.0f32;
     let label_y = 580.0f32;
     let image_y = 620.0f32;
+    let multiline_y = 730.0f32;
 
     // UI Element Data - defined once, reused across frames
     let texts = vec![
@@ -323,6 +324,25 @@ pub fn run() -> Result<()> {
         },
     ];
 
+    // Simple multiline text data
+    let multiline_text_data = vec![
+        (
+            "This is a comprehensive multiline text element demonstration that showcases automatic word wrapping capabilities. The text wraps based on window width, maintaining optimal readability. This implementation uses simple character-based wrapping for fast performance.".to_string(),
+            16.0f32,
+            Color::rgba(220, 220, 220, 255),
+            1.4f32,
+        ),
+        (
+            "Here's a second paragraph with different styling to demonstrate versatility. This text has a slightly smaller font size and tighter line spacing, showing how the multiline text element can be customized for different use cases.".to_string(),
+            14.0f32,
+            Color::rgba(150, 200, 255, 255),
+            1.2f32,
+        ),
+    ];
+    
+    // Track text width for resize detection
+    let mut current_text_width: Option<f32> = None;
+
     // Track checkbox states for overlay rendering
     let _cb_size = 18.0f32;
 
@@ -399,6 +419,7 @@ pub fn run() -> Result<()> {
                         canvas.clear(bg);
                         canvas.set_text_provider(provider.clone());
 
+                        // Render all elements
                         // Render all text elements (z=10 for top-level text)
                         for text in texts.iter() {
                             canvas.draw_text_run(text.pos, text.text.to_string(), text.size, text.color, 10);
@@ -505,6 +526,43 @@ pub fn run() -> Result<()> {
                             };
                             image.render(&mut canvas, 90);
                         }
+
+                        // Render all multiline texts (z=100) using MultilineText element
+                        // Calculate container width based on window size
+                        let logical_width = size.width as f32 / scale_factor;
+                        let right_margin = 40.0f32;
+                        let container_width = (logical_width - col1_x - right_margin).max(200.0).min(1200.0);
+                        
+                        // Store current width for comparison
+                        current_text_width = Some(container_width);
+                        
+                        let mut current_y = multiline_y;
+                        
+                        for (text_content, text_size, text_color, lh_factor) in multiline_text_data.iter() {
+                            // Create MultilineText element with container width
+                            let mtext = elements::multiline_text::MultilineText {
+                                pos: [col1_x, current_y],
+                                text: text_content.clone(),
+                                size: *text_size,
+                                color: *text_color,
+                                max_width: Some(container_width),
+                                line_height_factor: Some(*lh_factor),
+                            };
+                            
+                            // Use fast rendering (character-count approximation)
+                            mtext.render_fast(&mut canvas, 100);
+                            
+                            // Estimate height for next block (approximate)
+                            let avg_char_width = text_size * 0.55;
+                            let max_chars = (container_width / avg_char_width).floor() as usize;
+                            let approx_lines = if max_chars > 0 {
+                                (text_content.len() as f32 / max_chars as f32).ceil()
+                            } else {
+                                1.0
+                            };
+                            let line_height = text_size * lh_factor;
+                            current_y += approx_lines * line_height + 30.0;
+                        }
                         
                         surf.end_frame(frame, canvas).ok();
                         needs_redraw = false;
@@ -519,7 +577,23 @@ pub fn run() -> Result<()> {
                         needs_redraw = true;
                         window.request_redraw();
                     } else {
+                        // Resize ended - check if text width changed
                         last_resize_time = None;
+                        
+                        // Calculate new text width
+                        let logical_width = size.width as f32 / scale_factor;
+                        let right_margin = 40.0f32;
+                        let new_text_width = (logical_width - col1_x - right_margin).max(200.0).min(1200.0);
+                        
+                        // Compare with current width (threshold of 10px to avoid minor changes)
+                        let width_changed = current_text_width.map_or(true, |old_width| {
+                            (new_text_width - old_width).abs() > 10.0
+                        });
+                        
+                        if width_changed {
+                            needs_redraw = true;
+                            window.request_redraw();
+                        }
                     }
                 } else if needs_redraw {
                     window.request_redraw();

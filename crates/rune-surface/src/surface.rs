@@ -186,6 +186,12 @@ impl RuneSurface {
     /// Clear the overlay callback
     pub fn clear_overlay(&mut self) { self.overlay = None; }
 
+    /// Pre-allocate intermediate texture at the given size.
+    /// This should be called after surface reconfiguration to avoid jitter.
+    pub fn prepare_for_resize(&mut self, width: u32, height: u32) {
+        self.pass.ensure_intermediate_texture(&mut self.allocator, width, height);
+    }
+
     /// Upload a loaded image from background thread to GPU
     fn upload_loaded_image(&mut self, loaded: LoadedImageData) {
         let (width, height) = loaded.data.dimensions();

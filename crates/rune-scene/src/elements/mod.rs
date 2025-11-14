@@ -2,6 +2,7 @@
 //! These helpers focus on visuals only; input/state is up to the caller.
 
 pub mod text;
+pub mod multiline_text;
 pub mod label;
 pub mod button;
 pub mod checkbox;
@@ -12,6 +13,7 @@ pub mod select;
 pub mod image;
 
 pub use text::Text;
+pub use multiline_text::MultilineText;
 pub use label::Label;
 pub use button::Button;
 pub use checkbox::Checkbox;

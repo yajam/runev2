@@ -40,38 +40,53 @@ pub fn measure_run(provider: &dyn engine_core::TextProvider, text: &str, size_px
 }
 
 /// Simple word wrap: splits text into lines so that measured width <= max_width.
-pub fn wrap_text(provider: &dyn engine_core::TextProvider, text: &str, size_px: f32, max_width: f32) -> Vec<String> {
+/// Fast approximation version that uses character count instead of expensive glyph rasterization.
+pub fn wrap_text(_provider: &dyn engine_core::TextProvider, text: &str, size_px: f32, max_width: f32) -> Vec<String> {
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.is_empty() { return vec![String::new()]; }
+    
+    // Use fast approximation: average character width is ~0.5-0.6 of font size for proportional fonts
+    // This avoids expensive glyph rasterization during wrapping
+    let avg_char_width = size_px * 0.55;
+    let max_chars_per_line = (max_width / avg_char_width).floor() as usize;
+    if max_chars_per_line == 0 { return vec![text.to_string()]; }
+    
     let mut lines: Vec<String> = Vec::new();
     let mut cur = String::new();
-    for (i, w) in words.iter().enumerate() {
-        let cand = if cur.is_empty() { (*w).to_string() } else { format!("{} {}", cur, w) };
-        let fits = match measure_run(provider, &cand, size_px) { Some(m) => m.width <= max_width, None => true };
-        if fits { cur = cand; } else {
-            if !cur.is_empty() { lines.push(cur); }
-            // If a single word exceeds width, force-break it
-            let mw = measure_run(provider, w, size_px).map(|m| m.width).unwrap_or(0.0);
-            if mw > max_width && w.len() > 1 {
-                // naive character fallback
-                let mut chunk = String::new();
-                for ch in w.chars() {
-                    let cand2 = format!("{}{}", chunk, ch);
-                    if measure_run(provider, &cand2, size_px).map(|m| m.width).unwrap_or(0.0) <= max_width {
-                        chunk = cand2;
-                    } else {
-                        if !chunk.is_empty() { lines.push(chunk); }
-                        chunk = ch.to_string();
-                    }
+    
+    for w in words.iter() {
+        let test_line = if cur.is_empty() { 
+            (*w).to_string() 
+        } else { 
+            format!("{} {}", cur, w) 
+        };
+        
+        // Simple character count check
+        if test_line.len() <= max_chars_per_line {
+            cur = test_line;
+        } else {
+            // Line would be too long
+            if !cur.is_empty() { 
+                lines.push(cur); 
+            }
+            
+            // If single word is too long, break it
+            if w.len() > max_chars_per_line {
+                let mut remaining = *w;
+                while remaining.len() > max_chars_per_line {
+                    let (chunk, rest) = remaining.split_at(max_chars_per_line);
+                    lines.push(chunk.to_string());
+                    remaining = rest;
                 }
-                cur = chunk;
+                cur = remaining.to_string();
             } else {
                 cur = (*w).to_string();
             }
         }
-        if i == words.len() - 1 { lines.push(cur.clone()); }
     }
-    if lines.is_empty() { lines.push(cur); }
+    
+    if !cur.is_empty() { lines.push(cur); }
+    if lines.is_empty() { lines.push(String::new()); }
     lines
 }
 
@@ -136,15 +151,48 @@ pub fn layout_text(
         Wrap::NoWrap => vec![text.to_string()],
         Wrap::Word(max_w) => wrap_text(provider, text, opts.size_px, max_w),
     };
-    // Baselines using raster metrics
-    let baselines = baselines_for_lines(provider, &lines, opts.size_px, opts.start_baseline_y, opts.line_pad, opts.scale_factor);
-    // Estimate line height as average of (ascent+descent)
-    let mut sum_h = 0.0;
-    let mut count = 0;
-    for line in &lines {
-        if let Some(m) = measure_run(provider, line, opts.size_px) { sum_h += m.height; count += 1; }
+    
+    // Use simplified baseline calculation for performance
+    // Instead of measuring every line, use a single sample measurement
+    let sample_metrics = if !lines.is_empty() {
+        // Measure first line as representative sample
+        measure_run(provider, &lines[0], opts.size_px)
+    } else {
+        None
+    };
+    
+    let (line_height, ascent, descent) = if let Some(m) = sample_metrics {
+        (m.height, m.ascent, m.descent)
+    } else {
+        // Fallback estimates
+        let h = opts.size_px * 1.2;
+        (h, opts.size_px * 0.8, opts.size_px * 0.2)
+    };
+    
+    // Compute baselines using uniform line height
+    let snap = |v: f32| -> f32 {
+        if let Some(sf) = opts.scale_factor { 
+            if sf.is_finite() && sf > 0.0 { 
+                return (v * sf).round() / sf; 
+            } 
+        }
+        v
+    };
+    
+    let mut baselines = Vec::with_capacity(lines.len());
+    if !lines.is_empty() {
+        baselines.push(snap(opts.start_baseline_y));
+        for i in 1..lines.len() {
+            let baseline = baselines[i - 1] + descent + ascent + opts.line_pad;
+            baselines.push(snap(baseline));
+        }
     }
-    let est = if count > 0 { sum_h / (count as f32) } else { opts.size_px * 1.2 };
-    let total_h = if baselines.len() > 1 { baselines.last().copied().unwrap_or(opts.start_baseline_y) - baselines[0] + est } else { est };
-    LayoutResult { lines, baselines, line_height_est: est, total_height: total_h }
+    
+    let total_h = if baselines.len() > 1 { 
+        baselines.last().copied().unwrap_or(opts.start_baseline_y) - baselines[0] + line_height 
+    } else { 
+        line_height 
+    };
+    
+    LayoutResult { lines, baselines, line_height_est: line_height, total_height: total_h }
 }
