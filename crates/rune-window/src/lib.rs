@@ -196,7 +196,9 @@ impl RuneWindow {
                     }
                 }
                 Event::AboutToWait => {
-                    // Throttle redraws to request-driven
+                    // Ensure at least one redraw after init on platforms where
+                    // request_redraw during init may be deferred.
+                    self.window.request_redraw();
                 }
                 Event::WindowEvent { window_id, event: WindowEvent::RedrawRequested } if window_id == self.window.id() => {
                     // synthesized event

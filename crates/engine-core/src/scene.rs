@@ -1,4 +1,4 @@
-use palette::{FromColor, LinSrgba, Srgba};
+
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Transform2D {
@@ -21,6 +21,8 @@ impl Transform2D {
         let f = b1 * e2 + d1 * f2 + f1;
         Self { m: [a, b, c, d, e, f] }
     }
+
+    pub fn scale(sx: f32, sy: f32) -> Self { Self { m: [sx, 0.0, 0.0, sy, 0.0, 0.0] } }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -34,35 +36,7 @@ pub struct ColorLinPremul {
 /// Alias for the premultiplied linear color type, for a friendlier name in APIs.
 pub type Color = ColorLinPremul;
 
-impl ColorLinPremul {
-    /// Convenience: construct from sRGB u8 RGBA. Equivalent to from_srgba_u8.
-    pub fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self { Self::from_srgba_u8([r, g, b, a]) }
-    pub fn from_srgba_u8(c: [u8; 4]) -> Self {
-        let s = Srgba::new(
-            c[0] as f32 / 255.0,
-            c[1] as f32 / 255.0,
-            c[2] as f32 / 255.0,
-            c[3] as f32 / 255.0,
-        );
-        let lin: LinSrgba = LinSrgba::from_color(s);
-        Self { r: lin.red * lin.alpha, g: lin.green * lin.alpha, b: lin.blue * lin.alpha, a: lin.alpha }
-    }
-
-    /// Create color from sRGB u8 values with float alpha (like CSS rgba)
-    /// Example: `ColorLinPremul::from_srgba(255, 255, 255, 0.08)` for white at 8% alpha
-    pub fn from_srgba(r: u8, g: u8, b: u8, a: f32) -> Self {
-        let s = Srgba::new(
-            r as f32 / 255.0,
-            g as f32 / 255.0,
-            b as f32 / 255.0,
-            a,
-        );
-        let lin: LinSrgba = LinSrgba::from_color(s);
-        Self { r: lin.red * lin.alpha, g: lin.green * lin.alpha, b: lin.blue * lin.alpha, a: lin.alpha }
-    }
-
-    pub fn from_lin_rgba(r: f32, g: f32, b: f32, a: f32) -> Self { Self { r: r * a, g: g * a, b: b * a, a } }
-}
+// Constructors for ColorLinPremul are defined in color.rs to keep scene.rs focused
 
 #[derive(Clone, Debug)]
 pub enum Brush {

@@ -116,7 +116,7 @@ impl ImagesScene {
                                                 durs.push(dur);
                                             }
                                             self.images.borrow_mut().push(LoadedImage::Animated(AnimatedImageTex {
-                                                frames: texs,
+                                                _frames: texs,
                                                 views,
                                                 durations: durs,
                                                 current: 0,
@@ -124,7 +124,7 @@ impl ImagesScene {
                                                 last_tick: None,
                                                 width: w,
                                                 height: h,
-                                                name,
+                                                _name: name,
                                             }));
                                             found_any = true;
                                         }
@@ -149,7 +149,7 @@ impl ImagesScene {
                                                 wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
                                             );
                                             let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-                                            self.images.borrow_mut().push(LoadedImage::Static(ImageTex { tex, view, width: w, height: h, name }));
+                                            self.images.borrow_mut().push(LoadedImage::Static(ImageTex { _tex: tex, view, width: w, height: h, _name: name }));
                                             found_any = true;
                                         }
                                         _ => {
@@ -175,7 +175,7 @@ impl ImagesScene {
                                                         wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
                                                     );
                                                     let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-                                                    self.images.borrow_mut().push(LoadedImage::Static(ImageTex { tex, view, width: w, height: h, name }));
+                                                    self.images.borrow_mut().push(LoadedImage::Static(ImageTex { _tex: tex, view, width: w, height: h, _name: name }));
                                                     found_any = true;
                                                 }
                                                 Err(err) => { eprintln!("Failed to load WEBP {:?}: {err}", path); }
@@ -206,7 +206,7 @@ impl ImagesScene {
                                                 wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
                                             );
                                             let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-                                            self.images.borrow_mut().push(LoadedImage::Static(ImageTex { tex, view, width: w, height: h, name }));
+                                            self.images.borrow_mut().push(LoadedImage::Static(ImageTex { _tex: tex, view, width: w, height: h, _name: name }));
                                             found_any = true;
                                         }
                                         Err(err) => { eprintln!("Failed to load WEBP {:?}: {err}", path); }
@@ -288,7 +288,7 @@ impl ImagesScene {
                                                 durs.push(dur);
                                             }
                                             self.images.borrow_mut().push(LoadedImage::Animated(AnimatedImageTex {
-                                                frames: texs,
+                                                _frames: texs,
                                                 views,
                                                 durations: durs,
                                                 current: 0,
@@ -296,7 +296,7 @@ impl ImagesScene {
                                                 last_tick: None,
                                                 width: w,
                                                 height: h,
-                                                name,
+                                                _name: name,
                                             }));
                                             found_any = true;
                                         }
@@ -317,7 +317,7 @@ impl ImagesScene {
                 }
                 Some("svg") => {
                     // Defer rasterization to engine-core's SVG cache.
-                    self.images.borrow_mut().push(LoadedImage::Svg(SvgImage { path: path.clone(), name }));
+                    self.images.borrow_mut().push(LoadedImage::Svg(SvgImage { path: path.clone(), _name: name }));
                     found_any = true;
                 }
                 _ => {
@@ -352,7 +352,7 @@ impl ImagesScene {
                                 wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
                             );
                             let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-                            self.images.borrow_mut().push(LoadedImage::Static(ImageTex { tex, view, width: w, height: h, name }));
+                            self.images.borrow_mut().push(LoadedImage::Static(ImageTex { _tex: tex, view, width: w, height: h, _name: name }));
                             found_any = true;
                         }
                         Err(err) => {

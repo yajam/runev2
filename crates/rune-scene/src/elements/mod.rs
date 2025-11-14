@@ -19,5 +19,5 @@ pub use radio::Radio;
 pub use input_box::InputBox;
 pub use text_area::TextArea;
 pub use select::Select;
-pub use image::ImageBox;
+pub use image::{ImageBox, ImageFit};
 

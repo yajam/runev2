@@ -1,5 +1,4 @@
-use engine_core::{Brush, ColorLinPremul, Rect, Color};
-use rune_surface::shapes::{self, BorderStyle, BorderWidths, RectStyle};
+use engine_core::{Brush, Color, ColorLinPremul, Rect, RoundedRadii, RoundedRect, Stroke};
 use rune_surface::Canvas;
 
 pub struct Checkbox {
@@ -13,35 +12,61 @@ pub struct Checkbox {
 
 impl Checkbox {
     pub fn render(&self, canvas: &mut Canvas, z: i32) {
-        // Box
-        let bg = Brush::Solid(Color::rgba(240, 240, 240, 255));
-        let border_col = Brush::Solid(Color::rgba(160, 160, 160, 255));
-        let style = RectStyle {
-            fill: Some(bg),
-            border: Some(BorderStyle { widths: BorderWidths { top: 1.0, right: 1.0, bottom: 1.0, left: 1.0 }, brush: border_col }),
-        };
-        shapes::draw_rectangle(canvas, self.rect.x, self.rect.y, self.rect.w, self.rect.h, &style, z);
+        // Box with small rounded corners; draw fill then stroke so the border sits on top
+        let base_fill = Brush::Solid(Color::rgba(240, 240, 240, 255));
+        let base_rect = self.rect;
+        canvas.fill_rect(base_rect.x, base_rect.y, base_rect.w, base_rect.h, base_fill, z);
+        // Top edge accent line, matching ui.rs
+        let top_edge = Brush::Solid(Color::rgba(180, 180, 180, 255));
+        canvas.fill_rect(base_rect.x, base_rect.y, base_rect.w, 1.0, top_edge, z + 1);
         // Focus outline (inside border)
         if self.focused {
-            let focus = Brush::Solid(Color::rgba(63, 130, 246, 255));
-            let fo = rune_surface::shapes::RectStyle {
-                fill: None,
-                border: Some(rune_surface::shapes::BorderStyle { widths: rune_surface::shapes::BorderWidths { top: 2.0, right: 2.0, bottom: 2.0, left: 2.0 }, brush: focus }),
+            // Rounded focus outline to match demo-app ui.rs
+            let focus_rr = RoundedRect {
+                rect: base_rect,
+                radii: RoundedRadii { tl: 2.0, tr: 2.0, br: 2.0, bl: 2.0 },
             };
-            shapes::draw_rectangle(canvas, self.rect.x, self.rect.y, self.rect.w, self.rect.h, &fo, z + 1);
+            let focus = Brush::Solid(Color::rgba(63, 130, 246, 255));
+            canvas.stroke_rounded_rect(focus_rr, 2.0, focus, z + 2);
         }
-        // Check icon via SVG
+        // Checked state: fill inner square and draw a crisp white check mark
         if self.checked {
-            let pad = 3.0f32;
-            let origin = [self.rect.x + pad, self.rect.y + pad];
-            let max_size = [self.rect.w.max(0.0) - 2.0 * pad, self.rect.h.max(0.0) - 2.0 * pad];
-            canvas.draw_svg("images/check.svg", origin, max_size, z + 2);
+            let inset = 2.0f32;
+            let inner = Rect {
+                x: self.rect.x + inset,
+                y: self.rect.y + inset,
+                w: (self.rect.w - 2.0 * inset).max(0.0),
+                h: (self.rect.h - 2.0 * inset).max(0.0),
+            };
+            // Snap inner rect to whole pixels to avoid subpixel blurring of the SVG
+            let inner_snapped = Rect {
+                x: inner.x.round(),
+                y: inner.y.round(),
+                w: inner.w.round(),
+                h: inner.h.round(),
+            };
+            let inner_rr = RoundedRect {
+                rect: inner_snapped,
+                radii: RoundedRadii { tl: 1.5, tr: 1.5, br: 1.5, bl: 1.5 },
+            };
+            canvas.rounded_rect(
+                inner_rr,
+                Brush::Solid(Color::rgba(63, 130, 246, 255)),
+                z + 2,
+            );
+            // SVG tick is now drawn in the overlay pass for crispness
         }
         // Label
         if let Some(text) = &self.label {
             let tx = self.rect.x + self.rect.w + 8.0;
             let ty = self.rect.y + self.rect.h * 0.5 + self.label_size * 0.35;
-            canvas.draw_text_run([tx, ty], text.clone(), self.label_size, Color::rgba(20, 20, 20, 255), z + 3);
+            canvas.draw_text_run(
+                [tx, ty],
+                text.clone(),
+                self.label_size,
+                self.color,  // Use the color passed in, which should be light colored
+                z + 3,
+            );
         }
     }
 }

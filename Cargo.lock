@@ -478,6 +478,8 @@ dependencies = [
  "image",
  "pollster",
  "resvg",
+ "rune-scene",
+ "rune-surface",
  "thiserror",
  "tiny-skia",
  "usvg",
@@ -516,6 +518,7 @@ dependencies = [
  "engine-shaders",
  "fontdue",
  "freetype-rs",
+ "image",
  "lyon_geom",
  "lyon_path",
  "lyon_tessellation",
@@ -1692,8 +1695,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "engine-core",
+ "pollster",
  "rune-surface",
- "rune-window",
+ "wgpu",
  "winit",
 ]
 
@@ -1703,6 +1707,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "engine-core",
+ "image",
 ]
 
 [[package]]

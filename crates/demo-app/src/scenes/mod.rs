@@ -9,6 +9,8 @@ pub trait Scene {
     fn kind(&self) -> SceneKind;
     fn init_display_list(&mut self, viewport: Viewport) -> Option<DisplayList>;
     fn on_resize(&mut self, viewport: Viewport) -> Option<DisplayList> { let _ = viewport; None }
+    // DPI scale factor (logical pixels). Default no-op for scenes that don't care.
+    fn set_scale_factor(&mut self, _sf: f32) {}
     fn paint_root_background(
         &self,
         passes: &mut PassManager,
@@ -53,3 +55,4 @@ pub mod text_demo;
 pub mod path_demo;
 pub mod images;
 pub mod svg_geom;
+pub mod ui;

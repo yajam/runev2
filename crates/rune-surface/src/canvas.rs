@@ -7,6 +7,23 @@ use engine_core::{
     RasterizedGlyph, TextProvider,
 };
 
+/// How an image should fit within its bounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageFitMode {
+    /// Stretch to fill (may distort aspect ratio)
+    Fill,
+    /// Fit inside maintaining aspect ratio (letterbox/pillarbox)
+    Contain,
+    /// Fill maintaining aspect ratio (may crop edges)
+    Cover,
+}
+
+impl Default for ImageFitMode {
+    fn default() -> Self {
+        Self::Contain
+    }
+}
+
 /// Builder for a single frame’s draw commands. Wraps `Painter` and adds canvas helpers.
 pub struct Canvas {
     pub(crate) viewport: Viewport,
@@ -15,6 +32,7 @@ pub struct Canvas {
     pub(crate) text_provider: Option<Arc<dyn TextProvider + Send + Sync>>, // optional high-level text shaper
     pub(crate) glyph_draws: Vec<([f32; 2], RasterizedGlyph, ColorLinPremul)>, // low-level glyph masks
     pub(crate) svg_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)>, // (path, origin, max_size, z)
+    pub(crate) image_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], ImageFitMode, i32)>, // (path, origin, size, fit, z)
 }
 
 impl Canvas {
@@ -79,6 +97,12 @@ impl Canvas {
     /// Queue an SVG to be rasterized and drawn at origin, scaled to fit within max_size.
     pub fn draw_svg<P: Into<std::path::PathBuf>>(&mut self, path: P, origin: [f32; 2], max_size: [f32; 2], z: i32) {
         self.svg_draws.push((path.into(), origin, max_size, z));
+    }
+
+    /// Queue a raster image (PNG/JPEG/GIF/WebP) to be drawn at origin with the given size.
+    /// The fit parameter controls how the image is scaled within the size bounds.
+    pub fn draw_image<P: Into<std::path::PathBuf>>(&mut self, path: P, origin: [f32; 2], size: [f32; 2], fit: ImageFitMode, z: i32) {
+        self.image_draws.push((path.into(), origin, size, fit, z));
     }
 
     // Expose some painter helpers for advanced users

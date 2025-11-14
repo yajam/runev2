@@ -11,10 +11,12 @@ winit = { workspace = true }
 pollster = { workspace = true }
 engine-core = { path = "../engine-core" }
 engine-shaders = { path = "../engine-shaders" }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+image = { workspace = true }
 usvg = { version = "0.42", default-features = true }
 resvg = { version = "0.42", default-features = true }
 tiny-skia = "0.11"
+rune-surface = { path = "../rune-surface" }
+rune-scene = { path = "../rune-scene" }
 
 [[bin]]
 name = "demo-app"

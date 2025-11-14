@@ -4,5 +4,5 @@ mod canvas;
 mod surface;
 pub mod shapes;
 
-pub use canvas::Canvas;
+pub use canvas::{Canvas, ImageFitMode};
 pub use surface::RuneSurface;

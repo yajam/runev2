@@ -15,41 +15,35 @@ pub struct Button {
 impl Button {
     pub fn render(&self, canvas: &mut Canvas, z: i32) {
         let rrect = RoundedRect { rect: self.rect, radii: RoundedRadii { tl: self.radius, tr: self.radius, br: self.radius, bl: self.radius } };
-        canvas.fill_rect(self.rect.x, self.rect.y, self.rect.w, self.rect.h, Brush::Solid(self.bg), z);
-        // Simple shadow highlight (optional): draw rounded rect overlay
+        // Draw rounded background
+        canvas.rounded_rect(rrect, Brush::Solid(self.bg), z);
+        // Simple shadow highlight (optional): draw rounded rect overlay at top edge
         canvas.fill_rect(self.rect.x, self.rect.y, self.rect.w, 1.0, Brush::Solid(Color::rgba(255, 255, 255, 15)), z + 1);
-        // Label (left padded)
-        let text_pos = [self.rect.x + 8.0, self.rect.y + self.rect.h * 0.5 + self.label_size * 0.35];
-        canvas.draw_text_run(text_pos, self.label.clone(), self.label_size, self.fg, z + 2);
-        // Border
-        canvas.stroke_path(
-            {
-                let mut p = Path { cmds: Vec::new(), fill_rule: FillRule::NonZero };
-                // Approximate rounded rect border with 4 lines (simple)
-                p.cmds.push(PathCmd::MoveTo([self.rect.x, self.rect.y]));
-                p.cmds.push(PathCmd::LineTo([self.rect.x + self.rect.w, self.rect.y]));
-                p.cmds.push(PathCmd::LineTo([self.rect.x + self.rect.w, self.rect.y + self.rect.h]));
-                p.cmds.push(PathCmd::LineTo([self.rect.x, self.rect.y + self.rect.h]));
-                p.cmds.push(PathCmd::Close);
-                p
-            },
-            1.0,
-            Color::rgba(255, 255, 255, 26),
+        // Label (centered)
+        // Approximate text width for centering (rough heuristic: 0.5 * font_size per char)
+        let approx_text_width = self.label.len() as f32 * self.label_size * 0.5;
+        let text_x = self.rect.x + (self.rect.w - approx_text_width) * 0.5;
+        let text_y = self.rect.y + self.rect.h * 0.5 + self.label_size * 0.35;
+        canvas.draw_text_run([text_x, text_y], self.label.clone(), self.label_size, self.fg, z + 2);
+        // Rounded border
+        shapes::draw_rounded_rectangle(
+            canvas,
+            rrect,
+            None,
+            Some(1.0),
+            Some(Brush::Solid(Color::rgba(255, 255, 255, 26))),
             z + 3,
         );
         // Focus outline
         if self.focused {
-            let rr = RoundedRect { rect: self.rect, radii: RoundedRadii { tl: self.radius, tr: self.radius, br: self.radius, bl: self.radius } };
             shapes::draw_rounded_rectangle(
                 canvas,
-                rr,
+                rrect,
                 None,
                 Some(2.0),
                 Some(Brush::Solid(Color::rgba(63, 130, 246, 255))),
                 z + 4,
             );
         }
-        // Better: use rounded rect stroke when available via painter.stroke_rounded_rect in a future Canvas API.
-        let _ = rrect; // keep to avoid unused warning when stroke is simplified
     }
 }

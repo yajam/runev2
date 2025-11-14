@@ -447,10 +447,13 @@ struct TextColor { color: vec4<f32> }; // premultiplied linear RGBA
 fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
     // Nearest sampling prevents color bleeding across subpixels
     let m = textureSample(mask_tex, mask_smp, inp.uv);
-    // RGB subpixel coverage; tint the premultiplied color per channel.
-    let rgb = vec3<f32>(text.color.r * m.r, text.color.g * m.g, text.color.b * m.b);
-    // Derive alpha from the maximum of coverage channels, scaled by color alpha.
-    let cov = max(m.r, max(m.g, m.b));
+    // Apply gamma compensation to make text brighter on dark backgrounds
+    let m_gamma = vec3<f32>(pow(m.r, 0.6), pow(m.g, 0.6), pow(m.b, 0.6));
+    // Use RGB subpixel coverage for all colors
+    // The premultiplied color is modulated by each coverage channel
+    let rgb = vec3<f32>(text.color.r * m_gamma.r, text.color.g * m_gamma.g, text.color.b * m_gamma.b);
+    // Derive alpha from the maximum of coverage channels, scaled by color alpha
+    let cov = max(m_gamma.r, max(m_gamma.g, m_gamma.b));
     let a = text.color.a * cov;
     return vec4<f32>(rgb, a);
 } 

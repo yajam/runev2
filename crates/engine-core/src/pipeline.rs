@@ -549,8 +549,8 @@ impl ShadowCompositeRenderer {
 pub struct TextRenderer {
     pipeline: wgpu::RenderPipeline,
     vp_bgl: wgpu::BindGroupLayout,
-    tex_bgl: wgpu::BindGroupLayout,
-    sampler: wgpu::Sampler,
+    pub tex_bgl: wgpu::BindGroupLayout,
+    pub sampler: wgpu::Sampler,
     pub color_buffer: wgpu::Buffer,
 }
 

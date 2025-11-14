@@ -89,6 +89,7 @@ pub fn make_surface_config(
 
 // Scene and display list (Phase 2)
 mod scene;
+mod color; // sRGB conversion helpers for ColorLinPremul
 mod display_list;
 mod painter;
 mod upload;
@@ -97,6 +98,8 @@ mod pass_manager;
 mod hit_test;
 mod text;
 mod svg;
+mod image_cache;
+mod dpi;
 
 pub use scene::*;
 pub use display_list::*;
@@ -109,3 +112,5 @@ pub use pipeline::Blitter;
 pub use hit_test::*;
 pub use text::*;
 pub use svg::*;
+pub use image_cache::*;
+pub use dpi::*;

@@ -9,8 +9,15 @@ use winit::window::WindowBuilder;
 
 mod scenes;
 use scenes::{Scene, SceneKind};
+mod ui_canvas;
 
 fn main() -> Result<()> {
+    // Optional Canvas-based UI path to verify Canvas rendering in demo-app
+    if std::env::var("DEMO_SCENE").as_deref().ok() == Some("ui-canvas")
+        || std::env::args().any(|a| a == "--scene=ui-canvas" || a == "--ui-canvas")
+    {
+        return ui_canvas::run();
+    }
     // Create window and event loop
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
@@ -39,8 +46,7 @@ fn main() -> Result<()> {
 
     // Configure surface
     let mut size = window.inner_size();
-    // Track DPI scale factor and push into engine-core (mac only)
-    #[cfg(target_os = "macos")]
+    // Track DPI scale factor and push into engine-core
     let mut scale_factor: f32 = window.scale_factor() as f32;
     let config = make_surface_config(&adapter, &surface, size.width, size.height);
 
@@ -94,10 +100,16 @@ fn main() -> Result<()> {
         || std::env::args().any(|a| a == "--scene=path" || a == "--path" || a == "--scene=path-demo")
     {
         Box::new(scenes::path_demo::PathDemoScene::default())
+    } else if scene_env.as_deref() == Some("ui")
+        || std::env::args().any(|a| a == "--scene=ui")
+    {
+        Box::new(scenes::ui::UiElementsScene::default())
     } else {
         Box::new(scenes::default::DefaultScene::default())
     };
 
+    // Pass initial DPI scale to scenes that care
+    scene.set_scale_factor(scale_factor);
     let mut dlist_opt = scene.init_display_list(Viewport { width: size.width, height: size.height });
     let queue = engine.queue();
     let mut gpu_scene_opt = match scene.kind() {
@@ -113,10 +125,10 @@ fn main() -> Result<()> {
         _ => None,
     };
     let mut passes = PassManager::new(engine.device(), config.format);
-    #[cfg(target_os = "macos")]
-    {
-        passes.set_scale_factor(scale_factor);
-    }
+    // Always render in logical pixels scaled by device DPI.
+    passes.set_logical_pixels(true);
+    passes.set_ui_scale(1.0);
+    passes.set_scale_factor(scale_factor);
     let mut bypass = std::env::var("BYPASS_COMPOSITOR")
         .ok()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -481,19 +493,16 @@ fn main() -> Result<()> {
             }
         },
         Event::WindowEvent { event: WindowEvent::ScaleFactorChanged { scale_factor: new_sf, .. }, window_id } if window_id == window.id() => {
-            // Update scale factor dynamically (mac only) and notify engine-core
-            #[cfg(target_os = "macos")]
-            {
-                let _ = scale_factor;
-                scale_factor = new_sf as f32;
-                passes.set_scale_factor(scale_factor);
-                // Reconfigure surface to match new physical size
-                size = window.inner_size();
-                let new_config = make_surface_config(&adapter, &surface, size.width, size.height);
-                surface.configure(&engine.device(), &new_config);
-                needs_reupload = true;
-                window.request_redraw();
-            }
+            // Update scale factor dynamically and notify engine-core
+            scale_factor = new_sf as f32;
+            passes.set_scale_factor(scale_factor);
+            scene.set_scale_factor(scale_factor);
+            // Reconfigure surface to match new physical size
+            size = window.inner_size();
+            let new_config = make_surface_config(&adapter, &surface, size.width, size.height);
+            surface.configure(&engine.device(), &new_config);
+            needs_reupload = true;
+            window.request_redraw();
         }
         Event::AboutToWait => {
             window.request_redraw();

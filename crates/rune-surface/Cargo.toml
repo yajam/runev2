@@ -8,5 +8,6 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+image = { workspace = true }
 engine-core = { path = "../engine-core" }
 

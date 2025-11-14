@@ -39,14 +39,20 @@ pub struct PassManager {
     pub text: TextRenderer,
     pub image: crate::pipeline::ImageRenderer,
     pub svg_cache: crate::svg::SvgRasterCache,
+    pub image_cache: crate::image_cache::ImageCache,
     offscreen_format: wgpu::TextureFormat,
     surface_format: wgpu::TextureFormat,
     vp_buffer: wgpu::Buffer,
+    vp_buffer_text: wgpu::Buffer,
     bg: BackgroundRenderer,
     bg_param_buffer: wgpu::Buffer,
     bg_stops_buffer: wgpu::Buffer,
     // Platform DPI scale factor (used for mac-specific radial centering fix)
     scale_factor: f32,
+    // Additional UI scale multiplier for logical pixel mode
+    ui_scale: f32,
+    // When true, treat positions as logical pixels and scale by `scale_factor` centrally
+    logical_pixels: bool,
     // Intermediate texture for Vello-style smooth resizing
     pub intermediate_texture: Option<crate::OwnedTexture>,
 }
@@ -107,9 +113,16 @@ impl PassManager {
         let text = TextRenderer::new(device.clone(), target_format);
         let image = crate::pipeline::ImageRenderer::new(device.clone(), target_format);
         let svg_cache = crate::svg::SvgRasterCache::new(device.clone());
+        let image_cache = crate::image_cache::ImageCache::new(device.clone());
         let bg = BackgroundRenderer::new(device.clone(), target_format);
         let vp_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("viewport-uniform"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let vp_buffer_text = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("viewport-uniform-text"),
             size: 16,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -126,6 +139,9 @@ impl PassManager {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        // Defaults: always interpret author coords as logical pixels and scale by DPI.
+        let logical_default = true;
+        let ui_scale = 1.0;
         Self {
             device,
             solid_offscreen,
@@ -139,13 +155,17 @@ impl PassManager {
             text,
             image,
             svg_cache,
+            image_cache,
             offscreen_format,
             surface_format: target_format,
             vp_buffer,
+            vp_buffer_text,
             bg,
             bg_param_buffer,
             bg_stops_buffer,
             scale_factor: 1.0,
+            ui_scale,
+            logical_pixels: logical_default,
             intermediate_texture: None,
         }
     }
@@ -166,13 +186,15 @@ impl PassManager {
         width: u32,
         height: u32,
     ) {
-        // Update viewport uniform based on render target dimensions
+        // Update viewport uniform based on render target dimensions (+ logical pixel scale)
+        let logical = crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
         let scale = [
-            2.0f32 / (width.max(1) as f32),
-            -2.0f32 / (height.max(1) as f32),
+            (2.0f32 / (width.max(1) as f32)) * logical,
+            (-2.0f32 / (height.max(1) as f32)) * logical,
         ];
         let translate = [-1.0f32, 1.0f32];
         let vp_data = [scale[0], scale[1], translate[0], translate[1]];
+        // debug log removed
         queue.write_buffer(&self.vp_buffer, 0, bytemuck::bytes_of(&vp_data));
 
         #[repr(C)]
@@ -237,6 +259,43 @@ impl PassManager {
         Some((view, w, h))
     }
 
+    /// Load a raster image (PNG/JPEG/GIF/WebP) from disk to a cached GPU texture.
+    /// Returns a texture view and its pixel dimensions on success.
+    pub fn load_image_to_view(
+        &mut self,
+        path: &std::path::Path,
+        queue: &wgpu::Queue,
+    ) -> Option<(wgpu::TextureView, u32, u32)> {
+        let (tex, w, h) = self.image_cache.get_or_load(path, queue)?;
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        Some((view, w, h))
+    }
+
+    /// Try to get an image from cache without blocking. Returns None if not ready.
+    pub fn try_get_image_view(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Option<(wgpu::TextureView, u32, u32)> {
+        let (tex, w, h) = self.image_cache.get(path)?;
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        Some((view, w, h))
+    }
+
+    /// Request an image to be loaded. Marks it as loading if not already in cache.
+    pub fn request_image_load(&mut self, path: &std::path::Path) {
+        self.image_cache.start_load(path);
+    }
+
+    /// Check if an image is ready in the cache.
+    pub fn is_image_ready(&self, path: &std::path::Path) -> bool {
+        self.image_cache.is_ready(path)
+    }
+
+    /// Store a pre-loaded image texture in the cache.
+    pub fn store_loaded_image(&mut self, path: &std::path::Path, tex: Arc<wgpu::Texture>, width: u32, height: u32) {
+        self.image_cache.store_ready(path, tex, width, height);
+    }
+
     /// Draw an RGB subpixel coverage text mask tinted with the given premultiplied color
     /// onto the specified target view at a pixel-space rectangle (y-down).
     /// Supports RGBA8 and RGBA16 mask textures.
@@ -244,14 +303,33 @@ impl PassManager {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         target_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
         origin: [f32; 2],
         mask: &crate::text::SubpixelMask,
         color: crate::scene::ColorLinPremul,
         queue: &wgpu::Queue,
     ) {
-        // Upload color
+        // Text masks are authored in pixel coordinates and are already rasterized at
+        // the target physical size (run.size × transform × dpi × ui_scale). To avoid
+        // double-scaling, map 1px→NDC without applying logical/UI scale here.
+        let scale = [
+            2.0f32 / (width.max(1) as f32),
+            -2.0f32 / (height.max(1) as f32),
+        ];
+        let translate = [-1.0f32, 1.0f32];
+        let vp_data = [scale[0], scale[1], translate[0], translate[1]];
+        queue.write_buffer(&self.vp_buffer_text, 0, bytemuck::bytes_of(&vp_data));
+
+        // Create a unique color buffer for this draw to prevent color bleeding
         let c = [color.r, color.g, color.b, color.a];
-        queue.write_buffer(&self.text.color_buffer, 0, bytemuck::bytes_of(&c));
+        let color_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("text-color-buffer"),
+            size: std::mem::size_of::<[f32; 4]>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&color_buffer, 0, bytemuck::bytes_of(&c));
 
         // Create mask texture and upload
         let format = match mask.format { crate::text::MaskFormat::Rgba8 => wgpu::TextureFormat::Rgba8Unorm, crate::text::MaskFormat::Rgba16 => wgpu::TextureFormat::Rgba16Unorm };
@@ -306,8 +384,17 @@ impl PassManager {
         if isize > 0 { queue.write_buffer(&ibuf, 0, bytemuck::cast_slice(&idx)); }
 
         // Viewport bind group
-        let vp_bg = self.text.vp_bind_group(&self.device, &self.vp_buffer);
-        let tex_bg = self.text.tex_bind_group(&self.device, &tex_view);
+        let vp_bg = self.text.vp_bind_group(&self.device, &self.vp_buffer_text);
+        // Create texture bind group with unique color buffer
+        let tex_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("text-tex-bg-unique"),
+            layout: &self.text.tex_bgl,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&tex_view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.text.sampler) },
+                wgpu::BindGroupEntry { binding: 2, resource: color_buffer.as_entire_binding() },
+            ],
+        });
 
         // Render pass that preserves existing content
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -322,6 +409,7 @@ impl PassManager {
             timestamp_writes: None,
         });
         self.text.record(&mut pass, &vp_bg, &tex_bg, &vbuf, &ibuf, idx.len() as u32);
+        drop(pass); // Explicitly drop to ensure render pass executes before next draw_text_mask
         // temp buffers and texture are dropped at end of scope
     }
 
@@ -334,6 +422,15 @@ impl PassManager {
             self.scale_factor = 1.0;
         }
     }
+
+    /// Set author-controlled UI scale multiplier (applies in logical mode).
+    pub fn set_ui_scale(&mut self, s: f32) {
+        let s = if s.is_finite() { s } else { 1.0 };
+        self.ui_scale = s.clamp(0.25, 4.0);
+    }
+
+    /// Toggle logical pixel mode.
+    pub fn set_logical_pixels(&mut self, on: bool) { self.logical_pixels = on; }
 
     pub fn alloc_targets(
         &self,
@@ -448,14 +545,15 @@ impl PassManager {
         queue: &wgpu::Queue,
         provider: &dyn crate::text::TextProvider,
     ) {
-        // Update viewport uniform based on list viewport
+        // Update viewport uniform for text without applying logical/UI scale here.
         let scale = [
             2.0f32 / (list.viewport.width.max(1) as f32),
             -2.0f32 / (list.viewport.height.max(1) as f32),
         ];
         let translate = [-1.0f32, 1.0f32];
         let vp_data = [scale[0], scale[1], translate[0], translate[1]];
-        queue.write_buffer(&self.vp_buffer, 0, bytemuck::bytes_of(&vp_data));
+        // debug log removed
+        queue.write_buffer(&self.vp_buffer_text, 0, bytemuck::bytes_of(&vp_data));
 
         // Optional: round run X position to whole pixels for diagnostics
         let snap_x = std::env::var("DEMO_SNAP_X")
@@ -464,28 +562,54 @@ impl PassManager {
             .unwrap_or(false);
         for cmd in &list.commands {
             if let crate::display_list::Command::DrawText { run, transform, .. } = cmd {
-                let [_a, _b, _c, _d, e, f] = transform.m;
-                let rx = run.pos[0] + e;
+                let [a, b, c, d, e, f] = transform.m;
+                // Apply full affine transform (scale + translate) to the run origin
+                let rx = a * run.pos[0] + c * run.pos[1] + e;
+                let ry = b * run.pos[0] + d * run.pos[1] + f;
+
+                // Infer uniform scale from the linear part of the transform (handles DPI scaling)
+                let sx = (a * a + b * b).sqrt();
+                let sy = (c * c + d * d).sqrt();
+                let mut s = if sx.is_finite() && sy.is_finite() {
+                    // When both are valid, take the average to avoid anisotropy surprises
+                    if sx > 0.0 && sy > 0.0 { (sx + sy) * 0.5 } else { sx.max(sy).max(1.0) }
+                } else { 1.0 };
+                if !s.is_finite() || s <= 0.0 { s = 1.0; }
+                // Include logical pixel scale if enabled
+                let logical_scale = if self.logical_pixels { (self.scale_factor * self.ui_scale).max(0.0001) } else { 1.0 };
+                s *= logical_scale;
+
+                // Prepare a scaled run for rasterization so glyph masks match the visual + DPI scale
+                let scaled_size = (run.size * s).max(1.0);
+                let run_for_provider = crate::scene::TextRun { text: run.text.clone(), pos: [0.0, 0.0], size: scaled_size, color: run.color };
+
                 let sf = if self.scale_factor.is_finite() && self.scale_factor > 0.0 { self.scale_factor } else { 1.0 };
                 let snap = |v: f32| -> f32 { (v * sf).round() / sf };
-                let run_origin_x = if snap_x { snap(rx) } else { rx };
-                // Snap baseline using line metrics ascent so descenders remain stable
-                let baseline_y = if let Some(m) = provider.line_metrics(run.size) {
+                // Convert origin to physical pixels if in logical mode
+                let rx_px = rx * logical_scale;
+                let ry_px = ry * logical_scale;
+                let run_origin_x = if snap_x { snap(rx_px) } else { rx_px };
+
+                // Baseline snapping using metrics at the scaled size
+                let baseline_y = if let Some(m) = provider.line_metrics(scaled_size) {
                     let asc = m.ascent;
-                    snap(run.pos[1] + f + asc) - asc
+                    snap(ry_px + asc) - asc
                 } else {
-                    snap(run.pos[1] + f)
+                    snap(ry_px)
                 };
-                for rg in provider.rasterize_run(run) {
+
+                for rg in provider.rasterize_run(&run_for_provider) {
                     let mut origin = [run_origin_x + rg.offset[0], baseline_y + rg.offset[1]];
-                    // Pseudo-hinting for small sizes
-                    if run.size <= 15.0 {
+                    // Pseudo-hinting for small pixel sizes
+                    if scaled_size <= 15.0 {
                         origin[0] = snap(origin[0]);
                         origin[1] = snap(origin[1]);
                     }
                     self.draw_text_mask(
                         encoder,
                         target_view,
+                        list.viewport.width,
+                        list.viewport.height,
                         origin,
                         &rg.mask,
                         run.color,
@@ -537,12 +661,14 @@ impl PassManager {
         let ping_view = ping_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Viewport for full target size (y-down)
+        let logical = crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
         let scale = [
-            2.0f32 / (width.max(1) as f32),
-            -2.0f32 / (height.max(1) as f32),
+            (2.0f32 / (width.max(1) as f32)) * logical,
+            (-2.0f32 / (height.max(1) as f32)) * logical,
         ];
         let translate = [-1.0f32, 1.0f32];
         let vp_data = [scale[0], scale[1], translate[0], translate[1]];
+        // debug log removed
         queue.write_buffer(&self.vp_buffer, 0, bytemuck::bytes_of(&vp_data));
 
         let shadow_radii = RoundedRadii {
@@ -1003,12 +1129,14 @@ impl PassManager {
         queue: &wgpu::Queue,
     ) {
         // Update viewport uniform
+        let logical = crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
         let scale = [
-            2.0f32 / (width.max(1) as f32),
-            -2.0f32 / (height.max(1) as f32),
+            (2.0f32 / (width.max(1) as f32)) * logical,
+            (-2.0f32 / (height.max(1) as f32)) * logical,
         ];
         let translate = [-1.0f32, 1.0f32];
         let vp_data = [scale[0], scale[1], translate[0], translate[1]];
+        // debug log removed
         queue.write_buffer(&self.vp_buffer, 0, bytemuck::bytes_of(&vp_data));
 
         // Tessellate rounded rect fill
@@ -1926,14 +2054,16 @@ impl PassManager {
         queue: &wgpu::Queue,
         preserve_target: bool,
     ) {
-        // Update viewport uniform
+        // Update viewport uniform (+ logical pixel scale)
+        let logical = crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
         let scale = [
-            2.0f32 / (width.max(1) as f32),
-            -2.0f32 / (height.max(1) as f32),
+            (2.0f32 / (width.max(1) as f32)) * logical,
+            (-2.0f32 / (height.max(1) as f32)) * logical,
         ];
         let translate = [-1.0f32, 1.0f32];
         let vp_data = [scale[0], scale[1], translate[0], translate[1]];
         let data = bytemuck::bytes_of(&vp_data);
+        // debug log removed
         queue.write_buffer(&self.vp_buffer, 0, data);
         let vp_bg_off = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("vp-bg-offscreen"),
@@ -2017,14 +2147,16 @@ impl PassManager {
         queue: &wgpu::Queue,
         preserve_surface: bool,
     ) {
-        // Update viewport uniform
+        // Update viewport uniform (+ logical pixel scale)
+        let logical = crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
         let scale = [
-            2.0f32 / (width.max(1) as f32),
-            -2.0f32 / (height.max(1) as f32),
+            (2.0f32 / (width.max(1) as f32)) * logical,
+            (-2.0f32 / (height.max(1) as f32)) * logical,
         ];
         let translate = [-1.0f32, 1.0f32];
         let vp_data = [scale[0], scale[1], translate[0], translate[1]];
         let data = bytemuck::bytes_of(&vp_data);
+        // debug log removed
         queue.write_buffer(&self.vp_buffer, 0, data);
         let vp_bg_off = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("vp-bg-offscreen"),

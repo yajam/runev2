@@ -283,6 +283,101 @@ fn tessellate_path_stroke(
     indices.extend(geom.indices.iter().map(|i| base + *i));
 }
 
+/// Build a Path representing a rounded rectangle using cubic Beziers (kappa approximation).
+/// This path is then tessellated by lyon for precise coverage (avoids fan artifacts on small radii).
+fn rounded_rect_to_path(rrect: RoundedRect) -> Path {
+    let rect = rrect.rect;
+    let mut tl = rrect.radii.tl.min(rect.w * 0.5).min(rect.h * 0.5);
+    let mut tr = rrect.radii.tr.min(rect.w * 0.5).min(rect.h * 0.5);
+    let mut br = rrect.radii.br.min(rect.w * 0.5).min(rect.h * 0.5);
+    let mut bl = rrect.radii.bl.min(rect.w * 0.5).min(rect.h * 0.5);
+
+    // Clamp negative or NaN just in case
+    for r in [&mut tl, &mut tr, &mut br, &mut bl] {
+        if !r.is_finite() || *r < 0.0 { *r = 0.0; }
+    }
+
+    // If radii are effectively zero, fall back to a plain rect path
+    if tl <= 0.0 && tr <= 0.0 && br <= 0.0 && bl <= 0.0 {
+        return Path {
+            cmds: vec![
+                PathCmd::MoveTo([rect.x, rect.y]),
+                PathCmd::LineTo([rect.x + rect.w, rect.y]),
+                PathCmd::LineTo([rect.x + rect.w, rect.y + rect.h]),
+                PathCmd::LineTo([rect.x, rect.y + rect.h]),
+                PathCmd::Close,
+            ],
+            fill_rule: FillRule::NonZero,
+        };
+    }
+
+    // Kappa for quarter circle cubic approximation
+    const K: f32 = 0.552_284_749_831;
+    let x0 = rect.x;
+    let y0 = rect.y;
+    let x1 = rect.x + rect.w;
+    let y1 = rect.y + rect.h;
+
+    // Start at top-left corner top edge tangent
+    let mut cmds: Vec<PathCmd> = Vec::new();
+    cmds.push(PathCmd::MoveTo([x0 + tl, y0]));
+
+    // Top edge to before TR arc
+    cmds.push(PathCmd::LineTo([x1 - tr, y0]));
+    // TR arc (clockwise): from (x1 - tr, y0) to (x1, y0 + tr)
+    if tr > 0.0 {
+        let c1 = [x1 - tr + K * tr, y0];
+        let c2 = [x1, y0 + tr - K * tr];
+        let p  = [x1, y0 + tr];
+        cmds.push(PathCmd::CubicTo(c1, c2, p));
+    } else {
+        cmds.push(PathCmd::LineTo([x1, y0]));
+        cmds.push(PathCmd::LineTo([x1, y0 + tr]));
+    }
+
+    // Right edge down to before BR arc
+    cmds.push(PathCmd::LineTo([x1, y1 - br]));
+    // BR arc: from (x1, y1 - br) to (x1 - br, y1)
+    if br > 0.0 {
+        let c1 = [x1, y1 - br + K * br];
+        let c2 = [x1 - br + K * br, y1];
+        let p  = [x1 - br, y1];
+        cmds.push(PathCmd::CubicTo(c1, c2, p));
+    } else {
+        cmds.push(PathCmd::LineTo([x1, y1]));
+        cmds.push(PathCmd::LineTo([x1 - br, y1]));
+    }
+
+    // Bottom edge to before BL arc
+    cmds.push(PathCmd::LineTo([x0 + bl, y1]));
+    // BL arc: from (x0 + bl, y1) to (x0, y1 - bl)
+    if bl > 0.0 {
+        let c1 = [x0 + bl - K * bl, y1];
+        let c2 = [x0, y1 - bl + K * bl];
+        let p  = [x0, y1 - bl];
+        cmds.push(PathCmd::CubicTo(c1, c2, p));
+    } else {
+        cmds.push(PathCmd::LineTo([x0, y1]));
+        cmds.push(PathCmd::LineTo([x0, y1 - bl]));
+    }
+
+    // Left edge up to before TL arc
+    cmds.push(PathCmd::LineTo([x0, y0 + tl]));
+    // TL arc: from (x0, y0 + tl) to (x0 + tl, y0)
+    if tl > 0.0 {
+        let c1 = [x0, y0 + tl - K * tl];
+        let c2 = [x0 + tl - K * tl, y0];
+        let p  = [x0 + tl, y0];
+        cmds.push(PathCmd::CubicTo(c1, c2, p));
+    } else {
+        cmds.push(PathCmd::LineTo([x0, y0]));
+        cmds.push(PathCmd::LineTo([x0 + tl, y0]));
+    }
+
+    cmds.push(PathCmd::Close);
+    Path { cmds, fill_rule: FillRule::NonZero }
+}
+
 fn push_rounded_rect(
     vertices: &mut Vec<Vertex>,
     indices: &mut Vec<u16>,
@@ -290,60 +385,9 @@ fn push_rounded_rect(
     color: [f32; 4],
     t: Transform2D,
 ) {
-    let rect = rrect.rect;
-    let tl = rrect.radii.tl.min(rect.w * 0.5).min(rect.h * 0.5);
-    let tr = rrect.radii.tr.min(rect.w * 0.5).min(rect.h * 0.5);
-    let br = rrect.radii.br.min(rect.w * 0.5).min(rect.h * 0.5);
-    let bl = rrect.radii.bl.min(rect.w * 0.5).min(rect.h * 0.5);
-
-    let center_px = [rect.x + rect.w * 0.5, rect.y + rect.h * 0.5];
-    let center = apply_transform(center_px, t);
-
-    let segs = 24u32;
-    let mut ring: Vec<[f32; 2]> = Vec::new();
-
-    fn arc_append(ring: &mut Vec<[f32; 2]>, c: [f32; 2], r: f32, start: f32, end: f32, segs: u32, include_start: bool) {
-        if r <= 0.0 { return; }
-        for i in 0..=segs {
-            if i == 0 && !include_start { continue; }
-            let t = (i as f32) / (segs as f32);
-            let ang = start + t * (end - start);
-            let p = [c[0] + r * ang.cos(), c[1] - r * ang.sin()];
-            ring.push(p);
-        }
-    }
-
-    // Build ring clockwise, starting at TL top tangent
-    // TL: 90° -> 180° (top -> left)
-    if tl > 0.0 { arc_append(&mut ring, [rect.x + tl, rect.y + tl], tl, std::f32::consts::FRAC_PI_2, std::f32::consts::PI, segs, true); }
-    else { ring.push([rect.x + 0.0, rect.y + 0.0]); }
-
-    // BL: 180° -> 270° (left -> bottom)
-    // Include start point so straight edges between corners are preserved.
-    if bl > 0.0 { arc_append(&mut ring, [rect.x + bl, rect.y + rect.h - bl], bl, std::f32::consts::PI, std::f32::consts::FRAC_PI_2 * 3.0, segs, true); }
-    else { ring.push([rect.x + 0.0, rect.y + rect.h]); }
-
-    // BR: 270° -> 360° (bottom -> right)
-    if br > 0.0 { arc_append(&mut ring, [rect.x + rect.w - br, rect.y + rect.h - br], br, std::f32::consts::FRAC_PI_2 * 3.0, std::f32::consts::TAU, segs, true); }
-    else { ring.push([rect.x + rect.w, rect.y + rect.h]); }
-
-    // TR: 0° -> 90° (right -> top)
-    if tr > 0.0 { arc_append(&mut ring, [rect.x + rect.w - tr, rect.y + tr], tr, 0.0, std::f32::consts::FRAC_PI_2, segs, true); }
-    else { ring.push([rect.x + rect.w, rect.y + 0.0]); }
-
-    let base = vertices.len() as u16;
-    vertices.push(Vertex { pos: center, color });
-    for p in ring {
-        let p = apply_transform(p, t);
-        vertices.push(Vertex { pos: p, color });
-    }
-    let ring_len = (vertices.len() as u16) - base - 1;
-    for i in 0..ring_len {
-        let i0 = base;
-        let i1 = base + 1 + i;
-        let i2 = base + 1 + ((i + 1) % ring_len);
-        indices.extend_from_slice(&[i0, i1, i2]);
-    }
+    // Delegate to lyon's robust tessellator via our generic path fill
+    let path = rounded_rect_to_path(rrect);
+    tessellate_path_fill(vertices, indices, &path, color, t);
 }
 
 fn push_rect_stroke(
@@ -406,82 +450,8 @@ fn push_rounded_rect_stroke(
 ) {
     let w = stroke.width.max(0.0);
     if w <= 0.0001 { return; }
-    let rect = rrect.rect;
-    let tl = rrect.radii.tl.min(rect.w * 0.5).min(rect.h * 0.5);
-    let tr = rrect.radii.tr.min(rect.w * 0.5).min(rect.h * 0.5);
-    let br = rrect.radii.br.min(rect.w * 0.5).min(rect.h * 0.5);
-    let bl = rrect.radii.bl.min(rect.w * 0.5).min(rect.h * 0.5);
-
-    let itl = (tl - w).max(0.0);
-    let itr = (tr - w).max(0.0);
-    let ibr = (br - w).max(0.0);
-    let ibl = (bl - w).max(0.0);
-
-    let segs = 24u32;
-    let mut outer: Vec<[f32; 2]> = Vec::new();
-    let mut inner: Vec<[f32; 2]> = Vec::new();
-
-    fn arc_append(
-        ring: &mut Vec<[f32; 2]>,
-        c: [f32; 2],
-        r: f32,
-        start: f32,
-        end: f32,
-        segs: u32,
-        include_start: bool,
-    ) {
-        if r <= 0.0 { return; }
-        for i in 0..=segs {
-            if i == 0 && !include_start { continue; }
-            let t = (i as f32) / (segs as f32);
-            let ang = start + t * (end - start);
-            let p = [c[0] + r * ang.cos(), c[1] - r * ang.sin()];
-            ring.push(p);
-        }
-    }
-
-    // Outer path clockwise (TL -> BL -> BR -> TR)
-    if tl > 0.0 { arc_append(&mut outer, [rect.x + tl, rect.y + tl], tl, std::f32::consts::FRAC_PI_2, std::f32::consts::PI, segs, true); }
-    else { outer.push([rect.x + 0.0, rect.y + 0.0]); }
-    if bl > 0.0 { arc_append(&mut outer, [rect.x + bl, rect.y + rect.h - bl], bl, std::f32::consts::PI, std::f32::consts::FRAC_PI_2 * 3.0, segs, true); }
-    else { outer.push([rect.x + 0.0, rect.y + rect.h]); }
-    if br > 0.0 { arc_append(&mut outer, [rect.x + rect.w - br, rect.y + rect.h - br], br, std::f32::consts::FRAC_PI_2 * 3.0, std::f32::consts::TAU, segs, true); }
-    else { outer.push([rect.x + rect.w, rect.y + rect.h]); }
-    if tr > 0.0 { arc_append(&mut outer, [rect.x + rect.w - tr, rect.y + tr], tr, 0.0, std::f32::consts::FRAC_PI_2, segs, true); }
-    else { outer.push([rect.x + rect.w, rect.y + 0.0]); }
-
-    // Inner path clockwise with inset by stroke width
-    let ix = rect.x + w;
-    let iy = rect.y + w;
-    let iw = (rect.w - 2.0 * w).max(0.0);
-    let ih = (rect.h - 2.0 * w).max(0.0);
-    if itl > 0.0 { arc_append(&mut inner, [ix + itl, iy + itl], itl, std::f32::consts::FRAC_PI_2, std::f32::consts::PI, segs, true); }
-    else { inner.push([ix + 0.0, iy + 0.0]); }
-    if ibl > 0.0 { arc_append(&mut inner, [ix + ibl, iy + ih - ibl], ibl, std::f32::consts::PI, std::f32::consts::FRAC_PI_2 * 3.0, segs, true); }
-    else { inner.push([ix + 0.0, iy + ih]); }
-    if ibr > 0.0 { arc_append(&mut inner, [ix + iw - ibr, iy + ih - ibr], ibr, std::f32::consts::FRAC_PI_2 * 3.0, std::f32::consts::TAU, segs, true); }
-    else { inner.push([ix + iw, iy + ih]); }
-    if itr > 0.0 { arc_append(&mut inner, [ix + iw - itr, iy + itr], itr, 0.0, std::f32::consts::FRAC_PI_2, segs, true); }
-    else { inner.push([ix + iw, iy + 0.0]); }
-
-    // Ensure same number of segments for stitching; in rare degenerate cases, resample the shorter ring
-    let n = outer.len().min(inner.len());
-    if n < 2 { return; }
-    let base = vertices.len() as u16;
-    for k in 0..n {
-        let po = apply_transform(outer[k], t);
-        let pi = apply_transform(inner[k], t);
-        vertices.push(Vertex { pos: po, color });
-        vertices.push(Vertex { pos: pi, color });
-    }
-    // Stitch as triangle list forming quads between outer and inner rings
-    for k in 0..n {
-        let o0 = base + (2 * k as u16);
-        let i0 = base + (2 * k as u16) + 1;
-        let o1 = base + (2 * ((k + 1) % n) as u16);
-        let i1 = base + (2 * ((k + 1) % n) as u16) + 1;
-        indices.extend_from_slice(&[o0, o1, i1, o0, i1, i0]);
-    }
+    let path = rounded_rect_to_path(rrect);
+    tessellate_path_stroke(vertices, indices, &path, Stroke { width: w }, color, t);
 }
 
 pub fn upload_display_list(
