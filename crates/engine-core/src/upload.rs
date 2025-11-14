@@ -462,6 +462,13 @@ pub fn upload_display_list(
     let mut vertices: Vec<Vertex> = Vec::new();
     let mut indices: Vec<u16> = Vec::new();
 
+    // NOTE: Z-index sorting disabled because it breaks clip/transform stacks.
+    // For proper z-ordering, we need to either:
+    // 1. Use a depth buffer, or
+    // 2. Ensure commands are emitted in the correct z-order from the start
+    // let mut sorted_list = list.clone();
+    // sorted_list.sort_by_z();
+
     for cmd in &list.commands {
         match cmd {
             Command::DrawRect { rect, brush, transform, .. } => {

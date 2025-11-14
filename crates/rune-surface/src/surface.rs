@@ -10,12 +10,21 @@ use engine_core::{
     PassManager,
     Painter,
     ColorLinPremul,
+    Transform2D,
     upload_display_list,
     RenderAllocator,
     wgpu, // import wgpu from engine-core to keep type identity
 };
 
 use crate::canvas::{Canvas, ImageFitMode};
+
+/// Apply a 2D affine transform to a point
+fn apply_transform_to_point(point: [f32; 2], transform: Transform2D) -> [f32; 2] {
+    let [a, b, c, d, e, f] = transform.m;
+    let x = point[0];
+    let y = point[1];
+    [a * x + c * y + e, b * x + d * y + f]
+}
 
 /// Message sent from background loader thread
 struct LoadedImageData {
@@ -367,23 +376,30 @@ impl RuneSurface {
             overlay_fn(&mut self.pass, &mut encoder, &view, &self.queue, width, height);
         }
 
+        // Sort SVG draws by z-index to respect layering
+        let mut svg_draws = canvas.svg_draws.clone();
+        svg_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
+
         // Rasterize and draw any queued SVGs
-        for (path, origin, max_size, _z) in canvas.svg_draws.iter() {
+        for (path, origin, max_size, style, _z, transform) in svg_draws.iter() {
+            // Apply transform to origin
+            let transformed_origin = apply_transform_to_point(*origin, *transform);
+            
             // First get 1x size
-            if let Some((_view1x, w1, h1)) = self.pass.rasterize_svg_to_view(std::path::Path::new(path), 1.0, &self.queue) {
+            if let Some((_view1x, w1, h1)) = self.pass.rasterize_svg_to_view(std::path::Path::new(path), 1.0, *style, &self.queue) {
                 let base_w = w1.max(1) as f32;
                 let base_h = h1.max(1) as f32;
                 let scale = (max_size[0] / base_w).min(max_size[1] / base_h).max(0.0);
-                let (view_scaled, sw, sh) = if let Some((v, w, h)) = self.pass.rasterize_svg_to_view(std::path::Path::new(path), scale, &self.queue) {
+                let (view_scaled, sw, sh) = if let Some((v, w, h)) = self.pass.rasterize_svg_to_view(std::path::Path::new(path), scale, *style, &self.queue) {
                     (v, w as f32, h as f32)
                 } else {
                     continue;
                 };
-                // Draw at origin with scaled size
+                // Draw at transformed origin with scaled size
                 self.pass.draw_image_quad(
                     &mut encoder,
                     &view,
-                    *origin,
+                    transformed_origin,
                     [sw, sh],
                     &view_scaled,
                     &self.queue,
@@ -393,13 +409,20 @@ impl RuneSurface {
             }
         }
 
+        // Sort image draws by z-index to respect layering
+        let mut image_draws = canvas.image_draws.clone();
+        image_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
+
         // Draw any queued raster images
-        for (path, origin, size, fit, _z) in canvas.image_draws.iter() {
+        for (path, origin, size, fit, _z, transform) in image_draws.iter() {
             // Try to get the image from cache (non-blocking)
             if let Some((tex_view, img_w, img_h)) = self.pass.try_get_image_view(std::path::Path::new(path)) {
+                // Apply transform to origin
+                let transformed_origin = apply_transform_to_point(*origin, *transform);
+                
                 // Image is ready - calculate actual render size and position based on fit mode
                 let (render_origin, render_size) = calculate_image_fit(
-                    *origin,
+                    transformed_origin,
                     *size,
                     img_w as f32,
                     img_h as f32,

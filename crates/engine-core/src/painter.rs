@@ -12,7 +12,7 @@ impl Painter {
         Self { list: DisplayList { viewport, commands: Vec::new() }, transform_stack: vec![Transform2D::identity()], clip_depth: 0 }
     }
 
-    fn current_transform(&self) -> Transform2D { *self.transform_stack.last().unwrap() }
+    pub fn current_transform(&self) -> Transform2D { *self.transform_stack.last().unwrap() }
 
     pub fn push_transform(&mut self, t: Transform2D) {
         // Compose with current transform so nested pushes multiply.
@@ -90,6 +90,11 @@ impl Painter {
     pub fn hit_region_ellipse(&mut self, id: u32, center: [f32; 2], radii: [f32; 2], z: i32) {
         let t = self.current_transform();
         self.list.commands.push(Command::HitRegionEllipse { id, center, radii, z, transform: t });
+    }
+
+    /// Get a reference to the display list (for hit testing before finishing)
+    pub fn display_list(&self) -> &DisplayList {
+        &self.list
     }
 
     pub fn finish(self) -> DisplayList { self.list }

@@ -248,13 +248,16 @@ impl PassManager {
 
     /// Rasterize an SVG file to a cached texture for the given scale.
     /// Returns a texture view and its pixel dimensions on success.
+    /// Optional style parameter allows overriding fill, stroke, and stroke-width.
     pub fn rasterize_svg_to_view(
         &mut self,
         path: &std::path::Path,
         scale: f32,
+        style: Option<crate::svg::SvgStyle>,
         queue: &wgpu::Queue,
     ) -> Option<(wgpu::TextureView, u32, u32)> {
-        let (tex, w, h) = self.svg_cache.get_or_rasterize(path, scale, queue)?;
+        let svg_style = style.unwrap_or_default();
+        let (tex, w, h) = self.svg_cache.get_or_rasterize(path, scale, svg_style, queue)?;
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
         Some((view, w, h))
     }

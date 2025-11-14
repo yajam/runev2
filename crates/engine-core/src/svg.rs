@@ -1,6 +1,69 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use crate::scene::ColorLinPremul;
+
+/// Optional style overrides for SVG rendering
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SvgStyle {
+    /// Override fill color (replaces all fill colors in the SVG)
+    pub fill: Option<ColorLinPremul>,
+    /// Override stroke color (replaces all stroke colors in the SVG)
+    pub stroke: Option<ColorLinPremul>,
+    /// Override stroke width (replaces all stroke widths in the SVG)
+    pub stroke_width: Option<f32>,
+}
+
+impl SvgStyle {
+    pub fn new() -> Self {
+        Self { fill: None, stroke: None, stroke_width: None }
+    }
+    
+    pub fn with_stroke(mut self, color: ColorLinPremul) -> Self {
+        self.stroke = Some(color);
+        self
+    }
+    
+    pub fn with_fill(mut self, color: ColorLinPremul) -> Self {
+        self.fill = Some(color);
+        self
+    }
+    
+    pub fn with_stroke_width(mut self, width: f32) -> Self {
+        self.stroke_width = Some(width);
+        self
+    }
+}
+
+impl Default for SvgStyle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Hash-friendly version of SvgStyle for cache keys
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct SvgStyleKey {
+    fill: Option<[u8; 4]>,
+    stroke: Option<[u8; 4]>,
+    stroke_width_bits: Option<u32>,
+}
+
+impl From<SvgStyle> for SvgStyleKey {
+    fn from(style: SvgStyle) -> Self {
+        Self {
+            fill: style.fill.map(|c| {
+                let rgba = c.to_srgba_u8();
+                [rgba[0], rgba[1], rgba[2], rgba[3]]
+            }),
+            stroke: style.stroke.map(|c| {
+                let rgba = c.to_srgba_u8();
+                [rgba[0], rgba[1], rgba[2], rgba[3]]
+            }),
+            stroke_width_bits: style.stroke_width.map(|w| w.to_bits()),
+        }
+    }
+}
 
 /// Bucketed scale factor used for raster cache keys.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -30,6 +93,7 @@ impl ScaleBucket {
 struct CacheKey {
     path: PathBuf,
     scale: ScaleBucket,
+    style: SvgStyleKey,
 }
 
 struct CacheEntry {
@@ -109,9 +173,11 @@ impl SvgRasterCache {
 
     /// Rasterize (or fetch from cache) an SVG file to an RGBA8 sRGB texture for a given scale.
     /// Returns a cloneable `wgpu::Texture` and its dimensions.
-    pub fn get_or_rasterize(&mut self, path: &Path, scale: f32, queue: &wgpu::Queue) -> Option<(std::sync::Arc<wgpu::Texture>, u32, u32)> {
+    /// Optional style parameter allows overriding fill, stroke, and stroke-width.
+    pub fn get_or_rasterize(&mut self, path: &Path, scale: f32, style: SvgStyle, queue: &wgpu::Queue) -> Option<(std::sync::Arc<wgpu::Texture>, u32, u32)> {
         let scale_b = ScaleBucket::from_scale(scale);
-        let key = CacheKey { path: path.to_path_buf(), scale: scale_b };
+        let style_key = SvgStyleKey::from(style);
+        let key = CacheKey { path: path.to_path_buf(), scale: scale_b, style: style_key };
         if self.map.contains_key(&key) {
             self.touch(&key);
             let e = self.map.get(&key).unwrap();
@@ -119,7 +185,13 @@ impl SvgRasterCache {
         }
 
         // Read and parse SVG
-        let data = std::fs::read(path).ok()?;
+        let mut data = std::fs::read(path).ok()?;
+        
+        // Apply style overrides by modifying the SVG XML if needed
+        if style.fill.is_some() || style.stroke.is_some() || style.stroke_width.is_some() {
+            data = apply_style_overrides_to_xml(&data, style)?;
+        }
+        
         let mut opt = usvg::Options::default();
         opt.resources_dir = path.parent().map(|p| p.to_path_buf());
         let tree = usvg::Tree::from_data(&data, &opt).ok()?;
@@ -160,6 +232,63 @@ impl SvgRasterCache {
         self.insert(key, entry);
         Some((tex_arc, w, h))
     }
+}
+
+/// Apply style overrides by modifying the SVG XML
+/// This replaces stroke="currentColor", fill colors, and stroke-width attributes
+fn apply_style_overrides_to_xml(data: &[u8], style: SvgStyle) -> Option<Vec<u8>> {
+    let mut svg_str = String::from_utf8(data.to_vec()).ok()?;
+    
+    // Replace stroke color
+    if let Some(stroke_color) = style.stroke {
+        let rgba = stroke_color.to_srgba_u8();
+        let hex_color = format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2]);
+        
+        // Replace stroke="currentColor" with the actual color
+        svg_str = svg_str.replace("stroke=\"currentColor\"", &format!("stroke=\"{}\"", hex_color));
+        svg_str = svg_str.replace("stroke='currentColor'", &format!("stroke='{}'", hex_color));
+    }
+    
+    // Replace fill color
+    if let Some(fill_color) = style.fill {
+        let rgba = fill_color.to_srgba_u8();
+        let hex_color = format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2]);
+        
+        // Replace fill="currentColor" with the actual color
+        svg_str = svg_str.replace("fill=\"currentColor\"", &format!("fill=\"{}\"", hex_color));
+        svg_str = svg_str.replace("fill='currentColor'", &format!("fill='{}'", hex_color));
+    }
+    
+    // Replace stroke-width - handle all occurrences
+    if let Some(width) = style.stroke_width {
+        // Replace all stroke-width attributes
+        let mut result = String::new();
+        let mut remaining = svg_str.as_str();
+        
+        while let Some(start) = remaining.find("stroke-width=\"") {
+            // Add everything before stroke-width
+            result.push_str(&remaining[..start]);
+            result.push_str("stroke-width=\"");
+            
+            // Find the end quote
+            let after_attr = &remaining[start+14..];
+            if let Some(end_pos) = after_attr.find('"') {
+                // Add the new width value
+                result.push_str(&width.to_string());
+                // Continue from after the closing quote
+                remaining = &after_attr[end_pos..];
+            } else {
+                // Malformed SVG, just copy the rest
+                result.push_str(after_attr);
+                break;
+            }
+        }
+        // Add any remaining content
+        result.push_str(remaining);
+        svg_str = result;
+    }
+    
+    Some(svg_str.into_bytes())
 }
 
 // --- SVG → Geometry import (Phase 7.5.2) ---

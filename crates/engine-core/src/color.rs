@@ -39,4 +39,26 @@ impl ColorLinPremul {
     pub fn from_lin_rgba(r: f32, g: f32, b: f32, a: f32) -> Self {
         Self { r: r * a, g: g * a, b: b * a, a }
     }
+
+    /// Convert back to sRGB u8 RGBA array (unpremultiplied).
+    #[inline]
+    pub fn to_srgba_u8(&self) -> [u8; 4] {
+        // Unpremultiply
+        let (r, g, b) = if self.a > 0.0001 {
+            (self.r / self.a, self.g / self.a, self.b / self.a)
+        } else {
+            (0.0, 0.0, 0.0)
+        };
+        
+        // Convert linear to sRGB
+        let lin = LinSrgba::new(r, g, b, self.a);
+        let srgb: Srgba = Srgba::from_color(lin);
+        
+        [
+            (srgb.red * 255.0).round().clamp(0.0, 255.0) as u8,
+            (srgb.green * 255.0).round().clamp(0.0, 255.0) as u8,
+            (srgb.blue * 255.0).round().clamp(0.0, 255.0) as u8,
+            (srgb.alpha * 255.0).round().clamp(0.0, 255.0) as u8,
+        ]
+    }
 }

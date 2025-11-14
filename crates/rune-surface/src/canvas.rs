@@ -31,8 +31,8 @@ pub struct Canvas {
     pub(crate) clear_color: Option<ColorLinPremul>,
     pub(crate) text_provider: Option<Arc<dyn TextProvider + Send + Sync>>, // optional high-level text shaper
     pub(crate) glyph_draws: Vec<([f32; 2], RasterizedGlyph, ColorLinPremul)>, // low-level glyph masks
-    pub(crate) svg_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)>, // (path, origin, max_size, z)
-    pub(crate) image_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], ImageFitMode, i32)>, // (path, origin, size, fit, z)
+    pub(crate) svg_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], Option<engine_core::SvgStyle>, i32, Transform2D)>, // (path, origin, max_size, style, z, transform)
+    pub(crate) image_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], ImageFitMode, i32, Transform2D)>, // (path, origin, size, fit, z, transform)
 }
 
 impl Canvas {
@@ -95,14 +95,25 @@ impl Canvas {
     }
 
     /// Queue an SVG to be rasterized and drawn at origin, scaled to fit within max_size.
+    /// Captures the current transform from the painter's transform stack.
+    /// Optional style parameter allows overriding fill, stroke, and stroke-width.
     pub fn draw_svg<P: Into<std::path::PathBuf>>(&mut self, path: P, origin: [f32; 2], max_size: [f32; 2], z: i32) {
-        self.svg_draws.push((path.into(), origin, max_size, z));
+        let transform = self.painter.current_transform();
+        self.svg_draws.push((path.into(), origin, max_size, None, z, transform));
+    }
+
+    /// Queue an SVG with style overrides to be rasterized and drawn.
+    pub fn draw_svg_styled<P: Into<std::path::PathBuf>>(&mut self, path: P, origin: [f32; 2], max_size: [f32; 2], style: engine_core::SvgStyle, z: i32) {
+        let transform = self.painter.current_transform();
+        self.svg_draws.push((path.into(), origin, max_size, Some(style), z, transform));
     }
 
     /// Queue a raster image (PNG/JPEG/GIF/WebP) to be drawn at origin with the given size.
     /// The fit parameter controls how the image is scaled within the size bounds.
+    /// Captures the current transform from the painter's transform stack.
     pub fn draw_image<P: Into<std::path::PathBuf>>(&mut self, path: P, origin: [f32; 2], size: [f32; 2], fit: ImageFitMode, z: i32) {
-        self.image_draws.push((path.into(), origin, size, fit, z));
+        let transform = self.painter.current_transform();
+        self.image_draws.push((path.into(), origin, size, fit, z, transform));
     }
 
     // Expose some painter helpers for advanced users
@@ -110,4 +121,14 @@ impl Canvas {
     pub fn pop_clip(&mut self) { self.painter.pop_clip(); }
     pub fn push_transform(&mut self, t: Transform2D) { self.painter.push_transform(t); }
     pub fn pop_transform(&mut self) { self.painter.pop_transform(); }
+    
+    /// Add a hit-only region (invisible, used for interaction detection)
+    pub fn hit_region_rect(&mut self, id: u32, rect: Rect, z: i32) {
+        self.painter.hit_region_rect(id, rect, z);
+    }
+    
+    /// Get a reference to the display list for hit testing
+    pub fn display_list(&self) -> &engine_core::DisplayList {
+        self.painter.display_list()
+    }
 }

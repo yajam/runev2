@@ -23,9 +23,11 @@ impl Transform2D {
     }
 
     pub fn scale(sx: f32, sy: f32) -> Self { Self { m: [sx, 0.0, 0.0, sy, 0.0, 0.0] } }
+    
+    pub fn translate(tx: f32, ty: f32) -> Self { Self { m: [1.0, 0.0, 0.0, 1.0, tx, ty] } }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ColorLinPremul {
     pub r: f32,
     pub g: f32,

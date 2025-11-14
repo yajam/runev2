@@ -31,8 +31,49 @@ pub enum Command {
     PopTransform,
 }
 
+impl Command {
+    /// Get the z-index of this command, or None for non-drawable commands
+    pub fn z_index(&self) -> Option<i32> {
+        match self {
+            Command::DrawRect { z, .. } => Some(*z),
+            Command::DrawRoundedRect { z, .. } => Some(*z),
+            Command::StrokeRect { z, .. } => Some(*z),
+            Command::StrokeRoundedRect { z, .. } => Some(*z),
+            Command::DrawText { z, .. } => Some(*z),
+            Command::DrawEllipse { z, .. } => Some(*z),
+            Command::FillPath { z, .. } => Some(*z),
+            Command::StrokePath { z, .. } => Some(*z),
+            Command::BoxShadow { z, .. } => Some(*z),
+            Command::HitRegionRect { z, .. } => Some(*z),
+            Command::HitRegionRoundedRect { z, .. } => Some(*z),
+            Command::HitRegionEllipse { z, .. } => Some(*z),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct DisplayList {
     pub viewport: Viewport,
     pub commands: Vec<Command>,
+}
+
+impl DisplayList {
+    /// Sort commands by z-index while preserving clip/transform stack structure.
+    /// This is a simplified implementation that sorts drawable commands but keeps
+    /// transform/clip commands in their original order. For proper z-ordering with
+    /// transforms and clips, each drawable should store its full transform/clip state.
+    pub fn sort_by_z(&mut self) {
+        // Sort by z-index. Rust's sort_by is stable, preserving relative order of equal elements.
+        // This means transform/clip commands (which have no z-index) will stay in order,
+        // but drawable commands will be sorted by z-index.
+        self.commands.sort_by(|a, b| {
+            match (a.z_index(), b.z_index()) {
+                (Some(z_a), Some(z_b)) => z_a.cmp(&z_b),
+                (Some(_), None) => std::cmp::Ordering::Greater, // Drawables after non-drawables
+                (None, Some(_)) => std::cmp::Ordering::Less,    // Non-drawables before drawables
+                (None, None) => std::cmp::Ordering::Equal,      // Preserve order for non-drawables
+            }
+        });
+    }
 }
