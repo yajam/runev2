@@ -51,6 +51,29 @@ impl Toolbar {
             icon_style,
             10200, // z-index above toolbar background
         );
+
+        // Add inspection panel button at the right end
+        const DEVTOOLS_BUTTON_REGION_ID: u32 = 1001;
+        let devtools_x = toolbar_rect.w - toggle_size - toggle_margin;
+        let devtools_y = (toolbar_rect.h - toggle_size) / 2.0;
+        
+        let devtools_rect = Rect {
+            x: devtools_x,
+            y: devtools_y,
+            w: toggle_size,
+            h: toggle_size,
+        };
+        
+        canvas.hit_region_rect(DEVTOOLS_BUTTON_REGION_ID, devtools_rect, 10100);
+        
+        // Draw the inspection panel icon with white stroke
+        canvas.draw_svg_styled(
+            "images/inspection-panel.svg",
+            [devtools_x, devtools_y],
+            [toggle_size, toggle_size],
+            icon_style,
+            10200,
+        );
     }
 }
 
@@ -62,3 +85,6 @@ impl Default for Toolbar {
 
 /// Toggle button region ID for hit testing
 pub const TOGGLE_BUTTON_REGION_ID: u32 = 1000;
+
+/// DevTools button region ID for hit testing
+pub const DEVTOOLS_BUTTON_REGION_ID: u32 = 1001;

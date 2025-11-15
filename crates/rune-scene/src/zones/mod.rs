@@ -7,9 +7,9 @@ pub mod devtools;
 // Re-export commonly used types
 pub use common::{ZoneId, ZoneStyle, ZoneLayout};
 pub use sidebar::Sidebar;
-pub use toolbar::{Toolbar, TOGGLE_BUTTON_REGION_ID};
+pub use toolbar::{Toolbar, TOGGLE_BUTTON_REGION_ID, DEVTOOLS_BUTTON_REGION_ID};
 pub use viewport::Viewport;
-pub use devtools::DevTools;
+pub use devtools::{DevTools, DevToolsTab, DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_ELEMENTS_TAB_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID};
 
 /// Zone manager for rendering and interaction
 pub struct ZoneManager {
@@ -43,6 +43,14 @@ impl ZoneManager {
 
     pub fn is_sidebar_visible(&self) -> bool {
         self.sidebar.is_visible()
+    }
+
+    pub fn toggle_devtools(&mut self) {
+        self.devtools.toggle();
+    }
+
+    pub fn is_devtools_visible(&self) -> bool {
+        self.devtools.is_visible()
     }
 
     pub fn get_style(&self, zone_id: ZoneId) -> &ZoneStyle {

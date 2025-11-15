@@ -272,9 +272,12 @@ impl RuneSurface {
         self.pass.set_ui_scale(self.ui_scale);
 
         // Build final display list from painter
-        let list = canvas.painter.finish();
+        let mut list = canvas.painter.finish();
         let width = canvas.viewport.width.max(1);
         let height = canvas.viewport.height.max(1);
+
+        // Sort display list by z-index to ensure proper layering
+        list.sort_by_z();
 
         // Upload geometry to GPU
         let scene = upload_display_list(&mut self.allocator, &self.queue, &list)?;
@@ -355,7 +358,7 @@ impl RuneSurface {
             }
         }
 
-        // Draw any low-level glyph masks on top
+        // Draw any low-level glyph masks on top of solids/text runs
         for (origin, glyph, color) in canvas.glyph_draws.iter() {
             let ox = origin[0] + glyph.offset[0];
             let oy = origin[1] + glyph.offset[1];
@@ -369,11 +372,6 @@ impl RuneSurface {
                 *color,
                 &self.queue,
             );
-        }
-
-        // Call overlay callback if set (for direct surface drawing like SVG ticks)
-        if let Some(ref mut overlay_fn) = self.overlay {
-            overlay_fn(&mut self.pass, &mut encoder, &view, &self.queue, width, height);
         }
 
         // Sort SVG draws by z-index to respect layering
@@ -447,6 +445,12 @@ impl RuneSurface {
                 }
                 // Image will appear on next frame after background load completes
             }
+        }
+
+        // Call overlay callback last so overlays (e.g., devtools, debug UI)
+        // are guaranteed to draw above SVGs and raster images.
+        if let Some(ref mut overlay_fn) = self.overlay {
+            overlay_fn(&mut self.pass, &mut encoder, &view, &self.queue, width, height);
         }
 
         // Submit and present
