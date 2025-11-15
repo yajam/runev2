@@ -420,9 +420,9 @@ dependencies = [
  "rangemap",
  "rustc-hash",
  "self_cell",
- "skrifa",
+ "skrifa 0.37.0",
  "smol_str",
- "swash",
+ "swash 0.2.6",
  "sys-locale",
  "unicode-bidi",
  "unicode-linebreak",
@@ -604,6 +604,15 @@ name = "float_next_after"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bf7cc16383c4b8d58b9905a8509f02926ce3058053c056376248d958c9df1e8"
+
+[[package]]
+name = "font-types"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3971f9a5ca983419cdc386941ba3b9e1feba01a0ab888adf78739feb2798492"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "font-types"
@@ -835,7 +844,7 @@ dependencies = [
  "bitflags 2.10.0",
  "bytemuck",
  "core_maths",
- "read-fonts",
+ "read-fonts 0.35.0",
  "smallvec",
 ]
 
@@ -1617,13 +1626,23 @@ checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
 
 [[package]]
 name = "read-fonts"
+version = "0.22.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69aacb76b5c29acfb7f90155d39759a29496aebb49395830e928a9703d2eec2f"
+dependencies = [
+ "bytemuck",
+ "font-types 0.7.3",
+]
+
+[[package]]
+name = "read-fonts"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6717cf23b488adf64b9d711329542ba34de147df262370221940dfabc2c91358"
 dependencies = [
  "bytemuck",
  "core_maths",
- "font-types",
+ "font-types 0.10.0",
 ]
 
 [[package]]
@@ -1708,6 +1727,18 @@ dependencies = [
  "anyhow",
  "engine-core",
  "image",
+]
+
+[[package]]
+name = "rune-text"
+version = "0.1.0"
+dependencies = [
+ "hashbrown 0.14.5",
+ "rustybuzz",
+ "swash 0.1.19",
+ "unicode-bidi",
+ "unicode-linebreak",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -1873,12 +1904,22 @@ checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 
 [[package]]
 name = "skrifa"
+version = "0.22.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e1c44ad1f6c5bdd4eefed8326711b7dbda9ea45dfd36068c427d332aa382cbe"
+dependencies = [
+ "bytemuck",
+ "read-fonts 0.22.7",
+]
+
+[[package]]
+name = "skrifa"
 version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c31071dedf532758ecf3fed987cdb4bd9509f900e026ab684b4ecb81ea49841"
 dependencies = [
  "bytemuck",
- "read-fonts",
+ "read-fonts 0.35.0",
 ]
 
 [[package]]
@@ -1972,13 +2013,24 @@ dependencies = [
 
 [[package]]
 name = "swash"
+version = "0.1.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cbd59f3f359ddd2c95af4758c18270eddd9c730dde98598023cdabff472c2ca2"
+dependencies = [
+ "skrifa 0.22.3",
+ "yazi 0.1.6",
+ "zeno 0.2.3",
+]
+
+[[package]]
+name = "swash"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47846491253e976bdd07d0f9cc24b7daf24720d11309302ccbbc6e6b6e53550a"
 dependencies = [
- "skrifa",
- "yazi",
- "zeno",
+ "skrifa 0.37.0",
+ "yazi 0.2.1",
+ "zeno 0.3.3",
 ]
 
 [[package]]
@@ -2967,9 +3019,21 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "yazi"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c94451ac9513335b5e23d7a8a2b61a7102398b8cca5160829d313e84c9d98be1"
+
+[[package]]
+name = "yazi"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e01738255b5a16e78bbb83e7fbba0a1e7dd506905cfc53f4622d89015a03fbb5"
+
+[[package]]
+name = "zeno"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd15f8e0dbb966fd9245e7498c7e9e5055d9e5c8b676b95bd67091cd11a1e697"
 
 [[package]]
 name = "zeno"

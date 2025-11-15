@@ -5,31 +5,31 @@ A comprehensive guide for implementing robust multiline text rendering in rune-d
 ## Phase 1: Foundation (Essential)
 
 ### 1.1 Dependencies Setup
-- [ ] Add `rustybuzz` or `harfbuzz_rs` for text shaping
-- [ ] Add `unicode-segmentation` for grapheme cluster handling
-- [ ] Add `unicode-linebreak` for UAX-14 line breaking
-- [ ] Add `unicode-bidi` for bidirectional text support
-- [ ] Add `swash` for font parsing and glyph rasterization ( pairs well with rustybuzz)
+- [x] Add `rustybuzz` or `harfbuzz_rs` for text shaping
+- [x] Add `unicode-segmentation` for grapheme cluster handling
+- [x] Add `unicode-linebreak` for UAX-14 line breaking
+- [x] Add `unicode-bidi` for bidirectional text support
+- [x] Add `swash` for font parsing and glyph rasterization ( pairs well with rustybuzz)
 
 ### 1.2 Font Management
-- [ ] Implement font file loading (TTF/OTF)
-- [ ] Create font face caching system
-- [ ] Build font metrics extraction (ascent, descent, line gap)
-- [ ] Implement glyph ID to outline/bitmap conversion
-- [ ] Add font size and DPI scaling support
+- [x] Implement font file loading (TTF/OTF)
+- [x] Create font face caching system
+- [x] Build font metrics extraction (ascent, descent, line gap)
+- [x] Implement glyph ID to outline/bitmap conversion
+- [x] Add font size and DPI scaling support
 
 ### 1.3 Basic Text Shaping
-- [ ] Integrate Harfbuzz shaping pipeline
-- [ ] Handle simple LTR text shaping
-- [ ] Extract glyph positions and advances
-- [ ] Apply kerning and ligatures
+- [x] Integrate Harfbuzz shaping pipeline
+- [x] Handle simple LTR text shaping
+- [x] Extract glyph positions and advances
+- [x] Apply kerning and ligatures
 - [ ] Test with complex scripts (Arabic, Devanagari, Thai)
 
 ### 1.4 Unicode Handling
-- [ ] Implement grapheme cluster segmentation
-- [ ] Handle combining marks correctly
-- [ ] Support emoji and ZWJ sequences
-- [ ] Test with various Unicode edge cases
+- [x] Implement grapheme cluster segmentation
+- [x] Handle combining marks correctly
+- [x] Support emoji and ZWJ sequences
+- [x] Test with various Unicode edge cases
 
 ## Phase 2: Line Breaking & Layout
 
