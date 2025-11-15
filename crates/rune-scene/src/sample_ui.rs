@@ -275,20 +275,51 @@ pub fn create_sample_elements() -> SampleUIElements {
         },
     ];
 
-    let multiline_text_data = vec![
+    // Simple paragraphs without wrapping - just single lines
+    let paragraph_data = vec![
         (
-            "This is a comprehensive multiline text element demonstration that showcases automatic word wrapping capabilities. The text wraps based on window width, maintaining optimal readability. This implementation uses simple character-based wrapping for fast performance.".to_string(),
+            "Paragraph 1: This demonstrates text rendering with multiple blocks.",
             16.0f32,
             Color::rgba(220, 220, 220, 255),
             1.4f32,
         ),
         (
-            "Here's a second paragraph with different styling to demonstrate versatility. This text has a slightly smaller font size and tighter line spacing, showing how the multiline text element can be customized for different use cases.".to_string(),
+            "Paragraph 2: Each block can have different styling and colors.",
             14.0f32,
             Color::rgba(150, 200, 255, 255),
             1.2f32,
         ),
+        (
+            "Paragraph 3: The system handles various text lengths efficiently.",
+            15.0f32,
+            Color::rgba(200, 180, 255, 255),
+            1.3f32,
+        ),
+        (
+            "Paragraph 4: Content extends beyond the visible area for scrolling.",
+            16.0f32,
+            Color::rgba(255, 200, 150, 255),
+            1.4f32,
+        ),
+        (
+            "Paragraph 5: Multiple text blocks render smoothly without issues.",
+            15.0f32,
+            Color::rgba(150, 255, 200, 255),
+            1.35f32,
+        ),
     ];
+    
+    // Create simple single-line paragraphs (no wrapping)
+    let mut wrapped_paragraphs = Vec::new();
+    
+    for (text, size, color, lh_factor) in paragraph_data {
+        wrapped_paragraphs.push(WrappedParagraph {
+            lines: vec![text.to_string()], // Just one line
+            size,
+            color,
+            line_height: size * lh_factor,
+        });
+    }
 
     SampleUIElements {
         texts,
@@ -300,10 +331,19 @@ pub fn create_sample_elements() -> SampleUIElements {
         selects,
         labels,
         images,
-        multiline_text_data,
+        wrapped_paragraphs,
         col1_x,
         multiline_y,
     }
+}
+
+/// Pre-wrapped paragraph data for efficient rendering
+#[derive(Clone)]
+pub struct WrappedParagraph {
+    pub lines: Vec<String>,
+    pub size: f32,
+    pub color: ColorLinPremul,
+    pub line_height: f32,
 }
 
 pub struct SampleUIElements {
@@ -316,15 +356,20 @@ pub struct SampleUIElements {
     pub selects: Vec<SelectData>,
     pub labels: Vec<LabelData>,
     pub images: Vec<ImageData>,
-    pub multiline_text_data: Vec<(String, f32, ColorLinPremul, f32)>,
+    pub wrapped_paragraphs: Vec<WrappedParagraph>,
     pub col1_x: f32,
     pub multiline_y: f32,
 }
 
 impl SampleUIElements {
-    /// Render all sample UI elements to a canvas in local coordinates
-    /// Caller should set up transform for zone positioning
-    pub fn render(&self, canvas: &mut rune_surface::Canvas, scale_factor: f32, window_width: u32) {
+    /// Render all sample UI elements to a canvas in local coordinates.
+    /// Caller should set up transform for zone positioning.
+    pub fn render(
+        &self,
+        canvas: &mut rune_surface::Canvas,
+        _scale_factor: f32,
+        _window_width: u32,
+    ) {
         // Render all text elements (z=10 for top-level text)
         for text in self.texts.iter() {
             canvas.draw_text_run(text.pos, text.text.to_string(), text.size, text.color, 10);
@@ -432,35 +477,26 @@ impl SampleUIElements {
             image.render(canvas, 90);
         }
 
-        // Render all multiline texts (z=100)
-        let logical_width = window_width as f32 / scale_factor;
-        let right_margin = 40.0f32;
-        let container_width = (logical_width - self.col1_x - right_margin).max(200.0).min(1200.0);
-        
+        // Render all pre-wrapped paragraphs (z=100)
+        // Text was wrapped once during creation, so this is just simple rendering
         let mut current_y = self.multiline_y;
         
-        for (text_content, text_size, text_color, lh_factor) in self.multiline_text_data.iter() {
-            let mtext = elements::multiline_text::MultilineText {
-                pos: [self.col1_x, current_y],
-                text: text_content.clone(),
-                size: *text_size,
-                color: *text_color,
-                max_width: Some(container_width),
-                line_height_factor: Some(*lh_factor),
-            };
+        for paragraph in self.wrapped_paragraphs.iter() {
+            // Render each pre-wrapped line
+            for (i, line) in paragraph.lines.iter().enumerate() {
+                let y = current_y + (i as f32) * paragraph.line_height;
+                canvas.draw_text_run(
+                    [self.col1_x, y],
+                    line.clone(),
+                    paragraph.size,
+                    paragraph.color,
+                    100,
+                );
+            }
             
-            mtext.render_fast(canvas, 100);
-            
-            // Estimate height for next block
-            let avg_char_width = text_size * 0.55;
-            let max_chars = (container_width / avg_char_width).floor() as usize;
-            let approx_lines = if max_chars > 0 {
-                (text_content.len() as f32 / max_chars as f32).ceil()
-            } else {
-                1.0
-            };
-            let line_height = text_size * lh_factor;
-            current_y += approx_lines * line_height + 30.0;
+            // Move to next paragraph
+            let paragraph_height = paragraph.lines.len() as f32 * paragraph.line_height;
+            current_y += paragraph_height + 30.0; // Add spacing between paragraphs
         }
     }
 }

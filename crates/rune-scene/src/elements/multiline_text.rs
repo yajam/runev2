@@ -73,12 +73,10 @@ impl MultilineText {
 
     /// Fast render using character-count approximation for wrapping.
     /// 
-    /// This method uses a simple character-based approximation instead of expensive
-    /// glyph rasterization, making it much faster while still providing good results.
-    /// Recommended for UI text where performance is critical.
+    /// This method uses engine_core's fast wrapping without caching.
+    /// For better performance with repeated renders, use render_cached instead.
     pub fn render_fast(&self, canvas: &mut Canvas, z: i32) {
         let lh_factor = self.line_height_factor.unwrap_or(1.2);
-        let line_height = self.size * lh_factor;
         
         // Determine wrapping width
         let wrap_width = match self.max_width {
@@ -90,52 +88,12 @@ impl MultilineText {
             }
         };
         
-        // Fast character-count approximation
-        let avg_char_width = self.size * 0.55;
-        let max_chars = (wrap_width / avg_char_width).floor() as usize;
-        if max_chars == 0 {
-            return;
-        }
-        
-        // Word-wrap using character count
-        let words: Vec<&str> = self.text.split_whitespace().collect();
-        let mut lines: Vec<String> = Vec::new();
-        let mut current_line = String::new();
-        
-        for word in words {
-            let test = if current_line.is_empty() {
-                word.to_string()
-            } else {
-                format!("{} {}", current_line, word)
-            };
-            
-            if test.len() <= max_chars {
-                current_line = test;
-            } else {
-                if !current_line.is_empty() {
-                    lines.push(current_line);
-                }
-                // Handle very long words
-                if word.len() > max_chars {
-                    let mut remaining = word;
-                    while remaining.len() > max_chars {
-                        let (chunk, rest) = remaining.split_at(max_chars);
-                        lines.push(chunk.to_string());
-                        remaining = rest;
-                    }
-                    current_line = remaining.to_string();
-                } else {
-                    current_line = word.to_string();
-                }
-            }
-        }
-        if !current_line.is_empty() {
-            lines.push(current_line);
-        }
+        // Use engine_core's fast wrapping (no allocation on cache hit)
+        let wrapped = engine_core::wrap_text_fast(&self.text, wrap_width, self.size, lh_factor);
         
         // Render lines
-        for (i, line) in lines.iter().enumerate() {
-            let y = self.pos[1] + (i as f32) * line_height;
+        for (i, line) in wrapped.lines.iter().enumerate() {
+            let y = self.pos[1] + (i as f32) * wrapped.line_height;
             canvas.draw_text_run(
                 [self.pos[0], y],
                 line.clone(),
@@ -144,6 +102,47 @@ impl MultilineText {
                 z,
             );
         }
+    }
+    
+    /// Render with caching for maximum performance on repeated frames.
+    /// 
+    /// Uses a TextLayoutCache to avoid recomputing wrapping on every frame.
+    /// This is the recommended method for UI text that doesn't change frequently.
+    pub fn render_cached(
+        &self,
+        canvas: &mut Canvas,
+        z: i32,
+        cache: &engine_core::TextLayoutCache,
+    ) -> f32 {
+        let lh_factor = self.line_height_factor.unwrap_or(1.2);
+        
+        // Determine wrapping width
+        let wrap_width = match self.max_width {
+            Some(w) if w > 0.0 => w,
+            _ => {
+                // No wrapping - render as single line
+                canvas.draw_text_run(self.pos, self.text.clone(), self.size, self.color, z);
+                return self.size * lh_factor;
+            }
+        };
+        
+        // Get wrapped text from cache (or compute and cache it)
+        let wrapped = cache.get_or_wrap(&self.text, wrap_width, self.size, lh_factor);
+        
+        // Render lines
+        for (i, line) in wrapped.lines.iter().enumerate() {
+            let y = self.pos[1] + (i as f32) * wrapped.line_height;
+            canvas.draw_text_run(
+                [self.pos[0], y],
+                line.clone(),
+                self.size,
+                self.color,
+                z,
+            );
+        }
+        
+        // Return total height for layout purposes
+        wrapped.total_height
     }
     
     /// Simple render without wrapping (just splits on explicit newlines).
