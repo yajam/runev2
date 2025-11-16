@@ -3,6 +3,7 @@
 
 pub mod text;
 pub mod multiline_text;
+pub mod caret;
 pub mod label;
 pub mod button;
 pub mod checkbox;

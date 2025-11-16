@@ -1876,6 +1876,7 @@ dependencies = [
  "pollster",
  "rune-surface",
  "rune-text",
+ "unicode-segmentation",
  "wgpu",
  "winit",
 ]

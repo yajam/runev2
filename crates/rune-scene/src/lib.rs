@@ -131,7 +131,7 @@ pub fn run() -> Result<()> {
     let mut zone_manager = ZoneManager::new(logical_width, logical_height);
     
     // Sample UI elements (will be replaced with IR-based rendering)
-    let sample_ui = sample_ui::create_sample_elements();
+    let mut sample_ui = sample_ui::create_sample_elements();
     
     // Text layout cache for efficient resize performance
     let text_cache = std::sync::Arc::new(engine_core::TextLayoutCache::new(200));
@@ -559,6 +559,9 @@ pub fn run() -> Result<()> {
     let mut cursor_position: Option<(f32, f32)> = None;
     let mut hit_index: Option<engine_core::HitIndex> = None;
     
+    // Track time for cursor blink animation
+    let mut last_frame_time = std::time::Instant::now();
+    
     Ok(event_loop.run(move |event, elwt| {
         match event {
             Event::WindowEvent { window_id, event } if window_id == window.id() => {
@@ -585,6 +588,48 @@ pub fn run() -> Result<()> {
                             if let Some((cursor_x, cursor_y)) = cursor_position {
                                 let logical_x = cursor_x / scale_factor;
                                 let logical_y = cursor_y / scale_factor;
+                                
+                                // Check if click is on an input box (adjust for viewport transform and scroll)
+                                let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
+                                let viewport_local_x = logical_x - viewport_rect.x;
+                                let viewport_local_y = logical_y - viewport_rect.y + zone_manager.viewport.scroll_offset;
+                                
+                                let mut clicked_input = false;
+                                for (idx, input_box) in sample_ui.input_boxes.iter_mut().enumerate() {
+                                    let in_bounds = viewport_local_x >= input_box.rect.x 
+                                        && viewport_local_x <= input_box.rect.x + input_box.rect.w
+                                        && viewport_local_y >= input_box.rect.y
+                                        && viewport_local_y <= input_box.rect.y + input_box.rect.h;
+                                    
+                                    if in_bounds {
+                                        // Unfocus all, focus this one
+                                        for other in sample_ui.input_boxes.iter_mut() {
+                                            other.focused = false;
+                                        }
+                                        let input = &mut sample_ui.input_boxes[idx];
+                                        input.focused = true;
+                                        // Place cursor at end (or start if empty) and
+                                        // ensure scroll is updated so caret is visible.
+                                        input.move_cursor_to_end();
+                                        input.update_scroll(provider.as_ref());
+                                        
+                                        clicked_input = true;
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                        break;
+                                    }
+                                }
+                                
+                                // If clicked outside all input boxes, unfocus all
+                                if !clicked_input {
+                                    for input_box in sample_ui.input_boxes.iter_mut() {
+                                        if input_box.focused {
+                                            input_box.focused = false;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                }
                                 
                                 // Perform hit test using the stored hit index
                                 if let Some(ref index) = hit_index {
@@ -618,6 +663,73 @@ pub fn run() -> Result<()> {
                                                 needs_redraw = true;
                                                 window.request_redraw();
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    WindowEvent::KeyboardInput { event, .. } => {
+                        use winit::keyboard::{KeyCode, PhysicalKey};
+                        
+                        // Find the focused input box
+                        if let Some(focused_input) = sample_ui.input_boxes.iter_mut().find(|ib| ib.focused) {
+                            if event.state == winit::event::ElementState::Pressed {
+                                match event.physical_key {
+                                    PhysicalKey::Code(KeyCode::Backspace) => {
+                                        focused_input.delete_before_cursor();
+                                        focused_input.update_scroll(provider.as_ref());
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Delete) => {
+                                        focused_input.delete_after_cursor();
+                                        focused_input.update_scroll(provider.as_ref());
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::ArrowLeft) => {
+                                        focused_input.move_cursor_left();
+                                        focused_input.update_scroll(provider.as_ref());
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::ArrowRight) => {
+                                        focused_input.move_cursor_right();
+                                        focused_input.update_scroll(provider.as_ref());
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Home) => {
+                                        focused_input.move_cursor_to_start();
+                                        focused_input.update_scroll(provider.as_ref());
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::End) => {
+                                        focused_input.move_cursor_to_end();
+                                        focused_input.update_scroll(provider.as_ref());
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Space) => {
+                                        focused_input.insert_char(' ');
+                                        focused_input.update_scroll(provider.as_ref());
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    _ => {
+                                        // Handle text input via the text field
+                                        if let Some(text) = &event.text {
+                                            for ch in text.chars() {
+                                                // Skip control characters but allow space
+                                                if !ch.is_control() || ch == ' ' {
+                                                    focused_input.insert_char(ch);
+                                                }
+                                            }
+                                            focused_input.update_scroll(provider.as_ref());
+                                            needs_redraw = true;
+                                            window.request_redraw();
                                         }
                                     }
                                 }
@@ -709,6 +821,21 @@ pub fn run() -> Result<()> {
                         // Only render foreground content if not in debounce period
                         // This prevents expensive text layout during rapid resize
                         if should_render_full {
+                            // Update cursor blink animation
+                            let now = std::time::Instant::now();
+                            let delta_time = (now - last_frame_time).as_secs_f32();
+                            last_frame_time = now;
+                            
+                            for input_box in sample_ui.input_boxes.iter_mut() {
+                                input_box.update_blink(delta_time);
+                            }
+                            
+                            // Request continuous redraw for cursor blinking while any input is focused.
+                            if sample_ui.input_boxes.iter().any(|ib| ib.focused) {
+                                needs_redraw = true;
+                                window.request_redraw();
+                            }
+                            
                             // Render sample UI elements in viewport zone with local coordinates.
                             let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
                             
@@ -818,9 +945,14 @@ pub fn run() -> Result<()> {
                         
                         surf.end_frame(frame, canvas).ok();
                         
-                        // Clear flags after rendering
+                        // Clear flags after rendering.
+                        // Keep needs_redraw true while an input box is focused so
+                        // cursor blinking continues to drive redraws.
                         if should_render_full {
-                            needs_redraw = false;
+                            let any_focused_input = sample_ui.input_boxes.iter().any(|ib| ib.focused);
+                            if !any_focused_input {
+                                needs_redraw = false;
+                            }
                         }
                         needs_background_redraw = false;
                     }

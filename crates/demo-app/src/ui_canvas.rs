@@ -102,15 +102,15 @@ pub fn run() -> Result<()> {
                         }
                         // Input box
                         {
-                            let ib = rune_scene::elements::input_box::InputBox { 
-                                rect: Rect { x: col1_x, y, w: 300.0, h: 34.0 }, 
-                                text: "Type here...".to_string(), 
-                                text_size: 16.0, 
-                                text_color: ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
-                                placeholder: Some("Enter text...".to_string()),
-                                focused: true 
-                            };
-                            ib.render_with_provider(&mut canvas, 5, provider.as_ref(), Some(scale_factor));
+                            let mut ib = rune_scene::elements::input_box::InputBox::new(
+                                Rect { x: col1_x, y, w: 300.0, h: 34.0 },
+                                "Type here...".to_string(),
+                                16.0,
+                                ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
+                                Some("Enter text...".to_string()),
+                                true,
+                            );
+                            ib.render(&mut canvas, 5, provider.as_ref());
                             y += row_h;
                         }
                         surf.end_frame(frame, canvas).ok();

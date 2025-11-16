@@ -255,6 +255,7 @@ impl RuneSurface {
             svg_draws: Vec::new(),
             image_draws: Vec::new(),
             dpi_scale: self.dpi_scale,
+            clip_stack: vec![None],
         }
     }
 

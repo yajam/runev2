@@ -229,32 +229,32 @@ pub fn create_sample_elements() -> SampleUIElements {
     ];
 
     let input_boxes = vec![
-        InputBoxData {
-            rect: Rect {
+        elements::input_box::InputBox::new(
+            Rect {
                 x: col1_x,
                 y: input_y,
                 w: 200.0,
                 h: 36.0,
             },
-            text: "Hello World",
-            text_size: 16.0,
-            text_color: Color::rgba(240, 240, 240, 255),
-            placeholder: None,
-            focused: false,
-        },
-        InputBoxData {
-            rect: Rect {
+            "Hello World".to_string(),
+            16.0,
+            Color::rgba(240, 240, 240, 255),
+            None,
+            false,
+        ),
+        elements::input_box::InputBox::new(
+            Rect {
                 x: col1_x + 220.0,
                 y: input_y,
                 w: 200.0,
                 h: 36.0,
             },
-            text: "",
-            text_size: 16.0,
-            text_color: Color::rgba(240, 240, 240, 255),
-            placeholder: Some("Enter text..."),
-            focused: true,
-        },
+            "".to_string(),
+            16.0,
+            Color::rgba(240, 240, 240, 255),
+            Some("Enter text...".to_string()),
+            true,
+        ),
     ];
 
     let text_areas = vec![TextAreaData {
@@ -483,7 +483,7 @@ pub struct SampleUIElements {
     pub checkboxes: Vec<CheckboxData>,
     pub buttons: Vec<ButtonData>,
     pub radios: Vec<RadioData>,
-    pub input_boxes: Vec<InputBoxData>,
+    pub input_boxes: Vec<elements::input_box::InputBox>,
     pub text_areas: Vec<TextAreaData>,
     pub selects: Vec<SelectData>,
     pub labels: Vec<LabelData>,
@@ -498,7 +498,7 @@ impl SampleUIElements {
     /// Caller should set up transform for zone positioning.
     /// Returns the total content height.
     pub fn render(
-        &self,
+        &mut self,
         canvas: &mut rune_surface::Canvas,
         scale_factor: f32,
         window_width: u32,
@@ -552,16 +552,8 @@ impl SampleUIElements {
         }
 
         // Render all input boxes (z=50)
-        for input_data in self.input_boxes.iter() {
-            let input = elements::input_box::InputBox {
-                rect: input_data.rect,
-                text: input_data.text.to_string(),
-                text_size: input_data.text_size,
-                text_color: input_data.text_color,
-                placeholder: input_data.placeholder.map(|s| s.to_string()),
-                focused: input_data.focused,
-            };
-            input.render(canvas, 50);
+        for input in self.input_boxes.iter_mut() {
+            input.render(canvas, 50, provider);
         }
 
         // Render all text areas (z=60)
