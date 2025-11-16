@@ -516,6 +516,7 @@ dependencies = [
  "bytemuck",
  "cosmic-text",
  "engine-shaders",
+ "fontdb 0.23.0",
  "fontdue",
  "freetype-rs",
  "image",
@@ -524,6 +525,8 @@ dependencies = [
  "lyon_tessellation",
  "palette",
  "resvg",
+ "rune-text",
+ "swash 0.1.19",
  "thiserror",
  "tiny-skia",
  "usvg",
@@ -1716,6 +1719,7 @@ dependencies = [
  "engine-core",
  "pollster",
  "rune-surface",
+ "rune-text",
  "wgpu",
  "winit",
 ]
@@ -1733,8 +1737,8 @@ dependencies = [
 name = "rune-text"
 version = "0.1.0"
 dependencies = [
+ "harfrust",
  "hashbrown 0.14.5",
- "rustybuzz",
  "swash 0.1.19",
  "unicode-bidi",
  "unicode-linebreak",

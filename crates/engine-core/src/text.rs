@@ -26,6 +26,31 @@ impl SubpixelMask {
     pub fn bytes_per_pixel(&self) -> usize { match self.format { MaskFormat::Rgba8 => 4, MaskFormat::Rgba16 => 8 } }
 }
 
+/// GPU-ready batch of glyph masks with positions and color.
+/// This is the canonical representation used when sending text to the GPU.
+#[derive(Clone, Debug)]
+pub struct GlyphBatch {
+    pub glyphs: Vec<(SubpixelMask, [f32; 2], crate::scene::ColorLinPremul)>,
+}
+
+impl GlyphBatch {
+    pub fn new() -> Self {
+        Self { glyphs: Vec::new() }
+    }
+
+    pub fn with_capacity(cap: usize) -> Self {
+        Self { glyphs: Vec::with_capacity(cap) }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.glyphs.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.glyphs.len()
+    }
+}
+
 /// Convert an 8-bit grayscale coverage mask to an RGB subpixel coverage mask.
 /// A very lightweight 3-tap kernel is used to distribute coverage among subpixels.
 /// - For RGB orientation, left/center/right contributions map to R/G/B respectively.
@@ -183,9 +208,41 @@ pub struct RasterizedGlyph {
     pub mask: SubpixelMask,
 }
 
+/// Minimal shaped glyph information for paragraph-level wrapping.
+#[derive(Clone, Debug)]
+pub struct ShapedGlyph {
+    /// Glyph's starting UTF-8 byte index in the source text (Harfbuzz cluster).
+    pub cluster: u32,
+    /// Advance width in pixels.
+    pub x_advance: f32,
+}
+
+/// Shaped paragraph representation for efficient wrapping.
+#[derive(Clone, Debug)]
+pub struct ShapedParagraph {
+    pub glyphs: Vec<ShapedGlyph>,
+}
+
 /// Text provider interface. Implementations convert a `TextRun` into positioned glyph masks.
 pub trait TextProvider: Send + Sync {
     fn rasterize_run(&self, run: &crate::scene::TextRun) -> Vec<RasterizedGlyph>;
+
+    /// Optional paragraph shaping hook for advanced wrappers.
+    ///
+    /// Implementors that can expose Harfbuzz/cosmic-text shaping results should
+    /// return glyphs with cluster indices and advances. The default implementation
+    /// returns `None`, in which case callers must fall back to approximate methods.
+    fn shape_paragraph(&self, _text: &str, _px: f32) -> Option<ShapedParagraph> {
+        None
+    }
+
+    /// Optional cache tag to distinguish providers in text caches.
+    /// The default implementation returns 0, which is sufficient when
+    /// a single provider is used with a given PassManager.
+    fn cache_tag(&self) -> u64 {
+        0
+    }
+
     fn line_metrics(&self, px: f32) -> Option<LineMetrics> { let _ = px; None }
 }
 
@@ -295,6 +352,176 @@ impl TextProvider for GrayscaleFontdueProvider {
 /// Simplified line metrics
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LineMetrics { pub ascent: f32, pub descent: f32, pub line_gap: f32 }
+
+/// Text provider backed by rune-text (HarfBuzz) for shaping and swash for rasterization.
+///
+/// This uses a single `rune-text` `FontFace` and delegates shaping to
+/// `TextShaper::shape_ltr`, then rasterizes glyphs via swash bitmap images.
+pub struct RuneTextProvider {
+    font: rune_text::FontFace,
+    orientation: SubpixelOrientation,
+}
+
+impl RuneTextProvider {
+    pub fn from_bytes(bytes: &[u8], orientation: SubpixelOrientation) -> anyhow::Result<Self> {
+        let font = rune_text::FontFace::from_vec(bytes.to_vec(), 0)?;
+        Ok(Self { font, orientation })
+    }
+
+    /// Construct from a reasonable system sans-serif font using `fontdb`.
+    pub fn from_system_fonts(orientation: SubpixelOrientation) -> anyhow::Result<Self> {
+        use fontdb::{Database, Family, Query, Source, Style, Stretch, Weight};
+
+        let mut db = Database::new();
+        db.load_system_fonts();
+
+        let id = db
+            .query(&Query {
+                families: &[
+                    Family::SansSerif,
+                    Family::Name("Segoe UI".into()),
+                    Family::Name("SF Pro Text".into()),
+                    Family::Name("Arial".into()),
+                ],
+                weight: Weight::NORMAL,
+                stretch: Stretch::Normal,
+                style: Style::Normal,
+                ..Query::default()
+            })
+            .ok_or_else(|| anyhow::anyhow!("no suitable system font found for rune-text"))?;
+
+        let face = db
+            .face(id)
+            .ok_or_else(|| anyhow::anyhow!("fontdb face missing for system font id"))?;
+
+        let bytes: Vec<u8> = match &face.source {
+            Source::File(path) => std::fs::read(path)?,
+            Source::Binary(data) => data.as_ref().as_ref().to_vec(),
+            Source::SharedFile(_, data) => data.as_ref().as_ref().to_vec(),
+        };
+
+        let font = rune_text::FontFace::from_vec(bytes, face.index as usize)?;
+        Ok(Self { font, orientation })
+    }
+
+    /// Layout a paragraph using rune-text's `TextLayout` with optional width-based wrapping.
+    ///
+    /// This exposes rune-text's multi-line layout (including per-line baselines) so that
+    /// callers can build GPU-ready glyph batches without relying on `PassManager`
+    /// baseline heuristics.
+    pub fn layout_paragraph(
+        &self,
+        text: &str,
+        size_px: f32,
+        max_width: Option<f32>,
+    ) -> rune_text::layout::TextLayout {
+        use rune_text::layout::{TextLayout, WrapMode};
+
+        let wrap = if max_width.is_some() {
+            WrapMode::BreakWord
+        } else {
+            WrapMode::NoWrap
+        };
+
+        TextLayout::with_wrap(
+            text.to_string(),
+            &self.font,
+            size_px.max(1.0),
+            max_width,
+            wrap,
+        )
+    }
+}
+
+    impl TextProvider for RuneTextProvider {
+        fn rasterize_run(&self, run: &crate::scene::TextRun) -> Vec<RasterizedGlyph> {
+        use rune_text::shaping::TextShaper;
+        use swash::{FontRef, GlyphId};
+        use swash::scale::{ScaleContext, Render, Source, StrikeWith};
+        use swash::scale::image::Content;
+
+        let size = run.size.max(1.0);
+        let shaped = TextShaper::shape_ltr(
+            &run.text,
+            0..run.text.len(),
+            &self.font,
+            0,
+            size,
+        );
+
+        // Build a swash scaler + renderer for this font/size that can rasterize
+        // outlines into coverage masks. This mirrors the docs/rune-text
+        // `GlyphRasterizer` pipeline but uses the older `Render` API from
+        // swash 0.1.x.
+        let font_bytes = self.font.as_bytes();
+        let font_ref = FontRef::from_index(&font_bytes, 0)
+            .expect("rune-text FontFace bytes should be a valid swash FontRef");
+        let mut ctx = ScaleContext::new();
+        let mut scaler = ctx
+            .builder(font_ref)
+            .size(size)
+            .hint(true)
+            .build();
+        let renderer = Render::new(&[
+            // Prefer scalable outlines; fall back to bitmaps when available.
+            Source::Outline,
+            Source::Bitmap(StrikeWith::BestFit),
+            Source::ColorBitmap(StrikeWith::BestFit),
+        ]);
+
+        let mut out = Vec::new();
+        for (gid, pos) in shaped.glyphs.iter().zip(shaped.positions.iter()) {
+            // Rasterize via swash scaler. This uses outlines for typical
+            // fonts and falls back to bitmaps when present, avoiding the
+            // "embedded bitmap only" issue from `glyph_bitmap`.
+            let glyph_id: GlyphId = *gid;
+            if let Some(img) = renderer.render(&mut scaler, glyph_id) {
+                let w = img.placement.width as u32;
+                let h = img.placement.height as u32;
+                if w == 0 || h == 0 {
+                    continue;
+                }
+
+                let mask = match img.content {
+                    Content::Mask => {
+                        grayscale_to_subpixel_rgb(w, h, &img.data, self.orientation)
+                    }
+                    Content::SubpixelMask => SubpixelMask {
+                        width: w,
+                        height: h,
+                        format: MaskFormat::Rgba8,
+                        data: img.data.clone(),
+                    },
+                    Content::Color => {
+                        // Derive coverage from alpha channel.
+                        let mut gray = Vec::with_capacity((w * h) as usize);
+                        let mut i = 0usize;
+                        while i + 3 < img.data.len() {
+                            gray.push(img.data[i + 3]);
+                            i += 4;
+                        }
+                        grayscale_to_subpixel_rgb(w, h, &gray, self.orientation)
+                    }
+                };
+
+                let ox = pos.x_offset + img.placement.left as f32;
+                let oy = pos.y_offset - img.placement.top as f32;
+                out.push(RasterizedGlyph { offset: [ox, oy], mask });
+            }
+        }
+
+        out
+    }
+
+    fn line_metrics(&self, px: f32) -> Option<LineMetrics> {
+        let m = self.font.scaled_metrics(px.max(1.0));
+        Some(LineMetrics {
+            ascent: m.ascent,
+            descent: m.descent,
+            line_gap: m.line_gap,
+        })
+    }
+}
 
 // Advanced shaper: integrate cosmic-text for shaping + swash rasterization (optional feature)
 #[cfg(feature = "cosmic_text_shaper")]

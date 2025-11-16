@@ -1,3 +1,5 @@
+use std::collections::{HashMap, hash_map::Entry};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 // use anyhow::Result;
@@ -10,6 +12,62 @@ use crate::pipeline::{
 };
 use crate::scene::{BoxShadowSpec, RoundedRadii, RoundedRect};
 use crate::upload::GpuScene;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct TextCacheKey {
+    id: u64,
+    text_hash: u64,
+    size_px: u32,
+    color_rgba: [u8; 4],
+    dpi_key: u32,
+    provider_tag: u64,
+    dynamic: bool,
+    width: u32,
+    origin_x: i32,
+    baseline_y: i32,
+}
+
+struct TextCache {
+    map: HashMap<TextCacheKey, crate::text::GlyphBatch>,
+    max_entries: usize,
+}
+
+impl TextCache {
+    fn new(max_entries: usize) -> Self {
+        Self {
+            map: HashMap::new(),
+            max_entries: max_entries.max(1),
+        }
+    }
+
+    fn get(&self, key: &TextCacheKey) -> Option<&crate::text::GlyphBatch> {
+        self.map.get(key)
+    }
+
+    fn insert(
+        &mut self,
+        key: TextCacheKey,
+        batch: crate::text::GlyphBatch,
+    ) {
+        if self.map.len() >= self.max_entries && !self.map.contains_key(&key) {
+            if let Some(old_key) = self.map.keys().next().cloned() {
+                self.map.remove(&old_key);
+            }
+        }
+        match self.map.entry(key) {
+            Entry::Occupied(_) => {
+                // Keep existing entry; caller can decide whether to overwrite in future.
+            }
+            Entry::Vacant(v) => {
+                v.insert(batch);
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        self.map.clear();
+    }
+}
 
 pub struct PassTargets {
     pub color: crate::OwnedTexture,
@@ -55,9 +113,21 @@ pub struct PassManager {
     logical_pixels: bool,
     // Intermediate texture for Vello-style smooth resizing
     pub intermediate_texture: Option<crate::OwnedTexture>,
+    // Reusable GPU resources for text rendering to avoid per-glyph allocations.
+    text_mask_atlas: wgpu::Texture,
+    text_mask_atlas_view: wgpu::TextureView,
+    text_vertex_buffer: wgpu::Buffer,
+    text_index_buffer: wgpu::Buffer,
+    text_bind_group: wgpu::BindGroup,
+    text_cache: TextCache,
 }
 
 impl PassManager {
+    // Fixed text vertex/index buffer sizes for batched glyph quads.
+    // Kept in one place so capacity math stays in sync with buffer creation.
+    const TEXT_VBUF_BYTES: u64 = 1024 * 1024; // 1MB vertex buffer
+    const TEXT_IBUF_BYTES: u64 = 256 * 1024;  // 256KB index buffer
+
     /// Choose the best offscreen format: Rgba16Float if supported, otherwise Rgba8Unorm
     fn choose_offscreen_format(device: &wgpu::Device) -> wgpu::TextureFormat {
         // WORKAROUND: Use Rgba8UnormSrgb instead of Rgba16Float due to Metal blending bug
@@ -139,9 +209,57 @@ impl PassManager {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        // Text pipeline GPU resources
+        let text_mask_atlas = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("text-mask-atlas"),
+            size: wgpu::Extent3d {
+                width: 4096,
+                height: 4096,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            // Use RGBA8 so we can store RGB subpixel coverage masks directly.
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let text_mask_atlas_view =
+            text_mask_atlas.create_view(&wgpu::TextureViewDescriptor::default());
+        let text_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("text-vbuf"),
+            size: Self::TEXT_VBUF_BYTES, // shared constant used for capacity checks
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        // Index buffer sized for many quads (1MB VBO / 32 bytes per vertex = ~32K vertices = ~8K quads = ~48K indices)
+        let text_index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("text-ibuf"),
+            size: Self::TEXT_IBUF_BYTES, // shared constant used for capacity checks
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let text_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("text-mask-bgl"),
+            layout: &text.tex_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&text_mask_atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&text.sampler),
+                },
+            ],
+        });
         // Defaults: always interpret author coords as logical pixels and scale by DPI.
         let logical_default = true;
         let ui_scale = 1.0;
+        let text_cache = TextCache::new(1024);
         Self {
             device,
             solid_offscreen,
@@ -167,11 +285,19 @@ impl PassManager {
             ui_scale,
             logical_pixels: logical_default,
             intermediate_texture: None,
+            text_mask_atlas,
+            text_mask_atlas_view,
+            text_vertex_buffer,
+            text_index_buffer,
+            text_bind_group,
+            text_cache,
         }
     }
 
     /// Expose the device for scenes that need to create textures.
-    pub fn device(&self) -> Arc<wgpu::Device> { self.device.clone() }
+    pub fn device(&self) -> Arc<wgpu::Device> {
+        self.device.clone()
+    }
 
     /// Render an image texture to the target at origin with size (in pixels, y-down).
     /// Expects `tex_view` to be created from an `Rgba8UnormSrgb` texture for proper sRGB sampling.
@@ -187,7 +313,8 @@ impl PassManager {
         height: u32,
     ) {
         // Update viewport uniform based on render target dimensions (+ logical pixel scale)
-        let logical = crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
+        let logical =
+            crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
         let scale = [
             (2.0f32 / (width.max(1) as f32)) * logical,
             (-2.0f32 / (height.max(1) as f32)) * logical,
@@ -199,16 +326,31 @@ impl PassManager {
 
         #[repr(C)]
         #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-        struct QuadVtx { pos: [f32; 2], uv: [f32; 2] }
+        struct QuadVtx {
+            pos: [f32; 2],
+            uv: [f32; 2],
+        }
         let x = origin[0];
         let y = origin[1];
         let w = size[0].max(0.0);
         let h = size[1].max(0.0);
         let verts = [
-            QuadVtx { pos: [x,     y    ], uv: [0.0, 0.0] },
-            QuadVtx { pos: [x + w, y    ], uv: [1.0, 0.0] },
-            QuadVtx { pos: [x + w, y + h], uv: [1.0, 1.0] },
-            QuadVtx { pos: [x,     y + h], uv: [0.0, 1.0] },
+            QuadVtx {
+                pos: [x, y],
+                uv: [0.0, 0.0],
+            },
+            QuadVtx {
+                pos: [x + w, y],
+                uv: [1.0, 0.0],
+            },
+            QuadVtx {
+                pos: [x + w, y + h],
+                uv: [1.0, 1.0],
+            },
+            QuadVtx {
+                pos: [x, y + h],
+                uv: [0.0, 1.0],
+            },
         ];
         let idx: [u16; 6] = [0, 1, 2, 0, 2, 3];
         let vsize = (verts.len() * std::mem::size_of::<QuadVtx>()) as u64;
@@ -225,8 +367,12 @@ impl PassManager {
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        if vsize > 0 { queue.write_buffer(&vbuf, 0, bytemuck::cast_slice(&verts)); }
-        if isize > 0 { queue.write_buffer(&ibuf, 0, bytemuck::cast_slice(&idx)); }
+        if vsize > 0 {
+            queue.write_buffer(&vbuf, 0, bytemuck::cast_slice(&verts));
+        }
+        if isize > 0 {
+            queue.write_buffer(&ibuf, 0, bytemuck::cast_slice(&idx));
+        }
 
         let vp_bg = self.image.vp_bind_group(&self.device, &self.vp_buffer);
         let tex_bg = self.image.tex_bind_group(&self.device, tex_view);
@@ -237,13 +383,17 @@ impl PassManager {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: target_view,
                 resolve_target: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
             })],
             depth_stencil_attachment: None,
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-        self.image.record(&mut pass, &vp_bg, &tex_bg, &vbuf, &ibuf, idx.len() as u32);
+        self.image
+            .record(&mut pass, &vp_bg, &tex_bg, &vbuf, &ibuf, idx.len() as u32);
     }
 
     /// Rasterize an SVG file to a cached texture for the given scale.
@@ -257,7 +407,9 @@ impl PassManager {
         queue: &wgpu::Queue,
     ) -> Option<(wgpu::TextureView, u32, u32)> {
         let svg_style = style.unwrap_or_default();
-        let (tex, w, h) = self.svg_cache.get_or_rasterize(path, scale, svg_style, queue)?;
+        let (tex, w, h) = self
+            .svg_cache
+            .get_or_rasterize(path, scale, svg_style, queue)?;
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
         Some((view, w, h))
     }
@@ -295,7 +447,13 @@ impl PassManager {
     }
 
     /// Store a pre-loaded image texture in the cache.
-    pub fn store_loaded_image(&mut self, path: &std::path::Path, tex: Arc<wgpu::Texture>, width: u32, height: u32) {
+    pub fn store_loaded_image(
+        &mut self,
+        path: &std::path::Path,
+        tex: Arc<wgpu::Texture>,
+        width: u32,
+        height: u32,
+    ) {
         self.image_cache.store_ready(path, tex, width, height);
     }
 
@@ -308,14 +466,10 @@ impl PassManager {
         target_view: &wgpu::TextureView,
         width: u32,
         height: u32,
-        origin: [f32; 2],
-        mask: &crate::text::SubpixelMask,
-        color: crate::scene::ColorLinPremul,
+        glyphs: &[(crate::text::SubpixelMask, [f32; 2], crate::scene::ColorLinPremul)],
         queue: &wgpu::Queue,
     ) {
-        // Text masks are authored in pixel coordinates and are already rasterized at
-        // the target physical size (run.size × transform × dpi × ui_scale). To avoid
-        // double-scaling, map 1px→NDC without applying logical/UI scale here.
+        // Prepare viewport transform
         let scale = [
             2.0f32 / (width.max(1) as f32),
             -2.0f32 / (height.max(1) as f32),
@@ -324,96 +478,172 @@ impl PassManager {
         let vp_data = [scale[0], scale[1], translate[0], translate[1]];
         queue.write_buffer(&self.vp_buffer_text, 0, bytemuck::bytes_of(&vp_data));
 
-        // Create a unique color buffer for this draw to prevent color bleeding
-        let c = [color.r, color.g, color.b, color.a];
-        let color_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("text-color-buffer"),
-            size: std::mem::size_of::<[f32; 4]>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&color_buffer, 0, bytemuck::bytes_of(&c));
+        // ======= 1. UPLOAD ALL GLYPH MASKS INTO THE ATLAS ONCE =======
+        let mut atlas_cursor_x = 0u32;
+        let mut atlas_cursor_y = 0u32;
+        let mut next_row_height = 0u32;
 
-        // Create mask texture and upload
-        let format = match mask.format { crate::text::MaskFormat::Rgba8 => wgpu::TextureFormat::Rgba8Unorm, crate::text::MaskFormat::Rgba16 => wgpu::TextureFormat::Rgba16Unorm };
-        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("text-mask"),
-            size: wgpu::Extent3d { width: mask.width.max(1), height: mask.height.max(1), depth_or_array_layers: 1 },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        queue.write_texture(
-            wgpu::ImageCopyTexture { texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            &mask.data,
-            wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some((mask.width * (mask.bytes_per_pixel() as u32)) as u32), rows_per_image: Some(mask.height as u32) },
-            wgpu::Extent3d { width: mask.width, height: mask.height, depth_or_array_layers: 1 },
-        );
-        let tex_view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-        // Build quad vertices in pixel space with UVs
         #[repr(C)]
         #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-        struct QuadVtx { pos: [f32; 2], uv: [f32; 2] }
-        let x = origin[0];
-        let y = origin[1];
-        let w = mask.width as f32;
-        let h = mask.height as f32;
-        let verts = [
-            QuadVtx { pos: [x, y],         uv: [0.0, 0.0] },
-            QuadVtx { pos: [x + w, y],     uv: [1.0, 0.0] },
-            QuadVtx { pos: [x + w, y + h], uv: [1.0, 1.0] },
-            QuadVtx { pos: [x, y + h],     uv: [0.0, 1.0] },
-        ];
-        let idx: [u16; 6] = [0, 1, 2, 0, 2, 3];
-        let vsize = (verts.len() * std::mem::size_of::<QuadVtx>()) as u64;
-        let isize = (idx.len() * std::mem::size_of::<u16>()) as u64;
-        let vbuf = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("text-vbuf"),
-            size: vsize.max(4),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let ibuf = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("text-ibuf"),
-            size: isize.max(4),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        if vsize > 0 { queue.write_buffer(&vbuf, 0, bytemuck::cast_slice(&verts)); }
-        if isize > 0 { queue.write_buffer(&ibuf, 0, bytemuck::cast_slice(&idx)); }
+        struct QuadVtx {
+            pos: [f32; 2],
+            uv: [f32; 2],
+            color: [f32; 4],
+        }
 
-        // Viewport bind group
+        // Respect fixed VBO/IBO capacities: cap the number of quads we batch so
+        // Queue::write_buffer never overruns the preallocated buffers.
+        let vtx_size = std::mem::size_of::<QuadVtx>() as u64;
+        let idx_size = std::mem::size_of::<u16>() as u64;
+        let max_quads_v = (Self::TEXT_VBUF_BYTES / (vtx_size * 4)).max(1);
+        let max_quads_i = (Self::TEXT_IBUF_BYTES / (idx_size * 6)).max(1);
+        let max_quads = max_quads_v.min(max_quads_i) as usize;
+        if max_quads == 0 || glyphs.is_empty() {
+            return;
+        }
+        let mut vertices: Vec<QuadVtx> = Vec::with_capacity(glyphs.len().min(max_quads) * 4);
+
+        for (mask, origin, color) in glyphs.iter().take(max_quads) {
+            let c = [color.r, color.g, color.b, color.a];
+
+            let w = mask.width;
+            let h = mask.height;
+
+            // Row wrap logic
+            if atlas_cursor_x + w >= 4096 {
+                atlas_cursor_x = 0;
+                atlas_cursor_y += next_row_height;
+                next_row_height = 0;
+            }
+            next_row_height = next_row_height.max(h);
+
+            // Upload mask to atlas
+            queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &self.text_mask_atlas,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: atlas_cursor_x,
+                        y: atlas_cursor_y,
+                        z: 0,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &mask.data,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(mask.width * mask.bytes_per_pixel() as u32),
+                    rows_per_image: Some(mask.height),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+
+            // Compute UVs
+            let u0 = atlas_cursor_x as f32 / 4096.0;
+            let v0 = atlas_cursor_y as f32 / 4096.0;
+            let u1 = (atlas_cursor_x + w) as f32 / 4096.0;
+            let v1 = (atlas_cursor_y + h) as f32 / 4096.0;
+
+            let x = origin[0];
+            let y = origin[1];
+            let wf = w as f32;
+            let hf = h as f32;
+
+            // Push quad vertices with per-vertex color
+            vertices.extend_from_slice(&[
+                QuadVtx {
+                    pos: [x, y],
+                    uv: [u0, v0],
+                    color: c,
+                },
+                QuadVtx {
+                    pos: [x + wf, y],
+                    uv: [u1, v0],
+                    color: c,
+                },
+                QuadVtx {
+                    pos: [x + wf, y + hf],
+                    uv: [u1, v1],
+                    color: c,
+                },
+                QuadVtx {
+                    pos: [x, y + hf],
+                    uv: [u0, v1],
+                    color: c,
+                },
+            ]);
+
+            atlas_cursor_x += w;
+        }
+
+        // Upload all vertices at once
+        if vertices.is_empty() {
+            return;
+        }
+        let vbytes = (vertices.len() as u64) * vtx_size;
+        if vbytes > Self::TEXT_VBUF_BYTES {
+            // Extra safeguard: truncate to buffer capacity if our estimate drifts.
+            let allowed_quads = (Self::TEXT_VBUF_BYTES / (vtx_size * 4)) as usize;
+            let allowed_verts = allowed_quads.saturating_mul(4);
+            vertices.truncate(allowed_verts);
+        }
+        queue.write_buffer(&self.text_vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+
+        // Generate indices for all quads (not using instancing, so we need indices for each quad)
+        let quad_count = vertices.len() / 4;
+        let mut indices: Vec<u16> = Vec::with_capacity(quad_count * 6);
+        for i in 0..quad_count {
+            let base = (i * 4) as u16;
+            indices.extend_from_slice(&[
+                base + 0, base + 1, base + 2,
+                base + 0, base + 2, base + 3,
+            ]);
+        }
+        
+        // Upload indices
+        let ibytes = (indices.len() as u64) * idx_size;
+        if ibytes > Self::TEXT_IBUF_BYTES {
+            let allowed_quads = (Self::TEXT_IBUF_BYTES / (idx_size * 6)) as usize;
+            let allowed_indices = allowed_quads.saturating_mul(6);
+            indices.truncate(allowed_indices);
+        }
+        if !indices.is_empty() {
+            queue.write_buffer(&self.text_index_buffer, 0, bytemuck::cast_slice(&indices));
+        } else {
+            return;
+        }
+
+        // ======= 2. ONE RENDER PASS =======
+        // View-projection bind group for text pipeline
         let vp_bg = self.text.vp_bind_group(&self.device, &self.vp_buffer_text);
-        // Create texture bind group with unique color buffer
-        let tex_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("text-tex-bg-unique"),
-            layout: &self.text.tex_bgl,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&tex_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.text.sampler) },
-                wgpu::BindGroupEntry { binding: 2, resource: color_buffer.as_entire_binding() },
-            ],
-        });
-
-        // Render pass that preserves existing content
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("text-pass"),
+            label: Some("text-pass-batched"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: target_view,
                 resolve_target: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
             })],
             depth_stencil_attachment: None,
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-        self.text.record(&mut pass, &vp_bg, &tex_bg, &vbuf, &ibuf, idx.len() as u32);
-        drop(pass); // Explicitly drop to ensure render pass executes before next draw_text_mask
-        // temp buffers and texture are dropped at end of scope
+
+        pass.set_pipeline(&self.text.pipeline);
+        pass.set_bind_group(0, &vp_bg, &[]);
+        pass.set_bind_group(1, &self.text_bind_group, &[]);
+        pass.set_vertex_buffer(0, self.text_vertex_buffer.slice(..));
+        pass.set_index_buffer(self.text_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+        // Draw all quads
+        let index_count = (quad_count * 6) as u32;
+        pass.draw_indexed(0..index_count, 0, 0..1);
     }
 
     /// Set the platform DPI scale factor. On macOS this is used to correct
@@ -424,6 +654,7 @@ impl PassManager {
         } else {
             self.scale_factor = 1.0;
         }
+        self.text_cache.clear();
     }
 
     /// Set author-controlled UI scale multiplier (applies in logical mode).
@@ -433,7 +664,9 @@ impl PassManager {
     }
 
     /// Toggle logical pixel mode.
-    pub fn set_logical_pixels(&mut self, on: bool) { self.logical_pixels = on; }
+    pub fn set_logical_pixels(&mut self, on: bool) {
+        self.logical_pixels = on;
+    }
 
     pub fn alloc_targets(
         &self,
@@ -541,7 +774,7 @@ impl PassManager {
 
     /// Iterate the display list and render all DrawText runs using the given provider to the target_view.
     pub fn render_text_for_list(
-        &self,
+        &mut self,
         encoder: &mut wgpu::CommandEncoder,
         target_view: &wgpu::TextureView,
         list: &crate::display_list::DisplayList,
@@ -564,7 +797,7 @@ impl PassManager {
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
         for cmd in &list.commands {
-            if let crate::display_list::Command::DrawText { run, transform, .. } = cmd {
+            if let crate::display_list::Command::DrawText { run, transform, id, dynamic, .. } = cmd {
                 let [a, b, c, d, e, f] = transform.m;
                 // Apply full affine transform (scale + translate) to the run origin
                 let rx = a * run.pos[0] + c * run.pos[1] + e;
@@ -575,18 +808,39 @@ impl PassManager {
                 let sy = (c * c + d * d).sqrt();
                 let mut s = if sx.is_finite() && sy.is_finite() {
                     // When both are valid, take the average to avoid anisotropy surprises
-                    if sx > 0.0 && sy > 0.0 { (sx + sy) * 0.5 } else { sx.max(sy).max(1.0) }
-                } else { 1.0 };
-                if !s.is_finite() || s <= 0.0 { s = 1.0; }
+                    if sx > 0.0 && sy > 0.0 {
+                        (sx + sy) * 0.5
+                    } else {
+                        sx.max(sy).max(1.0)
+                    }
+                } else {
+                    1.0
+                };
+                if !s.is_finite() || s <= 0.0 {
+                    s = 1.0;
+                }
                 // Include logical pixel scale if enabled
-                let logical_scale = if self.logical_pixels { (self.scale_factor * self.ui_scale).max(0.0001) } else { 1.0 };
+                let logical_scale = if self.logical_pixels {
+                    (self.scale_factor * self.ui_scale).max(0.0001)
+                } else {
+                    1.0
+                };
                 s *= logical_scale;
 
                 // Prepare a scaled run for rasterization so glyph masks match the visual + DPI scale
                 let scaled_size = (run.size * s).max(1.0);
-                let run_for_provider = crate::scene::TextRun { text: run.text.clone(), pos: [0.0, 0.0], size: scaled_size, color: run.color };
+                let run_for_provider = crate::scene::TextRun {
+                    text: run.text.clone(),
+                    pos: [0.0, 0.0],
+                    size: scaled_size,
+                    color: run.color,
+                };
 
-                let sf = if self.scale_factor.is_finite() && self.scale_factor > 0.0 { self.scale_factor } else { 1.0 };
+                let sf = if self.scale_factor.is_finite() && self.scale_factor > 0.0 {
+                    self.scale_factor
+                } else {
+                    1.0
+                };
                 let snap = |v: f32| -> f32 { (v * sf).round() / sf };
                 // Convert origin to physical pixels if in logical mode
                 let rx_px = rx * logical_scale;
@@ -601,6 +855,75 @@ impl PassManager {
                     snap(ry_px)
                 };
 
+                // Dynamic text nodes bypass the cache and always rasterize.
+                if *dynamic {
+                    let mut glyph_batch = crate::text::GlyphBatch::new();
+                    for rg in provider.rasterize_run(&run_for_provider) {
+                        let mut origin =
+                            [run_origin_x + rg.offset[0], baseline_y + rg.offset[1]];
+                        if scaled_size <= 15.0 {
+                            origin[0] = snap(origin[0]);
+                            origin[1] = snap(origin[1]);
+                        }
+                        glyph_batch.glyphs.push((rg.mask, origin, run.color));
+                    }
+                    if !glyph_batch.glyphs.is_empty() {
+                        self.draw_text_mask(
+                            encoder,
+                            target_view,
+                            list.viewport.width,
+                            list.viewport.height,
+                            &glyph_batch.glyphs,
+                            queue,
+                        );
+                    }
+                    continue;
+                }
+
+                // Build cache key for this text run (static text: same text/size/color/position/DPI).
+                use std::collections::hash_map::DefaultHasher;
+                let mut hasher = DefaultHasher::new();
+                run.text.hash(&mut hasher);
+                let text_hash = hasher.finish();
+                let size_px = scaled_size.max(1.0).round() as u32;
+                let color_rgba = run.color.to_srgba_u8();
+                let dpi_key = if self.scale_factor.is_finite() && self.scale_factor > 0.0 {
+                    (self.scale_factor * 100.0).round() as u32
+                } else {
+                    0
+                };
+                let provider_tag = provider.cache_tag();
+                let origin_x_key = run_origin_x.round() as i32;
+                let baseline_y_key = baseline_y.round() as i32;
+                let key = TextCacheKey {
+                    id: *id,
+                    text_hash,
+                    size_px,
+                    color_rgba,
+                    dpi_key,
+                    provider_tag,
+                    dynamic: false,
+                    width: list.viewport.width,
+                    origin_x: origin_x_key,
+                    baseline_y: baseline_y_key,
+                };
+
+                if let Some(batch) = self.text_cache.get(&key) {
+                    if !batch.glyphs.is_empty() {
+                        self.draw_text_mask(
+                            encoder,
+                            target_view,
+                            list.viewport.width,
+                            list.viewport.height,
+                            &batch.glyphs,
+                            queue,
+                        );
+                    }
+                    continue;
+                }
+
+                // Cache miss: build glyph batch once, insert into cache, then draw.
+                let mut glyph_batch = crate::text::GlyphBatch::new();
                 for rg in provider.rasterize_run(&run_for_provider) {
                     let mut origin = [run_origin_x + rg.offset[0], baseline_y + rg.offset[1]];
                     // Pseudo-hinting for small pixel sizes
@@ -608,16 +931,18 @@ impl PassManager {
                         origin[0] = snap(origin[0]);
                         origin[1] = snap(origin[1]);
                     }
+                    glyph_batch.glyphs.push((rg.mask, origin, run.color));
+                }
+                if !glyph_batch.glyphs.is_empty() {
                     self.draw_text_mask(
                         encoder,
                         target_view,
                         list.viewport.width,
                         list.viewport.height,
-                        origin,
-                        &rg.mask,
-                        run.color,
+                        &glyph_batch.glyphs,
                         queue,
                     );
+                    self.text_cache.insert(key, glyph_batch);
                 }
             }
         }
@@ -664,7 +989,8 @@ impl PassManager {
         let ping_view = ping_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Viewport for full target size (y-down)
-        let logical = crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
+        let logical =
+            crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
         let scale = [
             (2.0f32 / (width.max(1) as f32)) * logical,
             (-2.0f32 / (height.max(1) as f32)) * logical,
@@ -1132,7 +1458,8 @@ impl PassManager {
         queue: &wgpu::Queue,
     ) {
         // Update viewport uniform
-        let logical = crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
+        let logical =
+            crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
         let scale = [
             (2.0f32 / (width.max(1) as f32)) * logical,
             (-2.0f32 / (height.max(1) as f32)) * logical,
@@ -2022,8 +2349,17 @@ impl PassManager {
     ) {
         // Ensure intermediate texture is allocated and matches surface size
         self.ensure_intermediate_texture(allocator, width, height);
-        let intermediate_view = &self.intermediate_texture.as_ref().unwrap().view;
-
+        
+        // Get a raw pointer to the intermediate view to work around borrow checker.
+        // This is safe because we know ensure_intermediate_texture() has just allocated it
+        // and it won't be reallocated during this function.
+        let intermediate_view_ptr: *const wgpu::TextureView = &self
+            .intermediate_texture
+            .as_ref()
+            .expect("intermediate texture must be allocated before rendering text")
+            .view;
+        let intermediate_view = unsafe { &*intermediate_view_ptr };
+        
         // Render solids to intermediate
         self.render_frame_internal(
             encoder,
@@ -2037,8 +2373,10 @@ impl PassManager {
             queue,
             false,
         );
+        
         // Render text to intermediate
         self.render_text_for_list(encoder, intermediate_view, list, queue, provider);
+        
         // Blit to surface
         self.blit_to_surface(encoder, surface_view);
     }
@@ -2058,7 +2396,8 @@ impl PassManager {
         preserve_target: bool,
     ) {
         // Update viewport uniform (+ logical pixel scale)
-        let logical = crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
+        let logical =
+            crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
         let scale = [
             (2.0f32 / (width.max(1) as f32)) * logical,
             (-2.0f32 / (height.max(1) as f32)) * logical,
@@ -2151,7 +2490,8 @@ impl PassManager {
         preserve_surface: bool,
     ) {
         // Update viewport uniform (+ logical pixel scale)
-        let logical = crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
+        let logical =
+            crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
         let scale = [
             (2.0f32 / (width.max(1) as f32)) * logical,
             (-2.0f32 / (height.max(1) as f32)) * logical,
@@ -2231,7 +2571,7 @@ impl PassManager {
 
     /// Render solids, then draw text over the same target.
     pub fn render_frame_and_text(
-        &self,
+        &mut self,
         encoder: &mut wgpu::CommandEncoder,
         allocator: &mut RenderAllocator,
         surface_view: &wgpu::TextureView,

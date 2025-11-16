@@ -178,7 +178,12 @@ impl Scene for UiElementsScene {
         let inner_w = (cb_size - 2.0 * inset).max(0.0);
         let inner_h = (cb_size - 2.0 * inset).max(0.0);
         // Rasterize and draw the white SVG tick into the inner rect.
-        if let Some((view, _sw, _sh)) = passes.rasterize_svg_to_view(std::path::Path::new("images/check_white.svg"), 1.0, queue) {
+        if let Some((view, _sw, _sh)) = passes.rasterize_svg_to_view(
+            std::path::Path::new("images/check_white.svg"),
+            1.0,
+            None,
+            queue,
+        ) {
             passes.draw_image_quad(
                 encoder,
                 surface_view,

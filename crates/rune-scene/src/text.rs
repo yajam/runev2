@@ -90,6 +90,108 @@ pub fn wrap_text(_provider: &dyn engine_core::TextProvider, text: &str, size_px:
     lines
 }
 
+/// Word wrapping using rune-text's HarfBuzz-based layout engine.
+///
+/// This delegates wrapping to `rune-text`'s `TextLayout`, which handles
+/// grapheme clusters and UAX-14 line breaking. It requires a font path
+/// via the `RUNE_TEXT_FONT` environment variable; if unavailable or
+/// loading fails, it falls back to the simple `wrap_text` heuristic.
+pub fn wrap_text_rune(
+    text: &str,
+    size_px: f32,
+    max_width: f32,
+) -> Vec<String> {
+    use rune_text::font::{FontCache, FontError};
+    use rune_text::layout::{TextLayout, WrapMode};
+
+    // Simple fallback using the same approximation as `wrap_text`,
+    // but without needing a text provider.
+    fn fallback_wrap(text: &str, size_px: f32, max_width: f32) -> Vec<String> {
+        let words: Vec<&str> = text.split_whitespace().collect();
+        if words.is_empty() {
+            return vec![String::new()];
+        }
+
+        let avg_char_width = size_px * 0.55;
+        let max_chars_per_line = (max_width / avg_char_width).floor() as usize;
+        if max_chars_per_line == 0 {
+            return vec![text.to_string()];
+        }
+
+        let mut lines: Vec<String> = Vec::new();
+        let mut cur = String::new();
+
+        for w in words.iter() {
+            let test_line = if cur.is_empty() {
+                (*w).to_string()
+            } else {
+                format!("{} {}", cur, w)
+            };
+
+            if test_line.len() <= max_chars_per_line {
+                cur = test_line;
+            } else {
+                if !cur.is_empty() {
+                    lines.push(cur);
+                }
+
+                if w.len() > max_chars_per_line {
+                    let mut remaining = *w;
+                    while remaining.len() > max_chars_per_line {
+                        let (chunk, rest) = remaining.split_at(max_chars_per_line);
+                        lines.push(chunk.to_string());
+                        remaining = rest;
+                    }
+                    cur = remaining.to_string();
+                } else {
+                    cur = (*w).to_string();
+                }
+            }
+        }
+
+        if !cur.is_empty() {
+            lines.push(cur);
+        }
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+        lines
+    }
+
+    // Require a font path for rune-text; fall back if not provided.
+    let font_path = match std::env::var("RUNE_TEXT_FONT") {
+        Ok(p) if !p.is_empty() => p,
+        _ => return fallback_wrap(text, size_px, max_width),
+    };
+
+    // Load font via rune-text. On failure, fall back to heuristic wrap.
+    let mut cache = FontCache::new();
+    let font = match cache.get_or_load(&font_path, 0) {
+        Ok(f) => f,
+        Err(FontError::Io(_)) | Err(FontError::InvalidFont) => {
+            return fallback_wrap(text, size_px, max_width);
+        }
+    };
+
+    let layout = TextLayout::with_wrap(
+        text.to_string(),
+        &font,
+        size_px,
+        Some(max_width),
+        WrapMode::BreakWord,
+    );
+
+    let mut out = Vec::new();
+    for line in layout.lines() {
+        let range = line.text_range.clone();
+        out.push(text[range].to_string());
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
+}
+
 /// Compute baseline Y positions for each line so that the visual spacing uses
 /// descent of the previous line + ascent of the next line + pad.
 /// Optional scale_factor snaps to device pixels (like PassManager).
@@ -146,11 +248,10 @@ pub fn layout_text(
     text: &str,
     opts: &LayoutOptions,
 ) -> LayoutResult {
-    // Wrap
-    let lines: Vec<String> = match opts.wrap {
-        Wrap::NoWrap => vec![text.to_string()],
-        Wrap::Word(max_w) => wrap_text(provider, text, opts.size_px, max_w),
-    };
+    // Disable automatic width-based wrapping for now; only respect
+    // explicit newlines. This avoids heavy rune-text layout paths and
+    // keeps rendering stable even when RUNE_TEXT_LAYOUT is set.
+    let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
     
     // Use simplified baseline calculation for performance
     // Instead of measuring every line, use a single sample measurement

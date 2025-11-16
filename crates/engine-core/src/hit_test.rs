@@ -168,7 +168,7 @@ impl HitIndex {
                     });
                     next_id += 1;
                 }
-                Command::DrawText { run, z, transform } => {
+                Command::DrawText { run, z, transform, .. } => {
                     items.push(HitItem {
                         id: next_id,
                         z: *z,

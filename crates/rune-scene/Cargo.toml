@@ -14,3 +14,4 @@ rune-surface = { path = "../rune-surface" }
 winit = { workspace = true }
 wgpu = { workspace = true }
 pollster = { workspace = true }
+rune-text = { path = "../rune-text" }

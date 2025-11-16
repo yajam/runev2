@@ -94,9 +94,51 @@ pub fn run() -> Result<()> {
     surf.set_logical_pixels(true);
     surf.set_dpi_scale(scale_factor);
 
-    // Provide a text provider (system fonts)
-    let provider = engine_core::CosmicTextProvider::from_system_fonts(SubpixelOrientation::RGB);
-    let provider = std::sync::Arc::new(provider);
+    // Provide a text provider.
+    //
+    // Default: rune-text + harfrust (pure Rust HarfBuzz implementation).
+    // - If `RUNE_TEXT_PROVIDER=cosmic`, use cosmic-text explicitly.
+    // - If `RUNE_TEXT_FONT=path`, load custom font from path.
+    let provider: std::sync::Arc<dyn engine_core::TextProvider> =
+        match std::env::var("RUNE_TEXT_PROVIDER") {
+            Ok(ref v) if v.eq_ignore_ascii_case("cosmic") => {
+                // Explicit opt-in to cosmic-text.
+                std::sync::Arc::new(
+                    engine_core::CosmicTextProvider::from_system_fonts(SubpixelOrientation::RGB),
+                )
+            }
+            _ => {
+                // Default: rune-text + harfrust.
+                if let Ok(path) = std::env::var("RUNE_TEXT_FONT") {
+                    if let Ok(bytes) = std::fs::read(&path) {
+                        if let Ok(p) = engine_core::RuneTextProvider::from_bytes(
+                            &bytes,
+                            SubpixelOrientation::RGB,
+                        ) {
+                            std::sync::Arc::new(p)
+                        } else {
+                            let p = engine_core::RuneTextProvider::from_system_fonts(
+                                SubpixelOrientation::RGB,
+                            )
+                            .expect("rune-text: failed to load a system font via fontdb");
+                            std::sync::Arc::new(p)
+                        }
+                    } else {
+                        let p = engine_core::RuneTextProvider::from_system_fonts(
+                            SubpixelOrientation::RGB,
+                        )
+                        .expect("rune-text: failed to load a system font via fontdb");
+                        std::sync::Arc::new(p)
+                    }
+                } else {
+                    let p = engine_core::RuneTextProvider::from_system_fonts(
+                        SubpixelOrientation::RGB,
+                    )
+                    .expect("rune-text: failed to load a system font via fontdb");
+                    std::sync::Arc::new(p)
+                }
+            }
+        };
 
     // Zone manager for layout and styling (use logical pixels)
     let logical_width = (size.width as f32 / scale_factor) as u32;
@@ -295,6 +337,8 @@ pub fn run() -> Result<()> {
             run: elements_label_run,
             z: 10100,
             transform: Transform2D::identity(),
+            id: 1,
+            dynamic: false,
         });
 
         // Console label
@@ -311,6 +355,8 @@ pub fn run() -> Result<()> {
             run: console_label_run,
             z: 10100,
             transform: Transform2D::identity(),
+            id: 2,
+            dynamic: false,
         });
 
         // Content label inside devtools body based on active tab
@@ -329,6 +375,8 @@ pub fn run() -> Result<()> {
             run: content_label_run,
             z: 10150,
             transform: Transform2D::identity(),
+            id: 3,
+            dynamic: false,
         });
 
         passes.render_text_for_list(encoder, view, &overlay_list, queue, overlay_provider.as_ref());
@@ -518,7 +566,12 @@ pub fn run() -> Result<()> {
                         // Render sample UI elements in viewport zone with local coordinates.
                         let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
                         canvas.push_transform(Transform2D::translate(viewport_rect.x, viewport_rect.y));
-                        sample_ui.render(&mut canvas, scale_factor, size.width);
+                        sample_ui.render(
+                            &mut canvas,
+                            scale_factor,
+                            viewport_rect.w as u32,
+                            provider.as_ref(),
+                        );
                         canvas.pop_transform();
                         
                         // Render toolbar content with hit regions (above viewport)

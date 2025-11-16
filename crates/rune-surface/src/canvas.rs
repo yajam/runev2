@@ -33,6 +33,7 @@ pub struct Canvas {
     pub(crate) glyph_draws: Vec<([f32; 2], RasterizedGlyph, ColorLinPremul)>, // low-level glyph masks
     pub(crate) svg_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], Option<engine_core::SvgStyle>, i32, Transform2D)>, // (path, origin, max_size, style, z, transform)
     pub(crate) image_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], ImageFitMode, i32, Transform2D)>, // (path, origin, size, fit, z, transform)
+    pub(crate) dpi_scale: f32, // DPI scale factor for text rendering
 }
 
 impl Canvas {
@@ -76,9 +77,76 @@ impl Canvas {
         self.painter.stroke_rounded_rect(rrect, Stroke { width }, brush, z);
     }
 
-    /// Push a high-level text run into the display list. Requires a text provider at end_frame.
+    /// Draw text - simplified to rasterize immediately if provider is available.
+    /// This bypasses the complex display list path and works reliably like harfrust_text.
     pub fn draw_text_run(&mut self, origin: [f32; 2], text: String, size_px: f32, color: ColorLinPremul, z: i32) {
-        self.painter.text(TextRun { text, pos: origin, size: size_px, color }, z);
+        let _ = z; // z-ordering not used for direct glyph rendering
+        
+        // If we have a provider, rasterize immediately (simple, reliable)
+        if let Some(ref provider) = self.text_provider {
+            // Apply current transform to origin (handles zone positioning)
+            let transform = self.painter.current_transform();
+            let [a, b, c, d, e, f] = transform.m;
+            let transformed_origin = [
+                a * origin[0] + c * origin[1] + e,
+                b * origin[0] + d * origin[1] + f,
+            ];
+            
+            // Apply DPI scaling to both size and position
+            let scaled_size = size_px * self.dpi_scale;
+            let scaled_origin = [
+                transformed_origin[0] * self.dpi_scale,
+                transformed_origin[1] * self.dpi_scale,
+            ];
+            
+            let run = TextRun {
+                text,
+                pos: [0.0, 0.0],
+                size: scaled_size,
+                color,
+            };
+            
+            // Rasterize glyphs immediately
+            for g in provider.rasterize_run(&run) {
+                let glyph_origin = [scaled_origin[0] + g.offset[0], scaled_origin[1] + g.offset[1]];
+                self.glyph_draws.push((glyph_origin, g, color));
+            }
+        } else {
+            // Fallback: use display list path (complex, but kept for compatibility)
+            self.painter.text(TextRun { text, pos: origin, size: size_px, color }, z);
+        }
+    }
+
+    /// Draw text directly by rasterizing immediately (simpler, bypasses display list).
+    /// This is the recommended approach - it's simpler and more reliable than draw_text_run.
+    pub fn draw_text_direct(&mut self, origin: [f32; 2], text: &str, size_px: f32, color: ColorLinPremul, provider: &dyn TextProvider) {
+        // Apply current transform to origin (handles zone positioning)
+        let transform = self.painter.current_transform();
+        let [a, b, c, d, e, f] = transform.m;
+        let transformed_origin = [
+            a * origin[0] + c * origin[1] + e,
+            b * origin[0] + d * origin[1] + f,
+        ];
+        
+        // Apply DPI scaling to both size and position
+        let scaled_size = size_px * self.dpi_scale;
+        let scaled_origin = [
+            transformed_origin[0] * self.dpi_scale,
+            transformed_origin[1] * self.dpi_scale,
+        ];
+        
+        let run = TextRun {
+            text: text.to_string(),
+            pos: [0.0, 0.0],
+            size: scaled_size,
+            color,
+        };
+        
+        // Rasterize glyphs immediately
+        for g in provider.rasterize_run(&run) {
+            let glyph_origin = [scaled_origin[0] + g.offset[0], scaled_origin[1] + g.offset[1]];
+            self.glyph_draws.push((glyph_origin, g, color));
+        }
     }
 
     /// Provide a text provider used for high-level text runs in this frame.

@@ -88,6 +88,14 @@ fn main() -> Result<()> {
         || std::env::args().any(|a| a == "--scene=text" || a == "--text" || a == "--scene=text-demo")
     {
         Box::new(scenes::text_demo::TextDemoScene::default())
+    } else if scene_env.as_deref() == Some("harfrust-text")
+        || std::env::args().any(|a| a == "--scene=harfrust-text" || a == "--harfrust-text")
+    {
+        Box::new(scenes::harfrust_text::HarfrustTextScene::default())
+    } else if scene_env.as_deref() == Some("cosmic-direct")
+        || std::env::args().any(|a| a == "--scene=cosmic-direct" || a == "--cosmic-direct")
+    {
+        Box::new(scenes::cosmic_direct::CosmicDirectScene::default())
     } else if scene_env.as_deref() == Some("images")
         || std::env::args().any(|a| a == "--scene=images" || a == "--images")
     {

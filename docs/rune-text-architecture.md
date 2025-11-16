@@ -99,7 +99,7 @@ impl FontMetrics {
     pub fn line_height(&self) -> f32 {
         self.ascent + self.descent + self.line_gap
     }
-    
+
     /// Scale metrics to pixel size
     pub fn scale_to_pixels(&self, font_size: f32) -> ScaledFontMetrics {
         let scale = font_size / self.units_per_em as f32;
@@ -153,12 +153,12 @@ impl LineBox {
     pub fn baseline_y(&self) -> f32 {
         self.y_offset + self.baseline_offset
     }
-    
+
     /// Get line box bottom Y position
     pub fn bottom_y(&self) -> f32 {
         self.y_offset + self.height
     }
-    
+
     /// Check if a point is within this line
     pub fn contains_point(&self, x: f32, y: f32) -> bool {
         y >= self.y_offset && y < self.bottom_y() && x >= 0.0 && x < self.width
@@ -223,32 +223,32 @@ impl TextLayout {
         self.prefix_sums.line_at_char(char_offset)
             .and_then(|line_idx| self.lines.get(line_idx))
     }
-    
+
     /// Get character offset at point
     pub fn hit_test(&self, x: f32, y: f32) -> Option<usize> {
         // Find line containing point
         let line = self.lines.iter().find(|line| {
             y >= line.y_offset && y < line.bottom_y()
         })?;
-        
+
         // Find character within line
         self.hit_test_line(line, x)
     }
-    
+
     /// Measure text bounds
     pub fn bounds(&self) -> Rect {
         let width = self.lines.iter()
             .map(|line| line.width)
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or(0.0);
-        
+
         let height = self.lines.last()
             .map(|line| line.bottom_y())
             .unwrap_or(0.0);
-        
+
         Rect { x: 0.0, y: 0.0, width, height }
     }
-    
+
     /// Get baseline Y for specific line
     pub fn baseline_y(&self, line_index: usize) -> Option<f32> {
         self.lines.get(line_index).map(|line| line.baseline_y())
@@ -275,7 +275,7 @@ impl PrefixSums {
             .map(|i| i)
             .or_else(|i| if i > 0 { Some(i - 1) } else { None })
     }
-    
+
     /// Get character offset at start of line
     pub fn char_offset_at_line(&self, line_index: usize) -> Option<usize> {
         self.char_offsets.get(line_index).copied()
@@ -347,24 +347,24 @@ impl TextLayout {
         self.invalidate_layout();
         Ok(())
     }
-    
+
     /// Clear IME composition
     pub fn clear_ime_composition(&mut self) {
         self.ime_state = None;
         self.invalidate_layout();
     }
-    
+
     /// Get IME candidate window position
     pub fn ime_candidate_position(&self) -> Option<ImeCandidatePosition> {
         let ime_state = self.ime_state.as_ref()?;
         let cursor_offset = ime_state.cursor_offset;
-        
+
         // Find line containing cursor
         let line = self.line_at_char(cursor_offset)?;
-        
+
         // Calculate cursor x position within line
         let x = self.cursor_x_in_line(line, cursor_offset)?;
-        
+
         Some(ImeCandidatePosition {
             x,
             y: line.bottom_y(),  // Position below current line
@@ -372,11 +372,11 @@ impl TextLayout {
             baseline_offset: line.baseline_offset,
         })
     }
-    
+
     /// Render preedit text with IME styling
     pub fn render_with_ime(&self) -> Vec<RenderCommand> {
         let mut commands = self.render_base_text();
-        
+
         if let Some(ime_state) = &self.ime_state {
             // Render preedit text overlay
             let preedit_commands = self.render_preedit(
@@ -385,7 +385,7 @@ impl TextLayout {
             );
             commands.extend(preedit_commands);
         }
-        
+
         commands
     }
 }
@@ -476,7 +476,7 @@ impl TextEditor {
             .font_size(font_size)
             .build()
             .unwrap();
-        
+
         Self {
             layout,
             cursor: 0,
@@ -486,18 +486,18 @@ impl TextEditor {
             history: EditHistory::new(),
         }
     }
-    
+
     /// Get cursor screen position
     pub fn cursor_position(&self) -> Point {
         self.layout.char_position(self.cursor)
             .unwrap_or(Point::ZERO)
     }
-    
+
     /// Get cursor rectangle for rendering
     pub fn cursor_rect(&self) -> Rect {
         let pos = self.cursor_position();
         let line = self.layout.line_at_char(self.cursor).unwrap();
-        
+
         Rect {
             x: pos.x,
             y: pos.y,
@@ -505,49 +505,49 @@ impl TextEditor {
             height: line.height,
         }
     }
-    
+
     /// Move cursor left by one grapheme
     pub fn move_left(&mut self, extend_selection: bool) {
         if let Some(new_pos) = self.prev_grapheme_offset(self.cursor) {
             self.set_cursor(new_pos, extend_selection);
         }
     }
-    
+
     /// Move cursor right by one grapheme
     pub fn move_right(&mut self, extend_selection: bool) {
         if let Some(new_pos) = self.next_grapheme_offset(self.cursor) {
             self.set_cursor(new_pos, extend_selection);
         }
     }
-    
+
     /// Move cursor up by one line
     pub fn move_up(&mut self, extend_selection: bool) {
         if let Some(new_pos) = self.layout.cursor_up(self.cursor) {
             self.set_cursor(new_pos, extend_selection);
         }
     }
-    
+
     /// Move cursor down by one line
     pub fn move_down(&mut self, extend_selection: bool) {
         if let Some(new_pos) = self.layout.cursor_down(self.cursor) {
             self.set_cursor(new_pos, extend_selection);
         }
     }
-    
+
     /// Move cursor to line start
     pub fn move_to_line_start(&mut self, extend_selection: bool) {
         if let Some(line) = self.layout.line_at_char(self.cursor) {
             self.set_cursor(line.text_range.start, extend_selection);
         }
     }
-    
+
     /// Move cursor to line end
     pub fn move_to_line_end(&mut self, extend_selection: bool) {
         if let Some(line) = self.layout.line_at_char(self.cursor) {
             self.set_cursor(line.text_range.end, extend_selection);
         }
     }
-    
+
     /// Insert text at cursor
     pub fn insert_text(&mut self, text: &str) {
         let insert_pos = if let Some(sel) = self.selection.take() {
@@ -556,13 +556,13 @@ impl TextEditor {
         } else {
             self.cursor
         };
-        
+
         self.history.record_insert(insert_pos, text);
         self.layout.insert_text(insert_pos, text).unwrap();
         self.cursor = insert_pos + text.len();
         self.scroll_to_cursor();
     }
-    
+
     /// Delete character before cursor (backspace)
     pub fn delete_backward(&mut self) {
         if let Some(selection) = self.selection.take() {
@@ -572,7 +572,7 @@ impl TextEditor {
             self.delete_range(range);
         }
     }
-    
+
     /// Delete character after cursor (delete)
     pub fn delete_forward(&mut self) {
         if let Some(selection) = self.selection.take() {
@@ -582,14 +582,14 @@ impl TextEditor {
             self.delete_range(range);
         }
     }
-    
+
     /// Copy selection to clipboard
     pub fn copy(&self) -> Option<String> {
         self.selection.as_ref().map(|sel| {
             self.layout.text()[sel.clone()].to_string()
         })
     }
-    
+
     /// Cut selection to clipboard
     pub fn cut(&mut self) -> Option<String> {
         let text = self.copy();
@@ -598,46 +598,46 @@ impl TextEditor {
         }
         text
     }
-    
+
     /// Paste text from clipboard
     pub fn paste(&mut self, text: &str) {
         self.insert_text(text);
     }
-    
+
     /// Undo last operation
     pub fn undo(&mut self) {
         if let Some(op) = self.history.undo() {
             self.apply_undo_operation(op);
         }
     }
-    
+
     /// Redo last undone operation
     pub fn redo(&mut self) {
         if let Some(op) = self.history.redo() {
             self.apply_redo_operation(op);
         }
     }
-    
+
     /// Select all text
     pub fn select_all(&mut self) {
         self.selection = Some(0..self.layout.text().len());
         self.cursor = self.layout.text().len();
     }
-    
+
     /// Get selection rectangles for rendering
     pub fn selection_rects(&self) -> Vec<Rect> {
         self.selection.as_ref()
             .map(|sel| self.layout.selection_rects(sel.clone()))
             .unwrap_or_default()
     }
-    
+
     /// Handle mouse click (hit testing)
     pub fn click(&mut self, x: f32, y: f32, extend_selection: bool) {
         if let Some(offset) = self.layout.hit_test(x, y) {
             self.set_cursor(offset, extend_selection);
         }
     }
-    
+
     /// Handle mouse drag (selection)
     pub fn drag(&mut self, x: f32, y: f32) {
         if let Some(offset) = self.layout.hit_test(x, y) {
@@ -650,14 +650,14 @@ impl TextEditor {
             }
         }
     }
-    
+
     /// Scroll to make cursor visible
     fn scroll_to_cursor(&mut self) {
         let cursor_rect = self.cursor_rect();
         // Adjust scroll_offset to make cursor_rect visible
         // Implementation depends on viewport size
     }
-    
+
     /// Set cursor position with optional selection extension
     fn set_cursor(&mut self, new_pos: usize, extend_selection: bool) {
         if extend_selection {
@@ -697,7 +697,7 @@ impl EditHistory {
             max_size: 1000,
         }
     }
-    
+
     fn record_insert(&mut self, offset: usize, text: &str) {
         self.undo_stack.push(EditOperation::Insert {
             offset,
@@ -706,7 +706,7 @@ impl EditHistory {
         self.redo_stack.clear();
         self.trim_to_size();
     }
-    
+
     fn record_delete(&mut self, offset: usize, text: &str) {
         self.undo_stack.push(EditOperation::Delete {
             offset,
@@ -715,21 +715,21 @@ impl EditHistory {
         self.redo_stack.clear();
         self.trim_to_size();
     }
-    
+
     fn undo(&mut self) -> Option<EditOperation> {
         self.undo_stack.pop().map(|op| {
             self.redo_stack.push(op.clone());
             op
         })
     }
-    
+
     fn redo(&mut self) -> Option<EditOperation> {
         self.redo_stack.pop().map(|op| {
             self.undo_stack.push(op.clone());
             op
         })
     }
-    
+
     fn trim_to_size(&mut self) {
         if self.undo_stack.len() > self.max_size {
             self.undo_stack.drain(0..self.undo_stack.len() - self.max_size);
@@ -845,7 +845,7 @@ fn update_ime_position(&mut self) {
         // Convert to screen coordinates
         let screen_x = self.window_x + pos.x;
         let screen_y = self.window_y + pos.y;
-        
+
         // Tell windowing system where to position candidate window
         self.window.set_ime_position(winit::dpi::Position::Physical(
             winit::dpi::PhysicalPosition::new(screen_x as i32, screen_y as i32)
@@ -856,7 +856,7 @@ fn update_ime_position(&mut self) {
 // Render text with IME preedit overlay
 fn render_text(&self) {
     let commands = self.layout.render_with_ime();
-    
+
     for cmd in commands {
         match cmd {
             RenderCommand::DrawGlyph { glyph_id, x, y, color } => {
@@ -902,7 +902,7 @@ fn on_key_event(&mut self, event: KeyEvent) {
         Key::Enter => self.editor.insert_text("\n"),
         _ => {}
     }
-    
+
     // Handle Ctrl/Cmd shortcuts
     if event.ctrl_or_cmd {
         match event.key {
@@ -948,7 +948,7 @@ fn render_editor(&self) {
     for rect in self.editor.selection_rects() {
         self.draw_rect(rect, SELECTION_COLOR);
     }
-    
+
     // Render text
     let layout = self.editor.layout();
     for line in layout.lines() {
@@ -956,7 +956,7 @@ fn render_editor(&self) {
             self.render_shaped_run(run, line.baseline_y());
         }
     }
-    
+
     // Render cursor (with blinking)
     if self.cursor_visible {
         let cursor_rect = self.editor.cursor_rect();
@@ -1028,13 +1028,15 @@ let commands = layout.render_with_ime();
 ## Implementation Phases
 
 ### Phase 1: Core Foundation (Week 1-2)
+
 - [ ] Set up crate structure
-- [ ] Integrate `rustybuzz` for shaping
+- [x] Integrate `harfrust` for shaping
 - [ ] Implement `FontMetrics` and `ScaledFontMetrics`
 - [ ] Create `ShapedRun` data structure
 - [ ] Build basic single-line shaping
 
 ### Phase 2: Line Breaking (Week 2-3)
+
 - [ ] Integrate `unicode-linebreak`
 - [ ] Implement `LineBreaker` with UAX-14
 - [ ] Create `LineBox` with baseline metrics
@@ -1042,6 +1044,7 @@ let commands = layout.render_with_ime();
 - [ ] Add prefix sums for fast lookups
 
 ### Phase 3: Measurement & Hit Testing (Week 3-4)
+
 - [ ] Implement `bounds()` API
 - [ ] Add `hit_test()` for point-to-char
 - [ ] Create `char_bounds()` for character rectangles
@@ -1049,6 +1052,7 @@ let commands = layout.render_with_ime();
 - [ ] Add line-level measurement APIs
 
 ### Phase 4: BiDi Support (Week 4-5)
+
 - [ ] Integrate `unicode-bidi`
 - [ ] Implement BiDi reordering
 - [ ] Handle mixed LTR/RTL text
@@ -1056,6 +1060,7 @@ let commands = layout.render_with_ime();
 - [ ] Test with Arabic/Hebrew
 
 ### Phase 5: Font Fallback (Week 5-6)
+
 - [ ] Design fallback chain architecture
 - [ ] Implement missing glyph detection
 - [ ] Build automatic fallback selection
@@ -1063,6 +1068,7 @@ let commands = layout.render_with_ime();
 - [ ] Test with multilingual text
 
 ### Phase 6: Text Editing (Week 6-7)
+
 - [ ] Implement `TextEditor` data structure
 - [ ] Add cursor position tracking and rendering
 - [ ] Build hit testing for cursor positioning
@@ -1075,6 +1081,7 @@ let commands = layout.render_with_ime();
 - [ ] Test with keyboard and mouse input
 
 ### Phase 7: Styling & Spans (Week 7-8)
+
 - [ ] Create `TextStyle` and `ParagraphStyle`
 - [ ] Implement styled span support
 - [ ] Build style-aware shaping
@@ -1082,6 +1089,7 @@ let commands = layout.render_with_ime();
 - [ ] Create builder API for styled text
 
 ### Phase 8: Performance (Week 8-9)
+
 - [ ] Implement shape cache
 - [ ] Add layout caching
 - [ ] Build incremental re-layout
@@ -1089,6 +1097,7 @@ let commands = layout.render_with_ime();
 - [ ] Benchmark against cosmic-text
 
 ### Phase 9: IME Support (Week 9-10)
+
 - [ ] Implement `ImeComposition` and `ImeSegment` data structures
 - [ ] Add `ImeEvent` handling
 - [ ] Build preedit text overlay rendering
@@ -1099,6 +1108,7 @@ let commands = layout.render_with_ime();
 - [ ] Support IME on/off state tracking
 
 ### Phase 10: Advanced Features (Week 10+)
+
 - [ ] Add justification support
 - [ ] Implement hyphenation
 - [ ] Support OpenType features
@@ -1110,7 +1120,7 @@ let commands = layout.render_with_ime();
 ```toml
 [dependencies]
 # Text shaping
-rustybuzz = "0.14"
+harfbuzz_rs = "2.0"
 
 # Unicode support
 unicode-segmentation = "1.11"
@@ -1130,6 +1140,7 @@ criterion = "0.5"  # Benchmarking
 ## Testing Strategy
 
 ### Unit Tests
+
 - Font metrics calculation
 - Line breaking edge cases
 - BiDi reordering
@@ -1140,6 +1151,7 @@ criterion = "0.5"  # Benchmarking
 - Candidate window positioning
 
 ### Integration Tests
+
 - Complete layout pipeline
 - Multi-font fallback
 - Styled text rendering
@@ -1148,12 +1160,14 @@ criterion = "0.5"  # Benchmarking
 - IME preedit rendering with complex scripts
 
 ### Benchmarks
+
 - Layout performance (vs cosmic-text)
 - Shape cache hit rate
 - Hit testing speed
 - Memory usage
 
 ### Visual Tests
+
 - Reference images for complex scripts
 - Baseline alignment verification
 - BiDi rendering correctness
@@ -1175,11 +1189,11 @@ fn render_text_element(&mut self, text: &str, bounds: Rect) {
         .alignment(Alignment::Left)
         .build()
         .unwrap();
-    
+
     // Render each line with precise baseline positioning
     for line in layout.lines() {
         let baseline_y = bounds.y + line.baseline_y();
-        
+
         for run in &line.runs {
             self.render_shaped_run(
                 run,
@@ -1194,14 +1208,14 @@ fn render_text_element(&mut self, text: &str, bounds: Rect) {
 fn render_inline_elements(&mut self, elements: &[InlineElement]) {
     let mut x = 0.0;
     let baseline_y = 100.0;  // Common baseline
-    
+
     for element in elements {
         let layout = element.layout();
         let line = layout.lines().first().unwrap();
-        
+
         // Align to common baseline
         let y_offset = baseline_y - line.baseline_offset;
-        
+
         self.render_layout(layout, x, y_offset);
         x += layout.bounds().width + 10.0;
     }

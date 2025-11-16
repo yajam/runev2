@@ -2,12 +2,14 @@
 //!
 //! Phase 1: core foundation pieces for rune-text.
 //! - 1.2: font management layer (font loading, metrics, glyph outlines/bitmaps)
-//! - 1.3: basic text shaping using rustybuzz
+//! - 1.3: basic text shaping using harfbuzz_rs
 //! - 1.4: Unicode grapheme handling (clusters, combining marks, emoji/ZWJ)
 
 pub mod font;
 pub mod shaping;
 pub mod unicode;
+pub mod layout;
+pub mod bidi;
 
 pub use font::{
     face::FontFace,

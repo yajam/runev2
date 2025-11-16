@@ -50,7 +50,7 @@ impl FontFace {
     }
 
     /// Expose the raw font bytes for integration with other libraries
-    /// that take ownership of the font data (e.g. rustybuzz).
+    /// that take ownership of the font data (e.g. harfbuzz_rs).
     pub fn as_bytes(&self) -> Arc<[u8]> {
         self.data.clone()
     }

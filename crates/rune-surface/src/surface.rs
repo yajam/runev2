@@ -256,6 +256,7 @@ impl RuneSurface {
             glyph_draws: Vec::new(),
             svg_draws: Vec::new(),
             image_draws: Vec::new(),
+            dpi_scale: self.dpi_scale,
         }
     }
 
@@ -298,78 +299,47 @@ impl RuneSurface {
             .unwrap_or(ColorLinPremul { r: 0.0, g: 0.0, b: 0.0, a: 0.0 });
         let clear_wgpu = wgpu::Color { r: clear.r as f64, g: clear.g as f64, b: clear.b as f64, a: clear.a as f64 };
 
-        // Render solids (and optionally text runs)
-        if let Some(provider) = &canvas.text_provider {
-            if self.use_intermediate {
-                self.pass.render_frame_with_intermediate_and_text(
-                    &mut encoder,
-                    &mut self.allocator,
-                    &view,
-                    width,
-                    height,
-                    &scene,
-                    clear_wgpu,
-                    &self.queue,
-                    &list,
-                    provider.as_ref(),
-                );
-            } else {
-                self.pass.render_frame_and_text(
-                    &mut encoder,
-                    &mut self.allocator,
-                    &view,
-                    width,
-                    height,
-                    &scene,
-                    clear_wgpu,
-                    self.direct,
-                    &self.queue,
-                    self.preserve_surface,
-                    &list,
-                    provider.as_ref(),
-                );
-            }
+        // Render solids (text is now handled separately via glyph_draws for simplicity)
+        if self.use_intermediate {
+            self.pass.render_frame_with_intermediate(
+                &mut encoder,
+                &mut self.allocator,
+                &view,
+                width,
+                height,
+                &scene,
+                clear_wgpu,
+                self.direct,
+                &self.queue,
+            );
         } else {
-            if self.use_intermediate {
-                self.pass.render_frame_with_intermediate(
-                    &mut encoder,
-                    &mut self.allocator,
-                    &view,
-                    width,
-                    height,
-                    &scene,
-                    clear_wgpu,
-                    self.direct,
-                    &self.queue,
-                );
-            } else {
-                self.pass.render_frame(
-                    &mut encoder,
-                    &mut self.allocator,
-                    &view,
-                    width,
-                    height,
-                    &scene,
-                    clear_wgpu,
-                    self.direct,
-                    &self.queue,
-                    self.preserve_surface,
-                );
-            }
+            self.pass.render_frame(
+                &mut encoder,
+                &mut self.allocator,
+                &view,
+                width,
+                height,
+                &scene,
+                clear_wgpu,
+                self.direct,
+                &self.queue,
+                self.preserve_surface,
+            );
         }
 
-        // Draw any low-level glyph masks on top of solids/text runs
-        for (origin, glyph, color) in canvas.glyph_draws.iter() {
-            let ox = origin[0] + glyph.offset[0];
-            let oy = origin[1] + glyph.offset[1];
+        // Draw all glyph masks in a single batched call (critical for performance!)
+        if !canvas.glyph_draws.is_empty() {
+            let batch: Vec<_> = canvas.glyph_draws.iter().map(|(origin, glyph, color)| {
+                // origin already includes glyph.offset from when it was added to glyph_draws
+                (glyph.mask.clone(), *origin, *color)
+            }).collect();
+            
             self.pass.draw_text_mask(
                 &mut encoder,
                 &view,
                 width,
                 height,
-                [ox, oy],
-                &glyph.mask,
-                *color,
+                &batch,
                 &self.queue,
             );
         }

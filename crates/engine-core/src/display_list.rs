@@ -12,7 +12,7 @@ pub enum Command {
     DrawRoundedRect { rrect: RoundedRect, brush: Brush, z: i32, transform: Transform2D },
     StrokeRect { rect: Rect, stroke: Stroke, brush: Brush, z: i32, transform: Transform2D },
     StrokeRoundedRect { rrect: RoundedRect, stroke: Stroke, brush: Brush, z: i32, transform: Transform2D },
-    DrawText { run: TextRun, z: i32, transform: Transform2D },
+    DrawText { run: TextRun, z: i32, transform: Transform2D, id: u64, dynamic: bool },
     DrawEllipse { center: [f32; 2], radii: [f32; 2], brush: Brush, z: i32, transform: Transform2D },
     /// Filled path (solid color only for now)
     FillPath { path: Path, color: ColorLinPremul, z: i32, transform: Transform2D },

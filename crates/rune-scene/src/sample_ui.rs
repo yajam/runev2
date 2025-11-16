@@ -1,8 +1,7 @@
+use crate::elements;
 /// Sample UI module - contains example UI elements for demonstration
 /// This will be replaced with IR-based rendering into the viewport zone
-
-use engine_core::{Rect, ColorLinPremul, Color};
-use crate::elements;
+use engine_core::{Color, ColorLinPremul, Rect};
 
 // UI Element Data Structures
 #[derive(Clone)]
@@ -141,7 +140,12 @@ pub fn create_sample_elements() -> SampleUIElements {
 
     let checkboxes = vec![
         CheckboxData {
-            rect: Rect { x: col1_x, y: checkbox_y, w: 18.0, h: 18.0 },
+            rect: Rect {
+                x: col1_x,
+                y: checkbox_y,
+                w: 18.0,
+                h: 18.0,
+            },
             checked: false,
             focused: false,
             label: Some("Checkbox"),
@@ -149,7 +153,12 @@ pub fn create_sample_elements() -> SampleUIElements {
             color: Color::rgba(240, 240, 240, 255),
         },
         CheckboxData {
-            rect: Rect { x: col1_x + 160.0, y: checkbox_y, w: 18.0, h: 18.0 },
+            rect: Rect {
+                x: col1_x + 160.0,
+                y: checkbox_y,
+                w: 18.0,
+                h: 18.0,
+            },
             checked: true,
             focused: true,
             label: Some("Checked + Focus"),
@@ -160,7 +169,12 @@ pub fn create_sample_elements() -> SampleUIElements {
 
     let buttons = vec![
         ButtonData {
-            rect: Rect { x: col1_x, y: button_y, w: 160.0, h: 36.0 },
+            rect: Rect {
+                x: col1_x,
+                y: button_y,
+                w: 160.0,
+                h: 36.0,
+            },
             radius: 8.0,
             bg: Color::rgba(63, 130, 246, 255),
             fg: Color::rgba(255, 255, 255, 255),
@@ -169,7 +183,12 @@ pub fn create_sample_elements() -> SampleUIElements {
             focused: false,
         },
         ButtonData {
-            rect: Rect { x: col1_x + 176.0, y: button_y, w: 180.0, h: 36.0 },
+            rect: Rect {
+                x: col1_x + 176.0,
+                y: button_y,
+                w: 180.0,
+                h: 36.0,
+            },
             radius: 8.0,
             bg: Color::rgba(99, 104, 118, 255),
             fg: Color::rgba(255, 255, 255, 255),
@@ -211,7 +230,12 @@ pub fn create_sample_elements() -> SampleUIElements {
 
     let input_boxes = vec![
         InputBoxData {
-            rect: Rect { x: col1_x, y: input_y, w: 200.0, h: 36.0 },
+            rect: Rect {
+                x: col1_x,
+                y: input_y,
+                w: 200.0,
+                h: 36.0,
+            },
             text: "Hello World",
             text_size: 16.0,
             text_color: Color::rgba(240, 240, 240, 255),
@@ -219,7 +243,12 @@ pub fn create_sample_elements() -> SampleUIElements {
             focused: false,
         },
         InputBoxData {
-            rect: Rect { x: col1_x + 220.0, y: input_y, w: 200.0, h: 36.0 },
+            rect: Rect {
+                x: col1_x + 220.0,
+                y: input_y,
+                w: 200.0,
+                h: 36.0,
+            },
             text: "",
             text_size: 16.0,
             text_color: Color::rgba(240, 240, 240, 255),
@@ -228,48 +257,62 @@ pub fn create_sample_elements() -> SampleUIElements {
         },
     ];
 
-    let text_areas = vec![
-        TextAreaData {
-            rect: Rect { x: col1_x, y: textarea_y, w: 420.0, h: 120.0 },
-            lines: vec![
-                "This is a multi-line text area.",
-                "You can add multiple lines of text here.",
-                "It supports scrolling and wrapping.",
-            ],
-            text_size: 14.0,
-            text_color: Color::rgba(240, 240, 240, 255),
-            focused: false,
+    let text_areas = vec![TextAreaData {
+        rect: Rect {
+            x: col1_x,
+            y: textarea_y,
+            w: 420.0,
+            h: 120.0,
         },
-    ];
+        lines: vec![
+            "This is a multi-line text area.",
+            "You can add multiple lines of text here.",
+            "It supports scrolling and wrapping.",
+        ],
+        text_size: 14.0,
+        text_color: Color::rgba(240, 240, 240, 255),
+        focused: false,
+    }];
 
-    let selects = vec![
-        SelectData {
-            rect: Rect { x: col1_x, y: select_y, w: 200.0, h: 36.0 },
-            label: "Select an option",
-            label_size: 16.0,
-            label_color: Color::rgba(240, 240, 240, 255),
-            open: false,
-            focused: false,
+    let selects = vec![SelectData {
+        rect: Rect {
+            x: col1_x,
+            y: select_y,
+            w: 200.0,
+            h: 36.0,
         },
-    ];
+        label: "Select an option",
+        label_size: 16.0,
+        label_color: Color::rgba(240, 240, 240, 255),
+        open: false,
+        focused: false,
+    }];
 
-    let labels = vec![
-        LabelData {
-            pos: [col1_x, label_y],
-            text: "This is a standalone label",
-            size: 16.0,
-            color: Color::rgba(180, 180, 200, 255),
-        },
-    ];
+    let labels = vec![LabelData {
+        pos: [col1_x, label_y],
+        text: "This is a standalone label",
+        size: 16.0,
+        color: Color::rgba(180, 180, 200, 255),
+    }];
 
     let images = vec![
         ImageData {
-            rect: Rect { x: col1_x, y: image_y, w: 120.0, h: 80.0 },
+            rect: Rect {
+                x: col1_x,
+                y: image_y,
+                w: 120.0,
+                h: 80.0,
+            },
             path: Some("images/squirrel.jpg".into()),
             tint: Color::rgba(100, 150, 200, 255),
         },
         ImageData {
-            rect: Rect { x: col1_x + 140.0, y: image_y, w: 120.0, h: 80.0 },
+            rect: Rect {
+                x: col1_x + 140.0,
+                y: image_y,
+                w: 120.0,
+                h: 80.0,
+            },
             path: Some("images/fire.jpg".into()),
             tint: Color::rgba(200, 100, 150, 255),
         },
@@ -278,43 +321,52 @@ pub fn create_sample_elements() -> SampleUIElements {
     // Simple paragraphs without wrapping - just single lines
     let paragraph_data = vec![
         (
-            "Paragraph 1: This demonstrates text rendering with multiple blocks.",
+            "Paragraph 1: This demonstrates rune-text multi-line wrapping inside the viewport. 
+             Resize the window to watch this paragraph reflow across several lines while keeping 
+             the overall block shape consistent.",
             16.0f32,
             Color::rgba(220, 220, 220, 255),
             1.4f32,
         ),
         (
-            "Paragraph 2: Each block can have different styling and colors.",
+            "Paragraph 2: Each paragraph is long enough to wrap into multiple visual lines. 
+             The layout engine uses Unicode line breaking rules, so spaces, punctuation, and 
+             explicit newlines all behave as expected.",
             14.0f32,
             Color::rgba(150, 200, 255, 255),
             1.2f32,
         ),
         (
-            "Paragraph 3: The system handles various text lengths efficiently.",
+            "Paragraph 3: This block mixes shorter and longer sentences to exercise different 
+             wrapping positions. It helps verify that baseline spacing stays stable even when 
+             lines expand or contract on resize.",
             15.0f32,
             Color::rgba(200, 180, 255, 255),
             1.3f32,
         ),
         (
-            "Paragraph 4: Content extends beyond the visible area for scrolling.",
-            16.0f32,
-            Color::rgba(255, 200, 150, 255),
-            1.4f32,
+            "Paragraph 4: This one includes numbers (1234567890) and mixed-case text to ensure 
+             glyph metrics and kerning behave correctly across a variety of glyph shapes.",
+            14.0f32,
+            Color::rgba(200, 230, 180, 255),
+            1.25f32,
         ),
         (
-            "Paragraph 5: Multiple text blocks render smoothly without issues.",
+            "Paragraph 5: Multiple wrapped paragraphs are rendered one after another with extra 
+             spacing in between. This makes it easy to visually confirm that paragraph breaks 
+             are preserved while line wrapping happens only within each block.",
             15.0f32,
             Color::rgba(150, 255, 200, 255),
             1.35f32,
         ),
     ];
-    
+
     // Create simple single-line paragraphs (no wrapping)
     let mut wrapped_paragraphs = Vec::new();
-    
+
     for (text, size, color, lh_factor) in paragraph_data {
         wrapped_paragraphs.push(WrappedParagraph {
-            lines: vec![text.to_string()], // Just one line
+            lines: vec![text.to_string()],
             size,
             color,
             line_height: size * lh_factor,
@@ -367,12 +419,13 @@ impl SampleUIElements {
     pub fn render(
         &self,
         canvas: &mut rune_surface::Canvas,
-        _scale_factor: f32,
-        _window_width: u32,
+        scale_factor: f32,
+        window_width: u32,
+        provider: &dyn engine_core::TextProvider,
     ) {
-        // Render all text elements (z=10 for top-level text)
+        // Render all text elements using direct rasterization (simpler, more reliable)
         for text in self.texts.iter() {
-            canvas.draw_text_run(text.pos, text.text.to_string(), text.size, text.color, 10);
+            canvas.draw_text_direct(text.pos, text.text, text.size, text.color, provider);
         }
 
         // Render all checkboxes (z=20, ticks drawn in overlay for crispness)
@@ -477,26 +530,35 @@ impl SampleUIElements {
             image.render(canvas, 90);
         }
 
-        // Render all pre-wrapped paragraphs (z=100)
-        // Text was wrapped once during creation, so this is just simple rendering
-        let mut current_y = self.multiline_y;
-        
-        for paragraph in self.wrapped_paragraphs.iter() {
-            // Render each pre-wrapped line
-            for (i, line) in paragraph.lines.iter().enumerate() {
-                let y = current_y + (i as f32) * paragraph.line_height;
-                canvas.draw_text_run(
-                    [self.col1_x, y],
-                    line.clone(),
-                    paragraph.size,
-                    paragraph.color,
-                    100,
-                );
-            }
-            
-            // Move to next paragraph
-            let paragraph_height = paragraph.lines.len() as f32 * paragraph.line_height;
-            current_y += paragraph_height + 30.0; // Add spacing between paragraphs
-        }
+        // Rune-text multi-paragraph wrapping demo (z=100)
+        // Build a single multi-paragraph string from the sample paragraphs.
+        let multi_paragraph_text = if self.wrapped_paragraphs.is_empty() {
+            "Rune-text wrapping demo.\n\n\
+             Paragraph 1: This demonstrates rune-text-driven multi-line wrapping \
+             inside the viewport zone.\n\n\
+             Paragraph 2: Resize the window horizontally to see lines reflow \
+             while preserving explicit paragraph breaks."
+                .to_string()
+        } else {
+            let paras: Vec<String> = self
+                .wrapped_paragraphs
+                .iter()
+                .map(|p| p.lines.join(" "))
+                .collect();
+            paras.join("\n\n")
+        };
+
+        let multiline = elements::multiline_text::MultilineText {
+            pos: [self.col1_x, self.multiline_y],
+            text: multi_paragraph_text,
+            size: 16.0,
+            color: Color::rgba(230, 230, 240, 255),
+            max_width: None,
+            line_height_factor: Some(1.4),
+        };
+        // Render without any automatic width-based wrapping; only explicit
+        // newlines in the text produce line breaks.
+        let _ = (scale_factor, provider); // keep signature for now
+        multiline.render_simple(canvas, 100);
     }
 }

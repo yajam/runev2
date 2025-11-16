@@ -408,7 +408,7 @@ fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
 /// - @group(0) @binding(0): Viewport uniform (shared layout with solids)
 /// - @group(1) @binding(0): Mask texture (Rgba8Unorm or Rgba16Unorm)
 /// - @group(1) @binding(1): Sampler (nearest recommended)
-/// - @group(1) @binding(2): Text color uniform (premultiplied linear RGBA)
+/// - @location(2): Per-vertex color (premultiplied linear RGBA)
 pub const TEXT_WGSL: &str = r#"
 struct ViewportUniform {
     scale: vec2<f32>,      // 2/W, -2/H
@@ -420,11 +420,13 @@ struct ViewportUniform {
 struct VsIn {
     @location(0) pos: vec2<f32>,
     @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
 };
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
 };
 
 @vertex
@@ -434,14 +436,12 @@ fn vs_main(inp: VsIn) -> VsOut {
                         inp.pos.y * vp.scale.y + vp.translate.y);
     out.pos = vec4<f32>(ndc, 0.0, 1.0);
     out.uv = inp.uv;
+    out.color = inp.color;
     return out;
 }
 
 @group(1) @binding(0) var mask_tex: texture_2d<f32>;
 @group(1) @binding(1) var mask_smp: sampler;
-
-struct TextColor { color: vec4<f32> }; // premultiplied linear RGBA
-@group(1) @binding(2) var<uniform> text: TextColor;
 
 @fragment
 fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
@@ -451,10 +451,10 @@ fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
     let m_gamma = vec3<f32>(pow(m.r, 0.6), pow(m.g, 0.6), pow(m.b, 0.6));
     // Use RGB subpixel coverage for all colors
     // The premultiplied color is modulated by each coverage channel
-    let rgb = vec3<f32>(text.color.r * m_gamma.r, text.color.g * m_gamma.g, text.color.b * m_gamma.b);
+    let rgb = vec3<f32>(inp.color.r * m_gamma.r, inp.color.g * m_gamma.g, inp.color.b * m_gamma.b);
     // Derive alpha from the maximum of coverage channels, scaled by color alpha
     let cov = max(m_gamma.r, max(m_gamma.g, m_gamma.b));
-    let a = text.color.a * cov;
+    let a = inp.color.a * cov;
     return vec4<f32>(rgb, a);
 } 
 "#;

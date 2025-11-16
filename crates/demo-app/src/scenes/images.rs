@@ -466,16 +466,16 @@ impl Scene for ImagesScene {
                 }
                 LoadedImage::Svg(svg) => {
                     // First, get intrinsic 1x size
-                    let (_view1x, base_w, base_h) = match passes.rasterize_svg_to_view(&svg.path, 1.0, queue) {
+                    let (_view1x, base_w, base_h) = match passes.rasterize_svg_to_view(&svg.path, 1.0, None, queue) {
                         Some((v, w, h)) => (v, w as f32, h as f32),
                         None => { eprintln!("Failed to rasterize SVG {:?}", svg.path); continue; }
                     };
                     // Compute target scale for this cell
                     let scale_guess = (cell_w / base_w).min(cell_h / base_h).max(0.0);
                     // Request a cached raster at the appropriate bucketed scale
-                    let (view_scaled, sw, sh) = match passes.rasterize_svg_to_view(&svg.path, scale_guess, queue) {
+                    let (view_scaled, sw, sh) = match passes.rasterize_svg_to_view(&svg.path, scale_guess, None, queue) {
                         Some((v, w, h)) => (v, w as f32, h as f32),
-                        None => match passes.rasterize_svg_to_view(&svg.path, 1.0, queue) {
+                        None => match passes.rasterize_svg_to_view(&svg.path, 1.0, None, queue) {
                             Some((v, w, h)) => (v, w as f32, h as f32),
                             None => { continue; }
                         },

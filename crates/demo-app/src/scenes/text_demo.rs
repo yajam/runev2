@@ -506,7 +506,7 @@ impl Scene for TextDemoScene {
             let baseline1 = 160.0;
             let pad = std::env::var("DEMO_LINE_PAD").ok().and_then(|s| s.parse::<f32>().ok()).unwrap_or(self.text_size * 0.25);
             let baseline2 = baseline1 + bottom1 + (-top2) + pad;
-            p.text(
+            p.text_with_id(
                 engine_core::TextRun {
                     text: "Grayscale AA".to_string(),
                     pos: [60.0, 90.0],
@@ -514,8 +514,10 @@ impl Scene for TextDemoScene {
                     color: ColorLinPremul::from_srgba_u8([220, 220, 220, 255]),
                 },
                 2,
+                100,
+                false,
             );
-            p.text(
+            p.text_with_id(
                 engine_core::TextRun {
                     text: SAMPLE_TEXT1.to_string(),
                     pos: [60.0, baseline1],
@@ -523,8 +525,10 @@ impl Scene for TextDemoScene {
                     color: ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
                 },
                 2,
+                101,
+                false,
             );
-            p.text(
+            p.text_with_id(
                 engine_core::TextRun {
                     text: SAMPLE_TEXT2.to_string(),
                     pos: [60.0, baseline2],
@@ -532,7 +536,26 @@ impl Scene for TextDemoScene {
                     color: ColorLinPremul::from_srgba_u8([255, 255, 255, 200]),
                 },
                 2,
+                102,
+                false,
             );
+            // Stress-test: 200 additional lines in grayscale column.
+            let mut y = baseline2 + pad;
+            for i in 0..200 {
+                let line = format!("Gray {:03}: {}", i, SAMPLE_TEXT1);
+                p.text_with_id(
+                    engine_core::TextRun {
+                        text: line,
+                        pos: [60.0, y],
+                        size: small_sz,
+                        color: ColorLinPremul::from_srgba_u8([210, 210, 210, 230]),
+                    },
+                    2,
+                    1000 + i as u64,
+                    false,
+                );
+                y += small_sz * 1.2;
+            }
             let dl = p.finish();
             passes.render_text_for_list(encoder, surface_view, &dl, queue, pgray);
         }
@@ -561,7 +584,7 @@ impl Scene for TextDemoScene {
             let baseline1 = 160.0;
             let pad = std::env::var("DEMO_LINE_PAD").ok().and_then(|s| s.parse::<f32>().ok()).unwrap_or(self.text_size * 0.25);
             let baseline2 = baseline1 + bottom1 + (-top2) + pad;
-            p.text(
+            p.text_with_id(
                 engine_core::TextRun {
                     text: label.to_string(),
                     pos: [px + frac_off, 90.0],
@@ -569,8 +592,10 @@ impl Scene for TextDemoScene {
                     color: ColorLinPremul::from_srgba_u8([220, 220, 220, 255]),
                 },
                 2,
+                200,
+                false,
             );
-            p.text(
+            p.text_with_id(
                 engine_core::TextRun {
                     text: SAMPLE_TEXT1.to_string(),
                     pos: [px + frac_off, baseline1],
@@ -578,8 +603,10 @@ impl Scene for TextDemoScene {
                     color: self.text_color,
                 },
                 2,
+                201,
+                false,
             );
-            p.text(
+            p.text_with_id(
                 engine_core::TextRun {
                     text: SAMPLE_TEXT2.to_string(),
                     pos: [px + frac_off, baseline2],
@@ -587,7 +614,26 @@ impl Scene for TextDemoScene {
                     color: self.text_color,
                 },
                 2,
+                202,
+                false,
             );
+            // Stress-test: 200 additional lines in subpixel column.
+            let mut y = baseline2 + pad;
+            for i in 0..200 {
+                let line = format!("Subpixel {:03}: {}", i, SAMPLE_TEXT1);
+                p.text_with_id(
+                    engine_core::TextRun {
+                        text: line,
+                        pos: [px + frac_off, y],
+                        size: small_sz,
+                        color: self.text_color,
+                    },
+                    2,
+                    2000 + i as u64,
+                    false,
+                );
+                y += small_sz * 1.2;
+            }
             let dl = p.finish();
             passes.render_text_for_list(encoder, surface_view, &dl, queue, psub);
         }

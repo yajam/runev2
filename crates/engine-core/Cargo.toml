@@ -15,6 +15,7 @@ thiserror = { workspace = true }
 engine-shaders = { path = "../engine-shaders" }
 fontdue = { workspace = true }
 image = { workspace = true }
+swash = { workspace = true }
 lyon_tessellation = "1.0"
 lyon_path = "1.0"
 lyon_geom = "1.0"
@@ -24,6 +25,8 @@ tiny-skia = "0.11"
 # Optional: advanced shaping + raster via cosmic-text (HarfBuzz/Swash)
 cosmic-text = { version = "0.15", default-features = true, features = ["swash"], optional = true }
 freetype-rs = { version = "0.38", optional = true }
+rune-text = { path = "../rune-text" }
+fontdb = { workspace = true }
 
 [features]
 default = ["cosmic_text_shaper"]

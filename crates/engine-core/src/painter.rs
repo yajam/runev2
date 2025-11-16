@@ -45,9 +45,15 @@ impl Painter {
         self.list.commands.push(Command::StrokeRoundedRect { rrect, stroke, brush, z, transform: t });
     }
 
-    pub fn text(&mut self, run: TextRun, z: i32) {
+    /// Draw text with an explicit stable id and dynamic flag.
+    /// Callers that don't care about ids can use `text`, which passes 0 / false.
+    pub fn text_with_id(&mut self, run: TextRun, z: i32, id: u64, dynamic: bool) {
         let t = self.current_transform();
-        self.list.commands.push(Command::DrawText { run, z, transform: t });
+        self.list.commands.push(Command::DrawText { run, z, transform: t, id, dynamic });
+    }
+
+    pub fn text(&mut self, run: TextRun, z: i32) {
+        self.text_with_id(run, z, 0, false);
     }
 
     pub fn ellipse(&mut self, center: [f32; 2], radii: [f32; 2], brush: Brush, z: i32) {

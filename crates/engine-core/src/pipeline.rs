@@ -547,7 +547,7 @@ impl ShadowCompositeRenderer {
 }
 
 pub struct TextRenderer {
-    pipeline: wgpu::RenderPipeline,
+    pub pipeline: wgpu::RenderPipeline,
     vp_bgl: wgpu::BindGroupLayout,
     pub tex_bgl: wgpu::BindGroupLayout,
     pub sampler: wgpu::Sampler,
@@ -576,7 +576,7 @@ impl TextRenderer {
             }],
         });
 
-        // Texture + sampler + color uniform
+        // Texture + sampler (color is now per-vertex)
         let tex_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("text-tex-bgl"),
             entries: &[
@@ -596,16 +596,6 @@ impl TextRenderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: std::num::NonZeroU64::new(16),
-                    },
-                    count: None,
-                },
             ],
         });
 
@@ -622,11 +612,12 @@ impl TextRenderer {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: (std::mem::size_of::<f32>() * 4) as u64,
+                    array_stride: (std::mem::size_of::<f32>() * 8) as u64, // pos(2) + uv(2) + color(4)
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
                         wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x2 },
                         wgpu::VertexAttribute { offset: 8, shader_location: 1, format: wgpu::VertexFormat::Float32x2 },
+                        wgpu::VertexAttribute { offset: 16, shader_location: 2, format: wgpu::VertexFormat::Float32x4 },
                     ],
                 }],
             },
@@ -681,7 +672,6 @@ impl TextRenderer {
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(tex_view) },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
-                wgpu::BindGroupEntry { binding: 2, resource: self.color_buffer.as_entire_binding() },
             ],
         })
     }
