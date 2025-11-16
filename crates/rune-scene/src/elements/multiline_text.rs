@@ -108,6 +108,8 @@ impl MultilineText {
     /// 
     /// Uses a TextLayoutCache to avoid recomputing wrapping on every frame.
     /// This is the recommended method for UI text that doesn't change frequently.
+    /// 
+    /// Handles explicit paragraph breaks (newlines) by wrapping each paragraph separately.
     pub fn render_cached(
         &self,
         canvas: &mut Canvas,
@@ -115,34 +117,65 @@ impl MultilineText {
         cache: &engine_core::TextLayoutCache,
     ) -> f32 {
         let lh_factor = self.line_height_factor.unwrap_or(1.2);
+        let line_height = self.size * lh_factor;
         
         // Determine wrapping width
         let wrap_width = match self.max_width {
             Some(w) if w > 0.0 => w,
             _ => {
-                // No wrapping - render as single line
-                canvas.draw_text_run(self.pos, self.text.clone(), self.size, self.color, z);
-                return self.size * lh_factor;
+                // No wrapping - just handle explicit newlines
+                let lines: Vec<&str> = self.text.lines().collect();
+                for (i, line) in lines.iter().enumerate() {
+                    let y = self.pos[1] + (i as f32) * line_height;
+                    canvas.draw_text_run(
+                        [self.pos[0], y],
+                        line.to_string(),
+                        self.size,
+                        self.color,
+                        z,
+                    );
+                }
+                return lines.len() as f32 * line_height;
             }
         };
         
-        // Get wrapped text from cache (or compute and cache it)
-        let wrapped = cache.get_or_wrap(&self.text, wrap_width, self.size, lh_factor);
+        // Split text into paragraphs (preserve explicit newlines)
+        let paragraphs: Vec<&str> = self.text.split("\n\n").collect();
+        let mut current_y = self.pos[1];
         
-        // Render lines
-        for (i, line) in wrapped.lines.iter().enumerate() {
-            let y = self.pos[1] + (i as f32) * wrapped.line_height;
-            canvas.draw_text_run(
-                [self.pos[0], y],
-                line.clone(),
-                self.size,
-                self.color,
-                z,
-            );
+        for (para_idx, paragraph) in paragraphs.iter().enumerate() {
+            if paragraph.trim().is_empty() {
+                // Empty paragraph - just add spacing
+                current_y += line_height * 0.5;
+                continue;
+            }
+            
+            // Get wrapped text from cache (or compute and cache it)
+            let wrapped = cache.get_or_wrap(paragraph, wrap_width, self.size, lh_factor);
+            
+            // Render lines for this paragraph
+            for (i, line) in wrapped.lines.iter().enumerate() {
+                let y = current_y + (i as f32) * wrapped.line_height;
+                canvas.draw_text_run(
+                    [self.pos[0], y],
+                    line.clone(),
+                    self.size,
+                    self.color,
+                    z,
+                );
+            }
+            
+            // Move to next paragraph position
+            current_y += wrapped.total_height;
+            
+            // Add extra spacing between paragraphs (except after the last one)
+            if para_idx < paragraphs.len() - 1 {
+                current_y += line_height * 0.5;
+            }
         }
         
-        // Return total height for layout purposes
-        wrapped.total_height
+        // Return total height
+        current_y - self.pos[1]
     }
     
     /// Simple render without wrapping (just splits on explicit newlines).

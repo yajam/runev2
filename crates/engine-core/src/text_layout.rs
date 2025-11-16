@@ -80,16 +80,16 @@ impl TextLayoutCache {
         // Store in cache (with size limit)
         {
             let mut cache = self.cache.lock().unwrap();
-            if cache.len() >= self.max_entries {
-                // Simple eviction: clear half the cache
-                if cache.len() > 10 {
-                    let keys_to_remove: Vec<_> = cache.keys()
-                        .take(cache.len() / 2)
-                        .cloned()
-                        .collect();
-                    for k in keys_to_remove {
-                        cache.remove(&k);
-                    }
+            // Only evict if we're significantly over the limit to reduce lock contention
+            if cache.len() >= self.max_entries * 2 {
+                // Simple eviction: clear to half capacity
+                let target_size = self.max_entries;
+                let keys_to_remove: Vec<_> = cache.keys()
+                    .take(cache.len() - target_size)
+                    .cloned()
+                    .collect();
+                for k in keys_to_remove {
+                    cache.remove(&k);
                 }
             }
             cache.insert(key, wrapped.clone());

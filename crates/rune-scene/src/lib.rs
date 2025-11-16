@@ -148,11 +148,13 @@ pub fn run() -> Result<()> {
     // Sample UI elements (will be replaced with IR-based rendering)
     let sample_ui = sample_ui::create_sample_elements();
     
+    // Text layout cache for efficient resize performance
+    let text_cache = std::sync::Arc::new(engine_core::TextLayoutCache::new(200));
+    
     // Dirty flag: only redraw when something changes
     let mut needs_redraw = true;
-    // Track last resize time to enable frequent redraws during resize
+    // Track last resize time to debounce redraws (only redraw after resize settles)
     let mut last_resize_time: Option<std::time::Instant> = None;
-    let mut current_text_width: Option<f32> = None;
 
     // Shared state for sidebar visibility
     let sidebar_visible = std::sync::Arc::new(std::sync::Mutex::new(true));
@@ -553,6 +555,7 @@ pub fn run() -> Result<()> {
                     }
                     WindowEvent::RedrawRequested => {
                         if !needs_redraw || size.width == 0 || size.height == 0 { return; }
+                        
                         let frame = match surface.get_current_texture() {
                             Ok(f) => f,
                             Err(_) => { window.request_redraw(); return; }
@@ -571,6 +574,7 @@ pub fn run() -> Result<()> {
                             scale_factor,
                             viewport_rect.w as u32,
                             provider.as_ref(),
+                            text_cache.as_ref(),
                         );
                         canvas.pop_transform();
                         
@@ -640,12 +644,6 @@ pub fn run() -> Result<()> {
                             canvas.pop_transform();
                         }
                         
-                        // Calculate text width for resize detection
-                        let logical_width = size.width as f32 / scale_factor;
-                        let right_margin = 40.0f32;
-                        let container_width = (logical_width - 40.0 - right_margin).max(200.0).min(1200.0);
-                        current_text_width = Some(container_width);
-                        
                         // Build hit index from display list before ending frame
                         hit_index = Some(engine_core::HitIndex::build(canvas.display_list()));
                         
@@ -656,29 +654,13 @@ pub fn run() -> Result<()> {
                 }
             }
             Event::AboutToWait => {
-                // During active resize (within 100ms of last resize event), request continuous redraws
+                // Only redraw after resize has settled (200ms delay)
                 if let Some(last_time) = last_resize_time {
-                    if last_time.elapsed() < std::time::Duration::from_millis(100) {
+                    if last_time.elapsed() >= std::time::Duration::from_millis(200) {
+                        // Resize ended - trigger one final redraw
+                        last_resize_time = None;
                         needs_redraw = true;
                         window.request_redraw();
-                    } else {
-                        // Resize ended - check if text width changed
-                        last_resize_time = None;
-                        
-                        // Calculate new text width
-                        let logical_width = size.width as f32 / scale_factor;
-                        let right_margin = 40.0f32;
-                        let new_text_width = (logical_width - 40.0 - right_margin).max(200.0).min(1200.0);
-                        
-                        // Compare with current width (threshold of 10px to avoid minor changes)
-                        let width_changed = current_text_width.map_or(true, |old_width| {
-                            (new_text_width - old_width).abs() > 10.0
-                        });
-                        
-                        if width_changed {
-                            needs_redraw = true;
-                            window.request_redraw();
-                        }
                     }
                 } else if needs_redraw {
                     window.request_redraw();

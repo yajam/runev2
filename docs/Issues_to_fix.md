@@ -1,0 +1,3 @@
+- [ ] Background should be rendered in separate pass
+- [ ] Foreground should be rendered in separate pass
+- [ ] Resize performance is needed to be improved

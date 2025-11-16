@@ -359,6 +359,86 @@ pub fn create_sample_elements() -> SampleUIElements {
             Color::rgba(150, 255, 200, 255),
             1.35f32,
         ),
+        (
+            "Paragraph 6: Testing DPI scaling with this additional paragraph. The text should render 
+             at the correct size for your display, whether it's a standard monitor or a high-DPI 
+             Retina display. Font metrics should remain consistent across different scales.",
+            14.5f32,
+            Color::rgba(255, 200, 150, 255),
+            1.3f32,
+        ),
+        (
+            "Paragraph 7: Zone-relative positioning is critical for proper layout. Each zone (viewport, 
+             toolbar, sidebar) has its own coordinate system, and text must respect these boundaries. 
+             This paragraph tests that the transform stack is working correctly.",
+            15.5f32,
+            Color::rgba(255, 180, 200, 255),
+            1.28f32,
+        ),
+        (
+            "Paragraph 8: Performance testing with batched rendering. All glyphs should be drawn in a 
+             single GPU call rather than individual calls per glyph. This prevents the UI from hanging 
+             when rendering large amounts of text like these paragraphs.",
+            14.0f32,
+            Color::rgba(180, 220, 255, 255),
+            1.32f32,
+        ),
+        (
+            "Paragraph 9: HarfBuzz shaping via harfrust provides proper text layout with correct glyph 
+             positioning, kerning, and ligatures. The rune-text provider uses swash for rasterization, 
+             producing high-quality subpixel-rendered glyphs.",
+            15.0f32,
+            Color::rgba(220, 180, 255, 255),
+            1.35f32,
+        ),
+        (
+            "Paragraph 10: Direct rasterization bypasses the complex display list path. Text is 
+             rasterized immediately when draw_text_run is called, making the code simpler and more 
+             reliable. This is the same approach used by the working harfrust_text scene.",
+            14.5f32,
+            Color::rgba(255, 220, 180, 255),
+            1.3f32,
+        ),
+        (
+            "Paragraph 11: Color support is per-vertex, allowing each glyph to have its own color. 
+             This paragraph uses a warm orange tone to demonstrate the color variety. The shader 
+             applies the color to the rasterized mask for proper blending.",
+            15.0f32,
+            Color::rgba(255, 165, 80, 255),
+            1.33f32,
+        ),
+        (
+            "Paragraph 12: Baseline alignment ensures text sits at the correct vertical position. 
+             The baseline is calculated from font metrics and adjusted for the current DPI scale. 
+             All text in a line should align properly regardless of font size.",
+            14.0f32,
+            Color::rgba(180, 255, 220, 255),
+            1.27f32,
+        ),
+        (
+            "Paragraph 13: Subpixel rendering improves text clarity on LCD displays by using RGB 
+             subpixel coverage. The grayscale_to_subpixel_rgb function converts grayscale masks to 
+             RGB masks with proper orientation (RGB or BGR) for your display.",
+            15.5f32,
+            Color::rgba(220, 255, 180, 255),
+            1.34f32,
+        ),
+        (
+            "Paragraph 14: Transform stack support means text respects push_transform and pop_transform 
+             calls. When rendering in different zones, the canvas automatically applies the correct 
+             translation to position text relative to the zone origin.",
+            14.5f32,
+            Color::rgba(255, 200, 220, 255),
+            1.31f32,
+        ),
+        (
+            "Paragraph 15: This final paragraph completes the test suite. If you can read all 15 
+             paragraphs with proper sizing, positioning, and colors, then the simplified text 
+             rendering system is working correctly! The text should be crisp and performant.",
+            16.0f32,
+            Color::rgba(200, 220, 255, 255),
+            1.4f32,
+        ),
     ];
 
     // Create simple single-line paragraphs (no wrapping)
@@ -422,6 +502,7 @@ impl SampleUIElements {
         scale_factor: f32,
         window_width: u32,
         provider: &dyn engine_core::TextProvider,
+        text_cache: &engine_core::TextLayoutCache,
     ) {
         // Render all text elements using direct rasterization (simpler, more reliable)
         for text in self.texts.iter() {
@@ -548,17 +629,20 @@ impl SampleUIElements {
             paras.join("\n\n")
         };
 
+        // Calculate max width for text wrapping based on viewport width
+        let right_margin = 40.0f32;
+        let text_max_width = (window_width as f32 - self.col1_x - right_margin).max(200.0).min(1200.0);
+
         let multiline = elements::multiline_text::MultilineText {
             pos: [self.col1_x, self.multiline_y],
             text: multi_paragraph_text,
             size: 16.0,
             color: Color::rgba(230, 230, 240, 255),
-            max_width: None,
+            max_width: Some(text_max_width),
             line_height_factor: Some(1.4),
         };
-        // Render without any automatic width-based wrapping; only explicit
-        // newlines in the text produce line breaks.
+        // Use cached rendering for efficient resize performance
         let _ = (scale_factor, provider); // keep signature for now
-        multiline.render_simple(canvas, 100);
+        multiline.render_cached(canvas, 100, text_cache);
     }
 }
