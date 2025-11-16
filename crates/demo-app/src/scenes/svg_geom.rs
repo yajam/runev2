@@ -71,12 +71,7 @@ impl Scene for SvgGeomScene {
             // Apply translate+scale transform and import geometry
             let t = Transform2D { m: [scale, 0.0, 0.0, scale, ox, oy] };
             p.push_transform(t);
-            if let Some(stats) = engine_core::import_svg_geometry_to_painter(&mut p, path) {
-                eprintln!(
-                    "SVG {:?} → geom: rects={}, rrects={}, ellipses={}, paths={}, strokes={}, skipped={}",
-                    path.file_name().and_then(|s| s.to_str()).unwrap_or("?"),
-                    stats.rects, stats.rounded_rects, stats.ellipses, stats.paths, stats.strokes, stats.skipped
-                );
+            if let Some(_stats) = engine_core::import_svg_geometry_to_painter(&mut p, path) {
             }
             p.pop_transform();
         }

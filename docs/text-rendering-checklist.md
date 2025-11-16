@@ -171,67 +171,67 @@ A comprehensive guide for implementing robust multiline text rendering in rune-d
 
 ### 6.1 Cursor Management
 
-- [ ] Implement cursor position tracking (byte offset)
-- [ ] Add cursor rendering (blinking animation)
-- [ ] Support cursor visibility toggle
-- [ ] Handle cursor positioning at grapheme boundaries
-- [ ] Implement cursor affinity (left/right of character)
+- [x] Implement cursor position tracking (byte offset)
+- [x] Add cursor rendering (blinking animation)
+- [x] Support cursor visibility toggle
+- [x] Handle cursor positioning at grapheme boundaries
+- [x] Implement cursor affinity (left/right of character)
 - [ ] Support multiple cursors (optional)
 
 ### 6.2 Hit Testing & Positioning
 
-- [ ] Implement hit testing (point to character offset)
-- [ ] Add character offset to screen position mapping
-- [ ] Handle hit testing in BiDi text
-- [ ] Support hit testing with ligatures
-- [ ] Calculate cursor rectangle for rendering
-- [ ] Handle hit testing at line boundaries
+- [x] Implement hit testing (point to character offset)
+- [x] Add character offset to screen position mapping
+- [x] Handle hit testing in BiDi text
+- [x] Support hit testing with ligatures
+- [x] Calculate cursor rectangle for rendering
+- [x] Handle hit testing at line boundaries
 
 ### 6.3 Cursor Movement
 
-- [ ] Left/right by character (grapheme cluster)
-- [ ] Left/right by word boundary
-- [ ] Up/down by line (maintain column position)
-- [ ] Home/End (line start/end)
-- [ ] Ctrl+Home/End (document start/end)
-- [ ] Handle BiDi cursor movement (visual vs logical)
-- [ ] Support cursor movement with combining marks
-- [ ] Handle cursor movement across ligatures
+- [x] Left/right by character (grapheme cluster)
+- [x] Left/right by word boundary
+- [x] Up/down by line (maintain column position)
+- [x] Home/End (line start/end)
+- [x] Ctrl+Home/End (document start/end)
+- [x] Handle BiDi cursor movement (visual vs logical)
+- [x] Support cursor movement with combining marks
+- [x] Handle cursor movement across ligatures
 
 ### 6.4 Selection Management
 
-- [ ] Implement selection range (start, end offsets)
-- [ ] Add selection rendering (background highlight)
-- [ ] Support selection extension (Shift+movement)
-- [ ] Handle selection in BiDi text (visual order)
-- [ ] Implement word selection (double-click)
-- [ ] Implement line selection (triple-click)
-- [ ] Support paragraph selection
-- [ ] Handle selection across multiple lines
-- [ ] Calculate selection rectangles for rendering
+- [x] Implement selection range (start, end offsets)
+- [x] Add selection rendering (background highlight)
+- [x] Support selection extension (Shift+movement)
+- [x] Handle selection in BiDi text (visual order)
+- [x] Implement word selection (double-click)
+- [x] Implement line selection (triple-click)
+- [x] Support paragraph selection
+- [x] Handle selection across multiple lines
+- [x] Calculate selection rectangles for rendering
 
 ### 6.5 Text Insertion
 
-- [ ] Insert character at cursor position
-- [ ] Insert string at cursor position
-- [ ] Replace selection with inserted text
-- [ ] Handle newline insertion
-- [ ] Support tab insertion
-- [ ] Validate inserted text (grapheme clusters)
-- [ ] Trigger layout invalidation after insert
-- [ ] Update cursor position after insert
+- [x] Insert character at cursor position
+- [x] Insert string at cursor position
+- [x] Replace selection with inserted text
+- [x] Handle newline insertion
+- [x] Support tab insertion
+- [x] Validate inserted text (grapheme clusters)
+- [x] Trigger layout invalidation after insert
+- [x] Update cursor position after insert
 
 ### 6.6 Text Deletion
 
-- [ ] Delete character before cursor (backspace)
-- [ ] Delete character after cursor (delete)
-- [ ] Delete word before cursor (Ctrl+Backspace)
-- [ ] Delete word after cursor (Ctrl+Delete)
-- [ ] Delete selection range
-- [ ] Delete line
-- [ ] Handle deletion at grapheme boundaries
-- [ ] Handle deletion with combining marks
-- [ ] Trigger layout invalidation after delete
+- [x] Delete character before cursor (backspace)
+- [x] Delete character after cursor (delete)
+- [x] Delete word before cursor (Ctrl+Backspace)
+- [x] Delete word after cursor (Ctrl+Delete)
+- [x] Delete selection range
+- [x] Delete line
+- [x] Handle deletion at grapheme boundaries
+- [x] Handle deletion with combining marks
+- [x] Trigger layout invalidation after delete
 
 ### 6.7 Clipboard Operations
 

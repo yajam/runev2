@@ -277,7 +277,6 @@ fn main() -> Result<()> {
                     if let Some(ref r) = res {
                         let title = format!("Rune Draw Demo — Hover: {:?} (id={}, z={})", r.kind, r.id, r.z);
                         window.set_title(&title);
-                        eprintln!("hover -> kind={:?} id={} z={}", r.kind, r.id, r.z);
                     } else {
                         window.set_title("Rune Draw Demo");
                     }
@@ -295,9 +294,6 @@ fn main() -> Result<()> {
                     }
                 }
                 if pressed_id.is_some() {
-                    if let Some(ref r) = res {
-                        eprintln!("dragging over kind={:?} id={} z={}", r.kind, r.id, r.z);
-                    }
                     // Scene drag update
                     if let SceneKind::Geometry = scene.kind() {
                         if let Some(new_dl) = scene.on_drag(pos, res.as_ref()) {
@@ -319,7 +315,6 @@ fn main() -> Result<()> {
                 if state == ElementState::Pressed {
                     let res = index.topmost_at(last_cursor_pos);
                     pressed_id = res.as_ref().map(|r| r.id);
-                    if let Some(ref r) = res { eprintln!("pressed kind={:?} id={} z={}", r.kind, r.id, r.z); }
                     // Scene pointer down
                     if let SceneKind::Geometry = scene.kind() {
                         if let Some(new_dl) = scene.on_pointer_down(last_cursor_pos, res.as_ref()) {
@@ -336,7 +331,6 @@ fn main() -> Result<()> {
                     let res = index.topmost_at(last_cursor_pos);
                     if let (Some(pid), Some(r)) = (pressed_id.take(), res.clone()) {
                         if pid == r.id {
-                            eprintln!("clicked kind={:?} id={} z={}", r.kind, r.id, r.z);
                             // Scene click
                             if let SceneKind::Geometry = scene.kind() {
                                 if let Some(new_dl) = scene.on_click(last_cursor_pos, res.as_ref()) {
@@ -350,7 +344,6 @@ fn main() -> Result<()> {
                                 }
                             }
                         } else {
-                            eprintln!("released over different target kind={:?} id={} z={} (pressed id={})", r.kind, r.id, r.z, pid);
                         }
                     } else {
                         pressed_id = None;

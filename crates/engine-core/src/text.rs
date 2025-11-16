@@ -28,6 +28,8 @@
 //! let glyphs = provider.rasterize_run(&run);
 //! ```
 
+use std::hash::Hash;
+
 /// LCD subpixel orientation along X axis.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubpixelOrientation {
@@ -77,6 +79,63 @@ impl GlyphBatch {
     pub fn len(&self) -> usize {
         self.glyphs.len()
     }
+}
+
+/// Simple global cache for glyph runs keyed by (text, size, provider pointer).
+/// Used by direct text rendering paths (e.g., rune-surface Canvas) to avoid
+/// re-shaping and re-rasterizing identical text on every frame.
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+struct GlyphRunKey {
+    text_hash: u64,
+    size_bits: u32,
+    provider_id: usize,
+}
+
+struct GlyphRunCache {
+    map: std::sync::Mutex<std::collections::HashMap<GlyphRunKey, std::sync::Arc<Vec<RasterizedGlyph>>>>,
+    max_entries: usize,
+}
+
+impl GlyphRunCache {
+    fn new(max_entries: usize) -> Self {
+        Self {
+            map: std::sync::Mutex::new(std::collections::HashMap::new()),
+            max_entries: max_entries.max(1),
+        }
+    }
+
+    fn get(&self, key: &GlyphRunKey) -> Option<std::sync::Arc<Vec<RasterizedGlyph>>> {
+        let map = self.map.lock().unwrap();
+        map.get(key).cloned()
+    }
+
+    fn insert(
+        &self,
+        key: GlyphRunKey,
+        glyphs: Vec<RasterizedGlyph>,
+    ) -> std::sync::Arc<Vec<RasterizedGlyph>> {
+        let mut map = self.map.lock().unwrap();
+
+        // Simple eviction strategy to keep memory bounded:
+        // when we grow past 2x capacity with new keys, clear everything.
+        if map.len() >= self.max_entries * 2 && !map.contains_key(&key) {
+            map.clear();
+        }
+
+        if let Some(existing) = map.get(&key) {
+            return existing.clone();
+        }
+
+        let arc = std::sync::Arc::new(glyphs);
+        map.insert(key, arc.clone());
+        arc
+    }
+}
+
+static GLYPH_RUN_CACHE: std::sync::OnceLock<GlyphRunCache> = std::sync::OnceLock::new();
+
+fn global_glyph_run_cache() -> &'static GlyphRunCache {
+    GLYPH_RUN_CACHE.get_or_init(|| GlyphRunCache::new(2048))
 }
 
 /// Convert an 8-bit grayscale coverage mask to an RGB subpixel coverage mask.
@@ -272,6 +331,38 @@ pub trait TextProvider: Send + Sync {
     }
 
     fn line_metrics(&self, px: f32) -> Option<LineMetrics> { let _ = px; None }
+}
+
+/// Rasterize a text run using a global glyph-run cache.
+///
+/// This is intended for direct text rendering paths that repeatedly render the
+/// same text (e.g., during scrolling) and want to avoid re-shaping and
+/// re-rasterizing glyphs every frame. The cache key is based on:
+/// - text contents
+/// - run size in pixels
+/// - the concrete text provider instance
+pub fn rasterize_run_cached(
+    provider: &dyn TextProvider,
+    run: &crate::scene::TextRun,
+) -> std::sync::Arc<Vec<RasterizedGlyph>> {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::Hasher;
+
+    let mut hasher = DefaultHasher::new();
+    run.text.hash(&mut hasher);
+    let text_hash = hasher.finish();
+    let size_bits = run.size.to_bits();
+    // Use the concrete provider data pointer as a stable identifier for this run.
+    let provider_id = (provider as *const dyn TextProvider as *const ()) as usize;
+    let key = GlyphRunKey { text_hash, size_bits, provider_id };
+
+    let cache = global_glyph_run_cache();
+    if let Some(hit) = cache.get(&key) {
+        return hit;
+    }
+
+    let glyphs = provider.rasterize_run(run);
+    cache.insert(key, glyphs)
 }
 
 /// LEGACY: Simple fontdue-based provider.

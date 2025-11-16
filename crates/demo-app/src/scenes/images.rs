@@ -178,7 +178,7 @@ impl ImagesScene {
                                                     self.images.borrow_mut().push(LoadedImage::Static(ImageTex { _tex: tex, view, width: w, height: h, _name: name }));
                                                     found_any = true;
                                                 }
-                                                Err(err) => { eprintln!("Failed to load WEBP {:?}: {err}", path); }
+                                                Err(_err) => { }
                                             }
                                         }
                                     }
@@ -209,12 +209,12 @@ impl ImagesScene {
                                             self.images.borrow_mut().push(LoadedImage::Static(ImageTex { _tex: tex, view, width: w, height: h, _name: name }));
                                             found_any = true;
                                         }
-                                        Err(err) => { eprintln!("Failed to load WEBP {:?}: {err}", path); }
+                                        Err(_err) => { }
                                     }
                                 }
                             }
                         }
-                        Err(err) => { eprintln!("Failed to read WEBP {:?}: {err}", path); }
+                        Err(_err) => { }
                     }
                 }
                 Some("gif") => {
@@ -228,7 +228,6 @@ impl ImagesScene {
                                     match frames_iter.collect_frames() {
                                         Ok(frames) => {
                                             if frames.is_empty() {
-                                                eprintln!("GIF has no frames: {:?}", path);
                                                 return;
                                             }
                                             // Determine canvas size from first frame
@@ -300,19 +299,13 @@ impl ImagesScene {
                                             }));
                                             found_any = true;
                                         }
-                                        Err(err) => {
-                                            eprintln!("Failed to decode GIF frames {:?}: {err}", path);
-                                        }
+                                        Err(_err) => { }
                                     }
                                 }
-                                Err(err) => {
-                                    eprintln!("Failed to open GIF decoder {:?}: {err}", path);
-                                }
+                                Err(_err) => { }
                             }
                         }
-                        Err(err) => {
-                            eprintln!("Failed to read GIF {:?}: {err}", path);
-                        }
+                        Err(_err) => { }
                     }
                 }
                 Some("svg") => {
@@ -355,9 +348,7 @@ impl ImagesScene {
                             self.images.borrow_mut().push(LoadedImage::Static(ImageTex { _tex: tex, view, width: w, height: h, _name: name }));
                             found_any = true;
                         }
-                        Err(err) => {
-                            eprintln!("Failed to load image {:?}: {err}", path);
-                        }
+                        Err(_err) => { }
                     }
                 }
             }
@@ -374,13 +365,9 @@ impl ImagesScene {
                 }
             }
         } else {
-            eprintln!("images/ directory not found or unreadable");
         }
 
         self.loaded.set(true);
-        if !found_any {
-            eprintln!("No PNG/JPEG/SVG/GIF images found in images/; scene will render empty");
-        }
     }
 }
 
@@ -468,7 +455,7 @@ impl Scene for ImagesScene {
                     // First, get intrinsic 1x size
                     let (_view1x, base_w, base_h) = match passes.rasterize_svg_to_view(&svg.path, 1.0, None, queue) {
                         Some((v, w, h)) => (v, w as f32, h as f32),
-                        None => { eprintln!("Failed to rasterize SVG {:?}", svg.path); continue; }
+                        None => { continue; }
                     };
                     // Compute target scale for this cell
                     let scale_guess = (cell_w / base_w).min(cell_h / base_h).max(0.0);

@@ -167,8 +167,7 @@ impl ImageCache {
         // Load image from disk
         let img = match image::open(path) {
             Ok(img) => img,
-            Err(e) => {
-                eprintln!("Failed to load image {:?}: {}", path, e);
+            Err(_e) => {
                 return None;
             }
         };
@@ -178,10 +177,6 @@ impl ImageCache {
 
         // Clamp to max texture size
         if width > self.max_tex_size || height > self.max_tex_size {
-            eprintln!(
-                "Image {:?} dimensions {}x{} exceed max texture size {}",
-                path, width, height, self.max_tex_size
-            );
             return None;
         }
 

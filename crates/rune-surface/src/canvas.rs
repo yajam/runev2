@@ -134,11 +134,13 @@ impl Canvas {
                 size: scaled_size,
                 color,
             };
-            
-            // Rasterize glyphs immediately
-            for g in provider.rasterize_run(&run) {
+
+            // Rasterize glyphs, using a shared cache to avoid
+            // re-rasterizing identical text every frame.
+            let glyphs = engine_core::rasterize_run_cached(provider.as_ref(), &run);
+            for g in glyphs.iter() {
                 let glyph_origin = [scaled_origin[0] + g.offset[0], scaled_origin[1] + g.offset[1]];
-                self.glyph_draws.push((glyph_origin, g, color));
+                self.glyph_draws.push((glyph_origin, g.clone(), color));
             }
         } else {
             // Fallback: use display list path (complex, but kept for compatibility)
@@ -170,11 +172,13 @@ impl Canvas {
             size: scaled_size,
             color,
         };
-        
-        // Rasterize glyphs immediately
-        for g in provider.rasterize_run(&run) {
+
+        // Rasterize glyphs, using the shared cache to avoid
+        // re-rasterizing identical text every frame.
+        let glyphs = engine_core::rasterize_run_cached(provider, &run);
+        for g in glyphs.iter() {
             let glyph_origin = [scaled_origin[0] + g.offset[0], scaled_origin[1] + g.offset[1]];
-            self.glyph_draws.push((glyph_origin, g, color));
+            self.glyph_draws.push((glyph_origin, g.clone(), color));
         }
     }
 

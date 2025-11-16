@@ -108,11 +108,9 @@ pub fn run() -> Result<()> {
                 ) {
                     std::sync::Arc::new(p)
                 } else {
-                    eprintln!("Failed to load font from {}, using system fonts", path);
                     create_default_provider()
                 }
             } else {
-                eprintln!("Failed to read font file {}, using system fonts", path);
                 create_default_provider()
             }
         } else {
@@ -641,7 +639,6 @@ pub fn run() -> Result<()> {
                         // Track first resize to enforce maximum debounce
                         if first_resize_time.is_none() {
                             first_resize_time = Some(now);
-                            eprintln!("[RESIZE] Started resize sequence at {:?}", now);
                         }
                         needs_redraw = true;
                         // Trigger immediate background redraw to prevent white edges
@@ -664,8 +661,6 @@ pub fn run() -> Result<()> {
                             
                             if settled || max_exceeded {
                                 // Resize ended or max debounce exceeded - clear resize state
-                                eprintln!("[DEBOUNCE] Clearing resize state - settled: {}, max_exceeded: {}, elapsed: {:?}",
-                                    settled, max_exceeded, last_time.elapsed());
                                 last_resize_time = None;
                                 first_resize_time = None;
                             }
@@ -683,16 +678,6 @@ pub fn run() -> Result<()> {
                             .unwrap_or(false);
                         let should_render_full = needs_redraw && (last_resize_time.is_none() || max_debounce_exceeded);
                         
-                        if should_render_full {
-                            eprintln!("[REDRAW] Full redraw - debounce complete");
-                        } else if should_render_backgrounds {
-                            if size_changed {
-                                eprintln!("[REDRAW] Background-only redraw (size changed, intermediate preserved)");
-                            } else {
-                                eprintln!("[REDRAW] Background-only redraw (size unchanged)");
-                            }
-                        }
-                        
                         if (!should_render_backgrounds && !should_render_full) || size.width == 0 || size.height == 0 { 
                             return; 
                         }
@@ -703,8 +688,6 @@ pub fn run() -> Result<()> {
                         surf.set_preserve_surface(true);
                         
                         if size_changed {
-                            eprintln!("[SIZE] Size changed from {}x{} to {}x{}",
-                                prev_size.width, prev_size.height, size.width, size.height);
                             prev_size = size;
                         }
                         
@@ -854,8 +837,6 @@ pub fn run() -> Result<()> {
                     
                     if settled || max_exceeded {
                         // Resize ended or max debounce exceeded - trigger full redraw
-                        eprintln!("[DEBOUNCE] Triggering full redraw - settled: {}, max_exceeded: {}, elapsed: {:?}",
-                            settled, max_exceeded, last_time.elapsed());
                         last_resize_time = None;
                         needs_redraw = true;
                         window.request_redraw();

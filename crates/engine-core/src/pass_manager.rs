@@ -154,17 +154,8 @@ impl PassManager {
         }));
 
         match test_result {
-            Ok(_) => {
-                eprintln!("Using {:?} for offscreen buffer", preferred);
-                preferred
-            }
-            Err(_) => {
-                eprintln!(
-                    "{:?} not supported, falling back to Rgba8Unorm for offscreen buffer",
-                    preferred
-                );
-                wgpu::TextureFormat::Rgba8Unorm
-            }
+            Ok(_) => preferred,
+            Err(_) => wgpu::TextureFormat::Rgba8Unorm,
         }
     }
 
@@ -2079,23 +2070,7 @@ impl PassManager {
             .unwrap_or(false);
         let aspect_ratio = (width.max(1) as f32) / (height.max(1) as f32);
         if debug_flag {
-            eprintln!("=== RADIAL GRADIENT DEBUG ===");
-            eprintln!("Window size: {}x{}", width, height);
-            eprintln!("Center UV: {:?}", center_uv);
-            eprintln!("Radius: {}", radius);
-            eprintln!("Aspect ratio: {}", aspect_ratio);
-            eprintln!("Stops count: {}", count);
-            eprintln!("Input stops (sorted):");
-            for (i, (p, c)) in sorted.iter().take(count as usize).enumerate() {
-                eprintln!(
-                    "  Input {}: pos={}, ColorLinPremul(r={}, g={}, b={}, a={})",
-                    i, p, c.r, c.g, c.b, c.a
-                );
-            }
-            eprintln!("Buffer stops:");
-            for (i, stop) in stops.iter().take(count as usize).enumerate() {
-                eprintln!("  Stop {}: pos={}, color={:?}", i, stop.pos, stop.color);
-            }
+            // debug logging removed
         }
         // macOS-specific DPI correction: Only adjust for centered fullscreen radials.
         // When center ~ [0.5,0.5], divide center and radius by scale factor to correct
@@ -2110,10 +2085,7 @@ impl PassManager {
                 adj_center = [adj_center[0] / sf, adj_center[1] / sf];
                 adj_radius = adj_radius / sf;
                 if debug_flag {
-                    eprintln!(
-                        "macOS DPI correction applied: sf={}, adj_center={:?}, adj_radius={}",
-                        sf, adj_center, adj_radius
-                    );
+                    // debug logging removed
                 }
             }
         }
@@ -2326,18 +2298,8 @@ impl PassManager {
     ) {
         // Check if we need to reallocate (size changed)
         let size_changed = match &self.intermediate_texture {
-            Some(tex) => {
-                let changed = tex.key.width != width || tex.key.height != height;
-                if changed {
-                    eprintln!("[INTERMEDIATE] Size change detected: {}x{} -> {}x{}", 
-                        tex.key.width, tex.key.height, width, height);
-                }
-                changed
-            }
-            None => {
-                eprintln!("[INTERMEDIATE] First allocation: {}x{}", width, height);
-                true
-            }
+            Some(tex) => tex.key.width != width || tex.key.height != height,
+            None => true,
         };
         
         // Ensure intermediate texture is allocated and matches surface size

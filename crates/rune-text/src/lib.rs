@@ -18,6 +18,11 @@ pub use font::{
     FontError,
 };
 
+pub use layout::{
+    Cursor, CursorAffinity, CursorPosition, CursorRect, HitTestPolicy, HitTestResult, Point,
+    Position,
+};
+
 /// Simple helper to allow smoke tests to link against this crate.
 pub fn is_available() -> bool {
     true

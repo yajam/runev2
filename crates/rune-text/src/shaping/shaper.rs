@@ -67,6 +67,7 @@ impl TextShaper {
         let mut glyphs = Vec::with_capacity(infos.len());
         let mut glyph_positions = Vec::with_capacity(infos.len());
         let mut advances = Vec::with_capacity(infos.len());
+        let mut clusters = Vec::with_capacity(infos.len());
 
         // harfrust uses design units; convert to pixels using the font's
         // units-per-em and requested size.
@@ -92,6 +93,8 @@ impl TextShaper {
                 y_offset,
             });
             advances.push(x_advance);
+            // Cluster is byte offset within the text
+            clusters.push(info.cluster);
 
             pen_x += x_advance;
             width = pen_x;
@@ -104,6 +107,7 @@ impl TextShaper {
             glyphs,
             positions: glyph_positions,
             advances,
+            clusters,
             width,
             x_offset: 0.0,
             bidi_level: 0,

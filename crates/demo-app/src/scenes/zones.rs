@@ -134,7 +134,6 @@ impl Scene for ZonesScene {
                         if let Some(local) = h.local_pos {
                             self.last_region = Some(region_id);
                             self.last_local = Some(local);
-                            eprintln!("zones: click region={} local={:?} uv={:?}", region_id, local, h.local_uv);
                             return Some(self.build_display_list());
                         }
                     }

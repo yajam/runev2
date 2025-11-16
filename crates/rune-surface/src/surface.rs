@@ -144,9 +144,7 @@ impl RuneSurface {
                             data: rgba,
                         });
                     }
-                    Err(e) => {
-                        eprintln!("Background loader failed to load {:?}: {}", path, e);
-                    }
+                    Err(_e) => { }
                 }
             }
         });

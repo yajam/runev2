@@ -31,6 +31,10 @@ pub struct ShapedRun {
     pub positions: Vec<GlyphPosition>,
     /// Glyph advances in pixels.
     pub advances: Vec<f32>,
+    /// Cluster indices mapping glyphs to byte offsets in the source text.
+    /// Each entry is a byte offset relative to text_range.start.
+    /// Multiple glyphs can map to the same cluster (ligatures).
+    pub clusters: Vec<u32>,
     /// Total advance width of the run in pixels.
     pub width: f32,
     /// X offset within line (for alignment).
