@@ -13,3 +13,4 @@ unicode-bidi = { workspace = true }
 swash = { workspace = true }
 hashbrown = "0.14"
 harfrust = { workspace = true }
+arboard = { workspace = true }

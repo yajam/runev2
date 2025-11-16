@@ -6,6 +6,7 @@ pub mod line_box;
 pub mod selection;
 pub mod text_layout;
 pub mod prefix_sums;
+pub mod undo;
 
 pub use cursor::{Cursor, CursorAffinity, CursorPosition, CursorRect};
 pub use cursor_movement::{CursorMovement, MovementDirection, MovementUnit};
@@ -15,6 +16,7 @@ pub use line_box::LineBox;
 pub use selection::{Selection, SelectionRect};
 pub use text_layout::TextLayout;
 pub use prefix_sums::PrefixSums;
+pub use undo::{TextOperation, UndoStack};
 
 /// Line wrapping strategy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -209,6 +209,10 @@ A comprehensive guide for implementing robust multiline text rendering in rune-d
 - [x] Support paragraph selection
 - [x] Handle selection across multiple lines
 - [x] Calculate selection rectangles for rendering
+- [x] Mouse click to position cursor
+- [x] Mouse drag selection (click + drag)
+- [x] Word-wise drag selection (double-click + drag)
+- [x] Line-wise drag selection (triple-click + drag)
 
 ### 6.5 Text Insertion
 
@@ -235,46 +239,46 @@ A comprehensive guide for implementing robust multiline text rendering in rune-d
 
 ### 6.7 Clipboard Operations
 
-- [ ] Copy selection to clipboard
-- [ ] Cut selection to clipboard
-- [ ] Paste from clipboard at cursor
-- [ ] Replace selection with pasted text
-- [ ] Handle clipboard text normalization
+- [x] Copy selection to clipboard
+- [x] Cut selection to clipboard
+- [x] Paste from clipboard at cursor
+- [x] Replace selection with pasted text
+- [x] Handle clipboard text normalization
 - [ ] Support rich text clipboard (optional)
-- [ ] Handle large clipboard content efficiently
+- [x] Handle large clipboard content efficiently
 
 ### 6.8 Undo/Redo System
 
-- [ ] Implement undo stack data structure
-- [ ] Record text insertion operations
-- [ ] Record text deletion operations
-- [ ] Record selection changes (optional)
-- [ ] Implement undo operation
-- [ ] Implement redo operation
-- [ ] Group consecutive operations (typing)
-- [ ] Set undo stack size limit
-- [ ] Clear undo stack on major changes
+- [x] Implement undo stack data structure
+- [x] Record text insertion operations
+- [x] Record text deletion operations
+- [x] Record selection changes (optional)
+- [x] Implement undo operation
+- [x] Implement redo operation
+- [x] Group consecutive operations (typing)
+- [x] Set undo stack size limit
+- [x] Clear undo stack on major changes
 
 ### 6.9 Text Measurement for Editing
 
-- [ ] Measure single-line text width
-- [ ] Calculate multi-line text bounds
-- [ ] Implement character width queries
-- [ ] Add line height calculations
-- [ ] Support baseline queries
-- [ ] Calculate visible text range (viewport culling)
-- [ ] Measure text range width
+- [x] Measure single-line text width
+- [x] Calculate multi-line text bounds
+- [x] Implement character width queries
+- [x] Add line height calculations
+- [x] Support baseline queries
+- [x] Calculate visible text range (viewport culling)
+- [x] Measure text range width
 
 ### 6.10 Scrolling & Viewport
 
-- [ ] Implement scroll offset tracking
-- [ ] Calculate visible line range
-- [ ] Auto-scroll to cursor on movement
-- [ ] Auto-scroll on selection
-- [ ] Handle smooth scrolling
-- [ ] Support horizontal scrolling (long lines)
-- [ ] Implement scroll to position API
-- [ ] Handle mouse wheel scrolling
+- [x] Implement scroll offset tracking (handled by rune-scene)
+- [x] Calculate visible line range
+- [x] Auto-scroll to cursor on movement
+- [x] Auto-scroll on selection
+- [x] Handle smooth scrolling (helper methods provided)
+- [x] Support horizontal scrolling (long lines)
+- [x] Implement scroll to position API
+- [x] Handle mouse wheel scrolling
 
 ### 6.11 Advanced Editing Features
 
