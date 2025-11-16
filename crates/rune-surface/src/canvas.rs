@@ -77,8 +77,37 @@ impl Canvas {
         self.painter.stroke_rounded_rect(rrect, Stroke { width }, brush, z);
     }
 
-    /// Draw text - simplified to rasterize immediately if provider is available.
-    /// This bypasses the complex display list path and works reliably like harfrust_text.
+    /// Draw text using direct rasterization (recommended).
+    ///
+    /// This method rasterizes glyphs immediately using the text provider,
+    /// bypassing complex display list paths. This is simpler and more
+    /// reliable than deferred rendering.
+    ///
+    /// # Performance
+    /// - Glyphs are shaped and rasterized on each call
+    /// - Use [`TextLayoutCache`](engine_core::TextLayoutCache) to cache wrapping computations
+    /// - Debounce resize events to avoid excessive rasterization
+    ///
+    /// # Transform Stack
+    /// The current transform is applied to position text correctly
+    /// within zones (viewport, toolbar, etc.).
+    ///
+    /// # DPI Scaling
+    /// Both position and size are automatically scaled by `self.dpi_scale`.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use rune_surface::Canvas;
+    /// # use engine_core::ColorLinPremul;
+    /// # let mut canvas: Canvas = todo!();
+    /// canvas.draw_text_run(
+    ///     [10.0, 20.0],
+    ///     "Hello, world!".to_string(),
+    ///     16.0,
+    ///     ColorLinPremul::rgba(255, 255, 255, 255),
+    ///     10,  // z-index
+    /// );
+    /// ```
     pub fn draw_text_run(&mut self, origin: [f32; 2], text: String, size_px: f32, color: ColorLinPremul, z: i32) {
         let _ = z; // z-ordering not used for direct glyph rendering
         

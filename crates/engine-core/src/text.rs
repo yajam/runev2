@@ -1,4 +1,32 @@
-//! Text utilities: subpixel mask conversion and simple APIs.
+//! Text rendering providers for rune-draw.
+//!
+//! The primary provider is [`RuneTextProvider`] which uses:
+//! - `harfrust` for text shaping (HarfBuzz implementation)
+//! - `swash` for glyph rasterization
+//! - `fontdb` for font discovery and fallback
+//!
+//! This provides high-quality text rendering with:
+//! - Proper kerning and ligatures
+//! - Subpixel RGB rendering
+//! - BiDi support
+//! - Complex script support
+//!
+//! # Example
+//! ```no_run
+//! use engine_core::{RuneTextProvider, SubpixelOrientation, TextRun, ColorLinPremul};
+//!
+//! let provider = RuneTextProvider::from_system_fonts(SubpixelOrientation::RGB)
+//!     .expect("Failed to load fonts");
+//!
+//! let run = TextRun {
+//!     text: "Hello, world!".to_string(),
+//!     pos: [0.0, 0.0],
+//!     size: 16.0,
+//!     color: ColorLinPremul::rgba(255, 255, 255, 255),
+//! };
+//!
+//! let glyphs = provider.rasterize_run(&run);
+//! ```
 
 /// LCD subpixel orientation along X axis.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -246,7 +274,15 @@ pub trait TextProvider: Send + Sync {
     fn line_metrics(&self, px: f32) -> Option<LineMetrics> { let _ = px; None }
 }
 
-/// A simple fontdue-based provider. This is a naive ASCII-first layout using fontdue's layout.
+/// LEGACY: Simple fontdue-based provider.
+///
+/// **NOT RECOMMENDED**: Use [`RuneTextProvider`] (harfrust + swash) instead.
+/// This provider is kept for compatibility and testing purposes only.
+///
+/// Limitations:
+/// - Basic ASCII-first layout
+/// - No advanced shaping features
+/// - Lower quality than swash rasterization
 pub struct SimpleFontdueProvider {
     font: fontdue::Font,
     orientation: SubpixelOrientation,
@@ -308,7 +344,12 @@ impl TextProvider for SimpleFontdueProvider {
     }
 }
 
-/// Grayscale provider that replicates grayscale coverage to RGB channels equally.
+/// LEGACY: Grayscale fontdue provider.
+///
+/// **NOT RECOMMENDED**: Use [`RuneTextProvider`] (harfrust + swash) instead.
+/// This provider is kept for compatibility and testing purposes only.
+///
+/// Replicates grayscale coverage to RGB channels equally (no subpixel rendering).
 pub struct GrayscaleFontdueProvider {
     font: fontdue::Font,
 }
@@ -532,6 +573,11 @@ mod cosmic_provider {
 
     use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, SwashCache};
 
+    /// Legacy cosmic-text provider for compatibility.
+    ///
+    /// **NOT RECOMMENDED**: Use [`RuneTextProvider`] (harfrust + swash) instead.
+    /// Only kept for testing/comparison purposes.
+    ///
     /// A text provider backed by cosmic-text for shaping and swash for rasterization.
     /// Produces RGB subpixel masks from swash grayscale coverage.
     pub struct CosmicTextProvider {

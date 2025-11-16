@@ -96,49 +96,36 @@ pub fn run() -> Result<()> {
 
     // Provide a text provider.
     //
-    // Default: rune-text + harfrust (pure Rust HarfBuzz implementation).
-    // - If `RUNE_TEXT_PROVIDER=cosmic`, use cosmic-text explicitly.
+    // Default: RuneTextProvider (harfrust + swash) - the recommended approach.
     // - If `RUNE_TEXT_FONT=path`, load custom font from path.
-    let provider: std::sync::Arc<dyn engine_core::TextProvider> =
-        match std::env::var("RUNE_TEXT_PROVIDER") {
-            Ok(ref v) if v.eq_ignore_ascii_case("cosmic") => {
-                // Explicit opt-in to cosmic-text.
-                std::sync::Arc::new(
-                    engine_core::CosmicTextProvider::from_system_fonts(SubpixelOrientation::RGB),
-                )
-            }
-            _ => {
-                // Default: rune-text + harfrust.
-                if let Ok(path) = std::env::var("RUNE_TEXT_FONT") {
-                    if let Ok(bytes) = std::fs::read(&path) {
-                        if let Ok(p) = engine_core::RuneTextProvider::from_bytes(
-                            &bytes,
-                            SubpixelOrientation::RGB,
-                        ) {
-                            std::sync::Arc::new(p)
-                        } else {
-                            let p = engine_core::RuneTextProvider::from_system_fonts(
-                                SubpixelOrientation::RGB,
-                            )
-                            .expect("rune-text: failed to load a system font via fontdb");
-                            std::sync::Arc::new(p)
-                        }
-                    } else {
-                        let p = engine_core::RuneTextProvider::from_system_fonts(
-                            SubpixelOrientation::RGB,
-                        )
-                        .expect("rune-text: failed to load a system font via fontdb");
-                        std::sync::Arc::new(p)
-                    }
-                } else {
-                    let p = engine_core::RuneTextProvider::from_system_fonts(
-                        SubpixelOrientation::RGB,
-                    )
-                    .expect("rune-text: failed to load a system font via fontdb");
+    let provider: std::sync::Arc<dyn engine_core::TextProvider> = {
+        // Check for custom font path
+        if let Ok(path) = std::env::var("RUNE_TEXT_FONT") {
+            if let Ok(bytes) = std::fs::read(&path) {
+                if let Ok(p) = engine_core::RuneTextProvider::from_bytes(
+                    &bytes,
+                    SubpixelOrientation::RGB,
+                ) {
                     std::sync::Arc::new(p)
+                } else {
+                    eprintln!("Failed to load font from {}, using system fonts", path);
+                    create_default_provider()
                 }
+            } else {
+                eprintln!("Failed to read font file {}, using system fonts", path);
+                create_default_provider()
             }
-        };
+        } else {
+            create_default_provider()
+        }
+    };
+
+    fn create_default_provider() -> std::sync::Arc<dyn engine_core::TextProvider> {
+        std::sync::Arc::new(
+            engine_core::RuneTextProvider::from_system_fonts(SubpixelOrientation::RGB)
+                .expect("Failed to load system fonts")
+        )
+    }
 
     // Zone manager for layout and styling (use logical pixels)
     let logical_width = (size.width as f32 / scale_factor) as u32;

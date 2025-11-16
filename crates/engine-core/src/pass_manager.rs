@@ -115,6 +115,8 @@ pub struct PassManager {
     pub intermediate_texture: Option<crate::OwnedTexture>,
     // Reusable GPU resources for text rendering to avoid per-glyph allocations.
     text_mask_atlas: wgpu::Texture,
+    // Note: This view is not directly read but must be kept alive for the bind group reference
+    #[allow(dead_code)]
     text_mask_atlas_view: wgpu::TextureView,
     text_vertex_buffer: wgpu::Buffer,
     text_index_buffer: wgpu::Buffer,

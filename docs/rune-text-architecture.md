@@ -1,8 +1,18 @@
 # Rune-Text: Custom Text Layout Engine Architecture
 
-A `cosmic-text` alternative with precise baseline control and line measurement APIs.
+**⚠️ OUTDATED DOCUMENT ⚠️**
 
-## Design Goals
+This document describes a **planned architecture that was never fully implemented**.
+
+**For the current working architecture, see:**
+- **[text-rendering-summary.md](./text-rendering-summary.md)** - Overview and status
+- **[text-architecture-current.md](./text-architecture-current.md)** - Current implementation
+
+---
+
+## Original Design Goals (Not Implemented)
+
+This was a planned `cosmic-text` alternative with precise baseline control and line measurement APIs.
 
 1. **Precise Baseline Control** - Explicit baseline positioning and alignment APIs
 2. **Granular Line Metrics** - Direct access to ascent, descent, leading, and line box dimensions
