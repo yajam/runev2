@@ -496,6 +496,7 @@ pub struct SampleUIElements {
 impl SampleUIElements {
     /// Render all sample UI elements to a canvas in local coordinates.
     /// Caller should set up transform for zone positioning.
+    /// Returns the total content height.
     pub fn render(
         &self,
         canvas: &mut rune_surface::Canvas,
@@ -503,7 +504,7 @@ impl SampleUIElements {
         window_width: u32,
         provider: &dyn engine_core::TextProvider,
         text_cache: &engine_core::TextLayoutCache,
-    ) {
+    ) -> f32 {
         // Render all text elements using direct rasterization (simpler, more reliable)
         for text in self.texts.iter() {
             canvas.draw_text_direct(text.pos, text.text, text.size, text.color, provider);
@@ -643,6 +644,61 @@ impl SampleUIElements {
         };
         // Use cached rendering for efficient resize performance
         let _ = (scale_factor, provider); // keep signature for now
-        multiline.render_cached(canvas, 100, text_cache);
+        let multiline_height = multiline.render_cached(canvas, 100, text_cache);
+
+        // Calculate total content height
+        // Find the bottom-most element by checking all fixed elements
+        let mut max_y = 0.0f32;
+        
+        // Check all text elements
+        for text in self.texts.iter() {
+            max_y = max_y.max(text.pos[1] + text.size);
+        }
+        
+        // Check checkboxes
+        for cb in self.checkboxes.iter() {
+            max_y = max_y.max(cb.rect.y + cb.rect.h + 20.0); // +20 for label
+        }
+        
+        // Check buttons
+        for btn in self.buttons.iter() {
+            max_y = max_y.max(btn.rect.y + btn.rect.h);
+        }
+        
+        // Check radios
+        for radio in self.radios.iter() {
+            max_y = max_y.max(radio.center[1] + radio.radius + 20.0); // +20 for label
+        }
+        
+        // Check input boxes
+        for input in self.input_boxes.iter() {
+            max_y = max_y.max(input.rect.y + input.rect.h);
+        }
+        
+        // Check text areas
+        for textarea in self.text_areas.iter() {
+            max_y = max_y.max(textarea.rect.y + textarea.rect.h);
+        }
+        
+        // Check selects
+        for select in self.selects.iter() {
+            max_y = max_y.max(select.rect.y + select.rect.h);
+        }
+        
+        // Check labels
+        for label in self.labels.iter() {
+            max_y = max_y.max(label.pos[1] + label.size);
+        }
+        
+        // Check images
+        for image in self.images.iter() {
+            max_y = max_y.max(image.rect.y + image.rect.h);
+        }
+        
+        // Account for multiline text height based on actual layout result
+        let multiline_bottom = self.multiline_y + multiline_height;
+        max_y = max_y.max(multiline_bottom);
+        
+        max_y
     }
 }

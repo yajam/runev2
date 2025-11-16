@@ -153,9 +153,10 @@ pub fn run() -> Result<()> {
     let sidebar_visible = std::sync::Arc::new(std::sync::Mutex::new(true));
     let sidebar_visible_overlay = sidebar_visible.clone();
 
-    // Devtools overlay: drawn after all other content via RuneSurface overlay,
-    // so it always appears above viewport content, including raster images.
+    // Devtools and toolbar overlay: drawn after all other content via RuneSurface overlay,
+    // so they always appear above viewport content, including raster images.
     let devtools_style = zone_manager.devtools.style.clone();
+    let toolbar_style = zone_manager.toolbar.style.clone();
     let overlay_provider = provider.clone();
     let overlay_scale = scale_factor;
 
@@ -167,18 +168,104 @@ pub fn run() -> Result<()> {
     let devtools_active_tab = std::sync::Arc::new(std::sync::Mutex::new(DevToolsTab::Elements));
     let devtools_active_tab_overlay = devtools_active_tab.clone();
 
-    // Overlay callback for devtools chrome (background, tabs, close button, labels)
+    // Overlay callback for toolbar chrome (always) and devtools chrome (when visible)
     surf.set_overlay(Box::new(move |passes, encoder, view, queue, width, height| {
-        // Only render devtools if visible
-        if !*devtools_visible_overlay.lock().unwrap() {
-            return;
-        }
-
-        // Recompute layout in logical coordinates for the current size.
+        // Recompute layout in logical coordinates for the current size (shared by toolbar/devtools).
         let sidebar_vis = *sidebar_visible_overlay.lock().unwrap();
         let logical_width = (width as f32 / overlay_scale).max(0.0) as u32;
         let logical_height = (height as f32 / overlay_scale).max(0.0) as u32;
         let layout = zones::ZoneLayout::calculate(logical_width, logical_height, sidebar_vis);
+
+        // --- Toolbar overlay: always render above viewport content ---
+        let toolbar_rect = layout.get_zone(ZoneId::Toolbar);
+
+        // Toolbar background strip
+        let toolbar_rrect = RoundedRect {
+            rect: toolbar_rect,
+            radii: RoundedRadii { tl: 0.0, tr: 0.0, br: 0.0, bl: 0.0 },
+        };
+        passes.draw_filled_rounded_rect(
+            encoder,
+            view,
+            width,
+            height,
+            toolbar_rrect,
+            toolbar_style.bg_color,
+            queue,
+        );
+
+        // Optional toolbar border (bottom edge to visually separate viewport).
+        if toolbar_style.border_width > 0.0 {
+            let bw = toolbar_style.border_width;
+            let border_rect = Rect {
+                x: toolbar_rect.x,
+                y: toolbar_rect.y + toolbar_rect.h - bw,
+                w: toolbar_rect.w,
+                h: bw,
+            };
+            let border_rrect = RoundedRect {
+                rect: border_rect,
+                radii: RoundedRadii { tl: 0.0, tr: 0.0, br: 0.0, bl: 0.0 },
+            };
+            passes.draw_filled_rounded_rect(
+                encoder,
+                view,
+                width,
+                height,
+                border_rrect,
+                toolbar_style.border_color,
+                queue,
+            );
+        }
+
+        // Toolbar icons (sidebar toggle and devtools toggle)
+        let toggle_size = 24.0;
+        let toggle_margin = 12.0;
+
+        // Sidebar toggle on the left
+        let toggle_x = toolbar_rect.x + toggle_margin;
+        let toggle_y = toolbar_rect.y + (toolbar_rect.h - toggle_size) * 0.5;
+
+        let white = ColorLinPremul::rgba(255, 255, 255, 255);
+        let icon_style = engine_core::SvgStyle::new()
+            .with_stroke(white)
+            .with_stroke_width(1.5);
+
+        draw_svg_icon(
+            passes,
+            encoder,
+            view,
+            queue,
+            width,
+            height,
+            "images/panel-left.svg",
+            [toggle_x, toggle_y],
+            [toggle_size, toggle_size],
+            icon_style,
+        );
+
+        // Devtools toggle on the right
+        let devtools_x = toolbar_rect.x + toolbar_rect.w - toggle_size - toggle_margin;
+        let devtools_y = toolbar_rect.y + (toolbar_rect.h - toggle_size) * 0.5;
+
+        draw_svg_icon(
+            passes,
+            encoder,
+            view,
+            queue,
+            width,
+            height,
+            "images/inspection-panel.svg",
+            [devtools_x, devtools_y],
+            [toggle_size, toggle_size],
+            icon_style,
+        );
+
+        // --- Devtools overlay: only render when visible ---
+        if !*devtools_visible_overlay.lock().unwrap() {
+            return;
+        }
+
         let devtools_rect = layout.get_zone(ZoneId::DevTools);
 
         // Background panel: solid rounded-rect (zero radii => plain rect).
@@ -482,6 +569,19 @@ pub fn run() -> Result<()> {
                     WindowEvent::CursorMoved { position, .. } => {
                         cursor_position = Some((position.x as f32, position.y as f32));
                     }
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        // Handle scrolling in viewport
+                        use winit::event::MouseScrollDelta;
+                        let scroll_delta = match delta {
+                            MouseScrollDelta::LineDelta(_x, y) => y * 20.0, // 20 pixels per line
+                            MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+                        };
+                        
+                        let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
+                        zone_manager.viewport.scroll(-scroll_delta, viewport_rect.h);
+                        needs_redraw = true;
+                        window.request_redraw();
+                    }
                     WindowEvent::MouseInput { state, button, .. } => {
                         if button == winit::event::MouseButton::Left && state == winit::event::ElementState::Pressed {
                             if let Some((cursor_x, cursor_y)) = cursor_position {
@@ -628,15 +728,36 @@ pub fn run() -> Result<()> {
                         if should_render_full {
                             // Render sample UI elements in viewport zone with local coordinates.
                             let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
+                            
+                            // Apply transform first to position viewport content
                             canvas.push_transform(Transform2D::translate(viewport_rect.x, viewport_rect.y));
-                            sample_ui.render(
+                            
+                            // Push clip rect in viewport-local coordinates (0,0 origin)
+                            let local_clip = Rect {
+                                x: 0.0,
+                                y: 0.0,
+                                w: viewport_rect.w,
+                                h: viewport_rect.h,
+                            };
+                            canvas.push_clip_rect(local_clip);
+                            
+                            // Apply scroll offset as a nested transform (negative to scroll down)
+                            canvas.push_transform(Transform2D::translate(0.0, -zone_manager.viewport.scroll_offset));
+                            
+                            let content_height = sample_ui.render(
                                 &mut canvas,
                                 scale_factor,
                                 viewport_rect.w as u32,
                                 provider.as_ref(),
                                 text_cache.as_ref(),
                             );
-                            canvas.pop_transform();
+                            
+                            canvas.pop_transform(); // Pop scroll transform
+                            canvas.pop_clip();      // Pop clip rect
+                            canvas.pop_transform(); // Pop viewport position transform
+                            
+                            // Update viewport content height
+                            zone_manager.viewport.set_content_height(content_height, viewport_rect.h);
                             
                             // Render toolbar content with hit regions (above viewport)
                             let toolbar_rect = zone_manager.layout.get_zone(ZoneId::Toolbar);
