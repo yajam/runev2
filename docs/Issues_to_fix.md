@@ -1,3 +1,8 @@
-- [ ] Background should be rendered in separate pass
-- [ ] Foreground should be rendered in separate pass
-- [ ] Resize performance is needed to be improved
+- [x] Background should be rendered in separate pass
+- [x] Foreground should be rendered in separate pass
+- [~] Resize performance is needed to be improved (partially done)
+  - [x] Fixed MSAA resolve size mismatch validation error
+  - [ ] Layout no longer freezes during expansion (foreground debounced)
+  - [x] Background-only renders work during resize debounce
+  - [ ] Background zones not visually filling full width during rapid expansion
+  - See `docs/2-pass-resize-fix.md` for details

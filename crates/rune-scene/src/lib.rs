@@ -142,6 +142,12 @@ pub fn run() -> Result<()> {
     let mut needs_redraw = true;
     // Track last resize time to debounce redraws (only redraw after resize settles)
     let mut last_resize_time: Option<std::time::Instant> = None;
+    // Track first resize time to enforce maximum debounce duration
+    let mut first_resize_time: Option<std::time::Instant> = None;
+    // Track if we need to redraw backgrounds immediately (no debounce)
+    let mut needs_background_redraw = false;
+    // Track previous size to detect actual size changes (vs just resize events)
+    let mut prev_size = size;
 
     // Shared state for sidebar visibility
     let sidebar_visible = std::sync::Arc::new(std::sync::Mutex::new(true));
@@ -530,8 +536,16 @@ pub fn run() -> Result<()> {
                             let logical_height = (size.height as f32 / scale_factor) as u32;
                             zone_manager.resize(logical_width, logical_height);
                         }
-                        last_resize_time = Some(std::time::Instant::now());
+                        let now = std::time::Instant::now();
+                        last_resize_time = Some(now);
+                        // Track first resize to enforce maximum debounce
+                        if first_resize_time.is_none() {
+                            first_resize_time = Some(now);
+                            eprintln!("[RESIZE] Started resize sequence at {:?}", now);
+                        }
                         needs_redraw = true;
+                        // Trigger immediate background redraw to prevent white edges
+                        needs_background_redraw = true;
                         window.request_redraw();
                     }
                     WindowEvent::ScaleFactorChanged { scale_factor: sf, .. } => {
@@ -541,40 +555,101 @@ pub fn run() -> Result<()> {
                         window.request_redraw();
                     }
                     WindowEvent::RedrawRequested => {
-                        if !needs_redraw || size.width == 0 || size.height == 0 { return; }
+                        // Check debounce timing HERE (not in AboutToWait which may not fire frequently)
+                        if let Some(last_time) = last_resize_time {
+                            let settled = last_time.elapsed() >= std::time::Duration::from_millis(200);
+                            let max_exceeded = first_resize_time
+                                .map(|t| t.elapsed() >= std::time::Duration::from_millis(300))
+                                .unwrap_or(false);
+                            
+                            if settled || max_exceeded {
+                                // Resize ended or max debounce exceeded - clear resize state
+                                eprintln!("[DEBOUNCE] Clearing resize state - settled: {}, max_exceeded: {}, elapsed: {:?}",
+                                    settled, max_exceeded, last_time.elapsed());
+                                last_resize_time = None;
+                                first_resize_time = None;
+                            }
+                        }
+                        
+                        // Check if we should render: either full redraw or just backgrounds
+                        let should_render_backgrounds = needs_background_redraw;
+                        // Detect if size actually changed (not just a resize event)
+                        let size_changed = prev_size.width != size.width || prev_size.height != size.height;
+                        // Force full redraw if: no resize in progress OR max debounce exceeded (300ms)
+                        // Note: We no longer force full redraw on size change because intermediate texture
+                        // is preserved during expansion (only reallocated when growing or shrinking >25%)
+                        let max_debounce_exceeded = first_resize_time
+                            .map(|t| t.elapsed() >= std::time::Duration::from_millis(300))
+                            .unwrap_or(false);
+                        let should_render_full = needs_redraw && (last_resize_time.is_none() || max_debounce_exceeded);
+                        
+                        if should_render_full {
+                            eprintln!("[REDRAW] Full redraw - debounce complete");
+                        } else if should_render_backgrounds {
+                            if size_changed {
+                                eprintln!("[REDRAW] Background-only redraw (size changed, intermediate preserved)");
+                            } else {
+                                eprintln!("[REDRAW] Background-only redraw (size unchanged)");
+                            }
+                        }
+                        
+                        if (!should_render_backgrounds && !should_render_full) || size.width == 0 || size.height == 0 { 
+                            return; 
+                        }
+                        
+                        // Preserve intermediate texture content during resize to avoid white edges
+                        // The intermediate texture is kept across frames (only reallocated when needed)
+                        // Backgrounds will render incrementally over preserved content
+                        surf.set_preserve_surface(true);
+                        
+                        if size_changed {
+                            eprintln!("[SIZE] Size changed from {}x{} to {}x{}",
+                                prev_size.width, prev_size.height, size.width, size.height);
+                            prev_size = size;
+                        }
                         
                         let frame = match surface.get_current_texture() {
                             Ok(f) => f,
                             Err(_) => { window.request_redraw(); return; }
                         };
+                        // Canvas uses physical pixels, but zones are in logical pixels
+                        // So we pass physical size to canvas
                         let mut canvas = surf.begin_frame(size.width, size.height);
                         canvas.set_text_provider(provider.clone());
 
-                        // Render zone backgrounds and borders first (lowest z-index)
+                        // Always render zone backgrounds and borders first (lowest z-index)
+                        // This happens immediately during resize without debounce
+                        // Note: render_zones uses zone_manager which has logical coordinates,
+                        // but the canvas will scale them to physical via logical_pixels mode
                         render_zones(&mut canvas, &zone_manager);
                         
-                        // Render sample UI elements in viewport zone with local coordinates.
-                        let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
-                        canvas.push_transform(Transform2D::translate(viewport_rect.x, viewport_rect.y));
-                        sample_ui.render(
-                            &mut canvas,
-                            scale_factor,
-                            viewport_rect.w as u32,
-                            provider.as_ref(),
-                            text_cache.as_ref(),
-                        );
-                        canvas.pop_transform();
-                        
-                        // Render toolbar content with hit regions (above viewport)
-                        let toolbar_rect = zone_manager.layout.get_zone(ZoneId::Toolbar);
-                        canvas.push_transform(Transform2D::translate(toolbar_rect.x, toolbar_rect.y));
-                        zone_manager.toolbar.render(&mut canvas, toolbar_rect);
-                        canvas.pop_transform();
+                        // Only render foreground content if not in debounce period
+                        // This prevents expensive text layout during rapid resize
+                        if should_render_full {
+                            // Render sample UI elements in viewport zone with local coordinates.
+                            let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
+                            canvas.push_transform(Transform2D::translate(viewport_rect.x, viewport_rect.y));
+                            sample_ui.render(
+                                &mut canvas,
+                                scale_factor,
+                                viewport_rect.w as u32,
+                                provider.as_ref(),
+                                text_cache.as_ref(),
+                            );
+                            canvas.pop_transform();
+                            
+                            // Render toolbar content with hit regions (above viewport)
+                            let toolbar_rect = zone_manager.layout.get_zone(ZoneId::Toolbar);
+                            canvas.push_transform(Transform2D::translate(toolbar_rect.x, toolbar_rect.y));
+                            zone_manager.toolbar.render(&mut canvas, toolbar_rect);
+                            canvas.pop_transform();
+                        }
                         
                         // Register devtools hit regions (tabs and close button) if devtools is visible.
                         // Visual chrome is rendered in the RuneSurface overlay callback so it
                         // appears above all content, including raster images.
-                        if zone_manager.is_devtools_visible() {
+                        // Only register hit regions during full render (not background-only)
+                        if should_render_full && zone_manager.is_devtools_visible() {
                             let devtools_rect = zone_manager.layout.get_zone(ZoneId::DevTools);
                             canvas.push_transform(Transform2D::translate(devtools_rect.x, devtools_rect.y));
                             
@@ -632,23 +707,40 @@ pub fn run() -> Result<()> {
                         }
                         
                         // Build hit index from display list before ending frame
-                        hit_index = Some(engine_core::HitIndex::build(canvas.display_list()));
+                        // Only rebuild hit index during full render
+                        if should_render_full {
+                            hit_index = Some(engine_core::HitIndex::build(canvas.display_list()));
+                        }
                         
                         surf.end_frame(frame, canvas).ok();
-                        needs_redraw = false;
+                        
+                        // Clear flags after rendering
+                        if should_render_full {
+                            needs_redraw = false;
+                        }
+                        needs_background_redraw = false;
                     }
                     _ => {}
                 }
             }
             Event::AboutToWait => {
-                // Only redraw after resize has settled (200ms delay)
+                // Check debounce timer and request redraws as needed
                 if let Some(last_time) = last_resize_time {
-                    if last_time.elapsed() >= std::time::Duration::from_millis(200) {
-                        // Resize ended - trigger one final redraw
+                    let settled = last_time.elapsed() >= std::time::Duration::from_millis(200);
+                    let max_exceeded = first_resize_time
+                        .map(|t| t.elapsed() >= std::time::Duration::from_millis(300))
+                        .unwrap_or(false);
+                    
+                    if settled || max_exceeded {
+                        // Resize ended or max debounce exceeded - trigger full redraw
+                        eprintln!("[DEBOUNCE] Triggering full redraw - settled: {}, max_exceeded: {}, elapsed: {:?}",
+                            settled, max_exceeded, last_time.elapsed());
                         last_resize_time = None;
                         needs_redraw = true;
                         window.request_redraw();
                     }
+                    // Note: We don't request continuous redraws here to avoid overwhelming the system
+                    // The RedrawRequested handler will check the timer on each redraw anyway
                 } else if needs_redraw {
                     window.request_redraw();
                 }

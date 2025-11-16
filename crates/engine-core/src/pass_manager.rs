@@ -687,6 +687,9 @@ impl PassManager {
 
     /// Allocate or reuse intermediate texture matching the surface size.
     /// This texture is used for Vello-style smooth resizing.
+    /// 
+    /// Strategy: Always ensure texture matches exact size for MSAA resolve compatibility.
+    /// We preserve content by using LoadOp::Load when rendering, not by keeping oversized textures.
     pub fn ensure_intermediate_texture(
         &mut self,
         allocator: &mut RenderAllocator,
@@ -694,7 +697,11 @@ impl PassManager {
         height: u32,
     ) {
         let needs_realloc = match &self.intermediate_texture {
-            Some(tex) => tex.key.width != width || tex.key.height != height,
+            Some(tex) => {
+                // Reallocate if size doesn't match exactly
+                // MSAA resolve requires exact size match between MSAA texture and resolve target
+                tex.key.width != width || tex.key.height != height
+            }
             None => true,
         };
 
@@ -704,13 +711,15 @@ impl PassManager {
                 allocator.release_texture(old_tex);
             }
 
-            // Allocate new intermediate texture with surface format
+            // Allocate new intermediate texture with surface format at exact size
             let tex = allocator.allocate_texture(TexKey {
                 width,
                 height,
                 format: self.surface_format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_SRC
+                    | wgpu::TextureUsages::COPY_DST,
             });
             self.intermediate_texture = Some(tex);
         }
@@ -2298,6 +2307,10 @@ impl PassManager {
 
     /// Render the scene to intermediate texture, then blit to surface.
     /// This is the Vello-style approach that enables smooth window resizing.
+    /// 
+    /// If `preserve_intermediate` is true, the existing intermediate texture content
+    /// is preserved (LoadOp::Load), allowing incremental updates like background-only redraws.
+    /// Note: When size changes, texture is reallocated so preservation doesn't apply.
     pub fn render_frame_with_intermediate(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -2309,12 +2322,33 @@ impl PassManager {
         clear: wgpu::Color,
         _direct: bool,
         queue: &wgpu::Queue,
+        preserve_intermediate: bool,
     ) {
+        // Check if we need to reallocate (size changed)
+        let size_changed = match &self.intermediate_texture {
+            Some(tex) => {
+                let changed = tex.key.width != width || tex.key.height != height;
+                if changed {
+                    eprintln!("[INTERMEDIATE] Size change detected: {}x{} -> {}x{}", 
+                        tex.key.width, tex.key.height, width, height);
+                }
+                changed
+            }
+            None => {
+                eprintln!("[INTERMEDIATE] First allocation: {}x{}", width, height);
+                true
+            }
+        };
+        
         // Ensure intermediate texture is allocated and matches surface size
         self.ensure_intermediate_texture(allocator, width, height);
 
         // Get intermediate texture view
         let intermediate_view = &self.intermediate_texture.as_ref().unwrap().view;
+
+        // If size changed, we can't preserve content (texture was reallocated)
+        // So we must clear even if preserve_intermediate is true
+        let actually_preserve = preserve_intermediate && !size_changed;
 
         // IMPORTANT: Always render directly to intermediate texture (no compositor step)
         // The blit shader will handle the final flip when copying to surface
@@ -2328,7 +2362,7 @@ impl PassManager {
             clear,
             true, // Force direct rendering to avoid double-flip from compositor
             queue,
-            false, // Don't preserve intermediate texture
+            actually_preserve, // Only preserve if size didn't change
         );
 
         // Blit intermediate texture to surface (very fast operation)

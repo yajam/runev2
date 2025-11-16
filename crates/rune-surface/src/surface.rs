@@ -311,6 +311,7 @@ impl RuneSurface {
                 clear_wgpu,
                 self.direct,
                 &self.queue,
+                self.preserve_surface, // Preserve intermediate texture if requested
             );
         } else {
             self.pass.render_frame(

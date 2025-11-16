@@ -418,6 +418,7 @@ fn main() -> Result<()> {
                                         wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
                                         bypass,
                                         &queue,
+                                        false, // preserve_intermediate - false for demo-app (no resize optimization needed)
                                     );
                                 }
                             } else {
