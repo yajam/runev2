@@ -146,7 +146,7 @@ impl UiElementsScene {
         );
         // Add hit region for first checkbox
         p.hit_region_rect(CHECKBOX1_ID, cb0, 10);
-        
+
         // If checkbox1 is checked, draw the check mark
         if self.checkbox1_checked {
             let inset = 2.0f32;
@@ -171,7 +171,7 @@ impl UiElementsScene {
                 5,
             );
         }
-        
+
         p.text(
             engine_core::TextRun {
                 text: "Checkbox".to_string(),
@@ -222,7 +222,7 @@ impl UiElementsScene {
         );
         // Add hit region for second checkbox
         p.hit_region_rect(CHECKBOX2_ID, cb1, 10);
-        
+
         // If checkbox2 is checked, fill inner square (checked state background)
         if self.checkbox2_checked {
             let inset = 2.0f32;
@@ -542,7 +542,7 @@ impl Scene for UiElementsScene {
         y += 46.0; // buttons row
         let cb_size = 18.0f32;
         let inset = 2.0f32;
-        
+
         // Draw check mark for checkbox1 if checked
         if self.checkbox1_checked {
             let cb0_x = col1_x;
@@ -570,7 +570,7 @@ impl Scene for UiElementsScene {
                 );
             }
         }
-        
+
         // Draw check mark for checkbox2 if checked
         if self.checkbox2_checked {
             let cb1_x = col1_x + 160.0;

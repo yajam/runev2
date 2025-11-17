@@ -134,7 +134,9 @@ pub fn run() -> Result<()> {
     let mut zone_manager = ZoneManager::new(logical_width, logical_height);
 
     // Viewport IR content (formerly sample_ui)
-    let mut viewport_ir = viewport_ir::create_sample_elements();
+    let viewport_ir =
+        std::sync::Arc::new(std::sync::Mutex::new(viewport_ir::create_sample_elements()));
+    let viewport_ir_overlay = viewport_ir.clone();
 
     // Text layout cache for efficient resize performance
     let text_cache = std::sync::Arc::new(engine_core::TextLayoutCache::new(200));
@@ -169,7 +171,11 @@ pub fn run() -> Result<()> {
     let devtools_active_tab = std::sync::Arc::new(std::sync::Mutex::new(DevToolsTab::Elements));
     let devtools_active_tab_overlay = devtools_active_tab.clone();
 
-    // Overlay callback for toolbar chrome (always) and devtools chrome (when visible)
+    // Shared state for viewport scroll offset
+    let viewport_scroll_offset = std::sync::Arc::new(std::sync::Mutex::new(0.0f32));
+    let viewport_scroll_offset_overlay = viewport_scroll_offset.clone();
+
+    // Overlay callback for toolbar chrome (always), devtools chrome (when visible), and select dropdowns
     surf.set_overlay(Box::new(
         move |passes, encoder, view, queue, width, height| {
             // Recompute layout in logical coordinates for the current size (shared by toolbar/devtools).
@@ -243,285 +249,6 @@ pub fn run() -> Result<()> {
                 .with_stroke(white)
                 .with_stroke_width(1.5);
 
-            draw_svg_icon(
-                passes,
-                encoder,
-                view,
-                queue,
-                width,
-                height,
-                "images/panel-left.svg",
-                [toggle_x, toggle_y],
-                [toggle_size, toggle_size],
-                icon_style,
-            );
-
-            // Devtools toggle on the right
-            let devtools_x = toolbar_rect.x + toolbar_rect.w - toggle_size - toggle_margin;
-            let devtools_y = toolbar_rect.y + (toolbar_rect.h - toggle_size) * 0.5;
-
-            draw_svg_icon(
-                passes,
-                encoder,
-                view,
-                queue,
-                width,
-                height,
-                "images/inspection-panel.svg",
-                [devtools_x, devtools_y],
-                [toggle_size, toggle_size],
-                icon_style,
-            );
-
-            // --- Devtools overlay: only render when visible ---
-            if !*devtools_visible_overlay.lock().unwrap() {
-                return;
-            }
-
-            let devtools_rect = layout.get_zone(ZoneId::DevTools);
-
-            // Background panel: solid rounded-rect (zero radii => plain rect).
-            let rrect = RoundedRect {
-                rect: devtools_rect,
-                radii: RoundedRadii {
-                    tl: 0.0,
-                    tr: 0.0,
-                    br: 0.0,
-                    bl: 0.0,
-                },
-            };
-            passes.draw_filled_rounded_rect(
-                encoder,
-                view,
-                width,
-                height,
-                rrect,
-                devtools_style.bg_color,
-                queue,
-            );
-
-            // Optional border: draw a thin inset rectangle with border color.
-            if devtools_style.border_width > 0.0 {
-                let bw = devtools_style.border_width;
-                let inset_rect = Rect {
-                    x: devtools_rect.x + bw * 0.5,
-                    y: devtools_rect.y + bw * 0.5,
-                    w: (devtools_rect.w - bw).max(0.0),
-                    h: (devtools_rect.h - bw).max(0.0),
-                };
-                let border_rrect = RoundedRect {
-                    rect: inset_rect,
-                    radii: RoundedRadii {
-                        tl: 0.0,
-                        tr: 0.0,
-                        br: 0.0,
-                        bl: 0.0,
-                    },
-                };
-                passes.draw_filled_rounded_rect(
-                    encoder,
-                    view,
-                    width,
-                    height,
-                    border_rrect,
-                    devtools_style.border_color,
-                    queue,
-                );
-            }
-
-            // Header + tabs
-            let button_size = 18.0;
-            let tab_height = 24.0;
-            let tab_padding = 10.0;
-            let icon_text_gap = 6.0;
-            let white = ColorLinPremul::rgba(255, 255, 255, 255);
-            let inactive_color = ColorLinPremul::rgba(160, 170, 180, 255);
-            let header_bg = ColorLinPremul::rgba(34, 41, 60, 255);
-            let active_tab_bg = ColorLinPremul::rgba(54, 61, 80, 255);
-            let inactive_tab_bg = ColorLinPremul::rgba(40, 47, 66, 255);
-            let header_height = tab_height + 8.0;
-
-            // Header strip behind tabs
-            let header_rect = Rect {
-                x: devtools_rect.x,
-                y: devtools_rect.y,
-                w: devtools_rect.w,
-                h: header_height,
-            };
-            let header_rr = RoundedRect {
-                rect: header_rect,
-                radii: RoundedRadii {
-                    tl: 0.0,
-                    tr: 0.0,
-                    br: 0.0,
-                    bl: 0.0,
-                },
-            };
-            passes.draw_filled_rounded_rect(
-                encoder, view, width, height, header_rr, header_bg, queue,
-            );
-
-            // Active tab
-            let active_tab = *devtools_active_tab_overlay.lock().unwrap();
-
-            // Elements tab geometry
-            let elements_x = devtools_rect.x + tab_padding;
-            let elements_y = devtools_rect.y + (tab_height - button_size) * 0.5;
-            let elements_tab_width = button_size + icon_text_gap + 8.0 + 54.0 + tab_padding * 3.0;
-            let elements_rect = Rect {
-                x: elements_x,
-                y: elements_y,
-                w: elements_tab_width,
-                h: tab_height,
-            };
-            let is_elements_active = active_tab == DevToolsTab::Elements;
-            let elements_bg = if is_elements_active {
-                active_tab_bg
-            } else {
-                inactive_tab_bg
-            };
-            let elements_color = if is_elements_active {
-                white
-            } else {
-                inactive_color
-            };
-
-            let elements_rr = RoundedRect {
-                rect: elements_rect,
-                radii: RoundedRadii {
-                    tl: 0.0,
-                    tr: 0.0,
-                    br: 0.0,
-                    bl: 0.0,
-                },
-            };
-            passes.draw_filled_rounded_rect(
-                encoder,
-                view,
-                width,
-                height,
-                elements_rr,
-                elements_bg,
-                queue,
-            );
-
-            // Console tab geometry
-            let console_x = elements_x + elements_tab_width + 8.0;
-            let console_y = devtools_rect.y + (tab_height - button_size) * 0.5;
-            let console_tab_width = button_size + icon_text_gap + 8.0 + 50.0 + tab_padding * 3.0;
-            let console_rect = Rect {
-                x: console_x,
-                y: console_y,
-                w: console_tab_width,
-                h: tab_height,
-            };
-            let is_console_active = active_tab == DevToolsTab::Console;
-            let console_bg = if is_console_active {
-                active_tab_bg
-            } else {
-                inactive_tab_bg
-            };
-            let console_color = if is_console_active {
-                white
-            } else {
-                inactive_color
-            };
-
-            let console_rr = RoundedRect {
-                rect: console_rect,
-                radii: RoundedRadii {
-                    tl: 0.0,
-                    tr: 0.0,
-                    br: 0.0,
-                    bl: 0.0,
-                },
-            };
-            passes.draw_filled_rounded_rect(
-                encoder, view, width, height, console_rr, console_bg, queue,
-            );
-
-            // Labels and content text via text renderer
-            let mut overlay_list = engine_core::DisplayList {
-                viewport: engine_core::Viewport { width, height },
-                commands: Vec::new(),
-            };
-
-            // Elements label
-            let elements_label_run = TextRun {
-                text: "Elements".to_string(),
-                pos: [
-                    elements_x + button_size + icon_text_gap + 8.0,
-                    devtools_rect.y + tab_height - 6.0,
-                ],
-                size: 11.0,
-                color: elements_color,
-            };
-            overlay_list.commands.push(engine_core::Command::DrawText {
-                run: elements_label_run,
-                z: 10100,
-                transform: Transform2D::identity(),
-                id: 1,
-                dynamic: false,
-            });
-
-            // Console label
-            let console_label_run = TextRun {
-                text: "Console".to_string(),
-                pos: [
-                    console_x + button_size + icon_text_gap + 8.0,
-                    devtools_rect.y + tab_height - 6.0,
-                ],
-                size: 11.0,
-                color: console_color,
-            };
-            overlay_list.commands.push(engine_core::Command::DrawText {
-                run: console_label_run,
-                z: 10100,
-                transform: Transform2D::identity(),
-                id: 2,
-                dynamic: false,
-            });
-
-            // Content label inside devtools body based on active tab
-            let content_text = match active_tab {
-                DevToolsTab::Console => "Console",
-                DevToolsTab::Elements => "Elements",
-            };
-            let label_color: ColorLinPremul = ColorLinPremul::rgba(220, 230, 240, 255);
-            let content_label_run = TextRun {
-                text: content_text.to_string(),
-                pos: [
-                    devtools_rect.x + tab_padding + 4.0,
-                    devtools_rect.y + header_height + 14.0,
-                ],
-                size: 12.0,
-                color: label_color,
-            };
-            overlay_list.commands.push(engine_core::Command::DrawText {
-                run: content_label_run,
-                z: 10150,
-                transform: Transform2D::identity(),
-                id: 3,
-                dynamic: false,
-            });
-
-            passes.render_text_for_list(
-                encoder,
-                view,
-                &overlay_list,
-                queue,
-                overlay_provider.as_ref(),
-            );
-
-            // Icons and close button SVGs drawn on top
-            let icon_style_elements = engine_core::SvgStyle::new()
-                .with_stroke(elements_color)
-                .with_stroke_width(2.0);
-            let icon_style_console = engine_core::SvgStyle::new()
-                .with_stroke(console_color)
-                .with_stroke_width(2.0);
-            let close_white = white;
-
             // Helper to draw a styled SVG at the given origin and max size (rasterized).
             fn draw_svg_icon(
                 passes: &mut engine_core::PassManager,
@@ -559,14 +286,22 @@ pub fn run() -> Result<()> {
                 }
             }
 
-            let elements_icon_origin = [elements_x, elements_y];
-            let console_icon_origin = [console_x, console_y];
-            let close_size = 20.0;
-            let close_margin = 12.0;
-            let close_origin = [
-                devtools_rect.x + devtools_rect.w - close_size - close_margin,
-                devtools_rect.y + 6.0,
-            ];
+            draw_svg_icon(
+                passes,
+                encoder,
+                view,
+                queue,
+                width,
+                height,
+                "images/panel-left.svg",
+                [toggle_x, toggle_y],
+                [toggle_size, toggle_size],
+                icon_style,
+            );
+
+            // Devtools toggle on the right
+            let devtools_x = toolbar_rect.x + toolbar_rect.w - toggle_size - toggle_margin;
+            let devtools_y = toolbar_rect.y + (toolbar_rect.h - toggle_size) * 0.5;
 
             draw_svg_icon(
                 passes,
@@ -575,40 +310,314 @@ pub fn run() -> Result<()> {
                 queue,
                 width,
                 height,
-                "images/square-mouse-pointer.svg",
-                elements_icon_origin,
-                [button_size, button_size],
-                icon_style_elements,
+                "images/inspection-panel.svg",
+                [devtools_x, devtools_y],
+                [toggle_size, toggle_size],
+                icon_style,
             );
 
-            draw_svg_icon(
-                passes,
-                encoder,
-                view,
-                queue,
-                width,
-                height,
-                "images/square-terminal.svg",
-                console_icon_origin,
-                [button_size, button_size],
-                icon_style_console,
-            );
+            let devtools_visible = *devtools_visible_overlay.lock().unwrap();
+            if devtools_visible {
+                let devtools_rect = layout.get_zone(ZoneId::DevTools);
 
-            let close_icon_style = engine_core::SvgStyle::new()
-                .with_stroke(close_white)
-                .with_stroke_width(2.0);
-            draw_svg_icon(
-                passes,
-                encoder,
-                view,
-                queue,
-                width,
-                height,
-                "images/x.svg",
-                close_origin,
-                [close_size, close_size],
-                close_icon_style,
-            );
+                // Background panel: solid rounded-rect (zero radii => plain rect).
+                let rrect = RoundedRect {
+                    rect: devtools_rect,
+                    radii: RoundedRadii {
+                        tl: 0.0,
+                        tr: 0.0,
+                        br: 0.0,
+                        bl: 0.0,
+                    },
+                };
+                passes.draw_filled_rounded_rect(
+                    encoder,
+                    view,
+                    width,
+                    height,
+                    rrect,
+                    devtools_style.bg_color,
+                    queue,
+                );
+
+                // Optional border: draw a thin inset rectangle with border color.
+                if devtools_style.border_width > 0.0 {
+                    let bw = devtools_style.border_width;
+                    let inset_rect = Rect {
+                        x: devtools_rect.x + bw * 0.5,
+                        y: devtools_rect.y + bw * 0.5,
+                        w: (devtools_rect.w - bw).max(0.0),
+                        h: (devtools_rect.h - bw).max(0.0),
+                    };
+                    let border_rrect = RoundedRect {
+                        rect: inset_rect,
+                        radii: RoundedRadii {
+                            tl: 0.0,
+                            tr: 0.0,
+                            br: 0.0,
+                            bl: 0.0,
+                        },
+                    };
+                    passes.draw_filled_rounded_rect(
+                        encoder,
+                        view,
+                        width,
+                        height,
+                        border_rrect,
+                        devtools_style.border_color,
+                        queue,
+                    );
+                }
+
+                // Header + tabs
+                let button_size = 18.0;
+                let tab_height = 24.0;
+                let tab_padding = 10.0;
+                let icon_text_gap = 6.0;
+                let white = ColorLinPremul::rgba(255, 255, 255, 255);
+                let inactive_color = ColorLinPremul::rgba(160, 170, 180, 255);
+                let header_bg = ColorLinPremul::rgba(34, 41, 60, 255);
+                let active_tab_bg = ColorLinPremul::rgba(54, 61, 80, 255);
+                let inactive_tab_bg = ColorLinPremul::rgba(40, 47, 66, 255);
+                let header_height = tab_height + 8.0;
+
+                // Header strip behind tabs
+                let header_rect = Rect {
+                    x: devtools_rect.x,
+                    y: devtools_rect.y,
+                    w: devtools_rect.w,
+                    h: header_height,
+                };
+                let header_rr = RoundedRect {
+                    rect: header_rect,
+                    radii: RoundedRadii {
+                        tl: 0.0,
+                        tr: 0.0,
+                        br: 0.0,
+                        bl: 0.0,
+                    },
+                };
+                passes.draw_filled_rounded_rect(
+                    encoder, view, width, height, header_rr, header_bg, queue,
+                );
+
+                // Active tab
+                let active_tab = *devtools_active_tab_overlay.lock().unwrap();
+
+                // Elements tab geometry
+                let elements_x = devtools_rect.x + tab_padding;
+                let elements_y = devtools_rect.y + (tab_height - button_size) * 0.5;
+                let elements_tab_width =
+                    button_size + icon_text_gap + 8.0 + 54.0 + tab_padding * 3.0;
+                let elements_rect = Rect {
+                    x: elements_x,
+                    y: elements_y,
+                    w: elements_tab_width,
+                    h: tab_height,
+                };
+                let is_elements_active = active_tab == DevToolsTab::Elements;
+                let elements_bg = if is_elements_active {
+                    active_tab_bg
+                } else {
+                    inactive_tab_bg
+                };
+                let elements_color = if is_elements_active {
+                    white
+                } else {
+                    inactive_color
+                };
+
+                let elements_rr = RoundedRect {
+                    rect: elements_rect,
+                    radii: RoundedRadii {
+                        tl: 0.0,
+                        tr: 0.0,
+                        br: 0.0,
+                        bl: 0.0,
+                    },
+                };
+                passes.draw_filled_rounded_rect(
+                    encoder,
+                    view,
+                    width,
+                    height,
+                    elements_rr,
+                    elements_bg,
+                    queue,
+                );
+
+                // Console tab geometry
+                let console_x = elements_x + elements_tab_width + 8.0;
+                let console_y = devtools_rect.y + (tab_height - button_size) * 0.5;
+                let console_tab_width =
+                    button_size + icon_text_gap + 8.0 + 50.0 + tab_padding * 3.0;
+                let console_rect = Rect {
+                    x: console_x,
+                    y: console_y,
+                    w: console_tab_width,
+                    h: tab_height,
+                };
+                let is_console_active = active_tab == DevToolsTab::Console;
+                let console_bg = if is_console_active {
+                    active_tab_bg
+                } else {
+                    inactive_tab_bg
+                };
+                let console_color = if is_console_active {
+                    white
+                } else {
+                    inactive_color
+                };
+
+                let console_rr = RoundedRect {
+                    rect: console_rect,
+                    radii: RoundedRadii {
+                        tl: 0.0,
+                        tr: 0.0,
+                        br: 0.0,
+                        bl: 0.0,
+                    },
+                };
+                passes.draw_filled_rounded_rect(
+                    encoder, view, width, height, console_rr, console_bg, queue,
+                );
+
+                // Labels and content text via text renderer
+                let mut overlay_list = engine_core::DisplayList {
+                    viewport: engine_core::Viewport { width, height },
+                    commands: Vec::new(),
+                };
+
+                // Elements label
+                let elements_label_run = TextRun {
+                    text: "Elements".to_string(),
+                    pos: [
+                        elements_x + button_size + icon_text_gap + 8.0,
+                        devtools_rect.y + tab_height - 6.0,
+                    ],
+                    size: 11.0,
+                    color: elements_color,
+                };
+                overlay_list.commands.push(engine_core::Command::DrawText {
+                    run: elements_label_run,
+                    z: 10100,
+                    transform: Transform2D::identity(),
+                    id: 1,
+                    dynamic: false,
+                });
+
+                // Console label
+                let console_label_run = TextRun {
+                    text: "Console".to_string(),
+                    pos: [
+                        console_x + button_size + icon_text_gap + 8.0,
+                        devtools_rect.y + tab_height - 6.0,
+                    ],
+                    size: 11.0,
+                    color: console_color,
+                };
+                overlay_list.commands.push(engine_core::Command::DrawText {
+                    run: console_label_run,
+                    z: 10100,
+                    transform: Transform2D::identity(),
+                    id: 2,
+                    dynamic: false,
+                });
+
+                // Content label inside devtools body based on active tab
+                let content_text = match active_tab {
+                    DevToolsTab::Console => "Console",
+                    DevToolsTab::Elements => "Elements",
+                };
+                let label_color: ColorLinPremul = ColorLinPremul::rgba(220, 230, 240, 255);
+                let content_label_run = TextRun {
+                    text: content_text.to_string(),
+                    pos: [
+                        devtools_rect.x + tab_padding + 4.0,
+                        devtools_rect.y + header_height + 14.0,
+                    ],
+                    size: 12.0,
+                    color: label_color,
+                };
+                overlay_list.commands.push(engine_core::Command::DrawText {
+                    run: content_label_run,
+                    z: 10150,
+                    transform: Transform2D::identity(),
+                    id: 3,
+                    dynamic: false,
+                });
+
+                passes.render_text_for_list(
+                    encoder,
+                    view,
+                    &overlay_list,
+                    queue,
+                    overlay_provider.as_ref(),
+                );
+
+                // Icons and close button SVGs drawn on top
+                let icon_style_elements = engine_core::SvgStyle::new()
+                    .with_stroke(elements_color)
+                    .with_stroke_width(2.0);
+                let icon_style_console = engine_core::SvgStyle::new()
+                    .with_stroke(console_color)
+                    .with_stroke_width(2.0);
+                let close_white = white;
+
+                let elements_icon_origin = [elements_x, elements_y];
+                let console_icon_origin = [console_x, console_y];
+                let close_size = 20.0;
+                let close_margin = 12.0;
+                let close_origin = [
+                    devtools_rect.x + devtools_rect.w - close_size - close_margin,
+                    devtools_rect.y + 6.0,
+                ];
+
+                draw_svg_icon(
+                    passes,
+                    encoder,
+                    view,
+                    queue,
+                    width,
+                    height,
+                    "images/square-mouse-pointer.svg",
+                    elements_icon_origin,
+                    [button_size, button_size],
+                    icon_style_elements,
+                );
+
+                draw_svg_icon(
+                    passes,
+                    encoder,
+                    view,
+                    queue,
+                    width,
+                    height,
+                    "images/square-terminal.svg",
+                    console_icon_origin,
+                    [button_size, button_size],
+                    icon_style_console,
+                );
+
+                let close_icon_style = engine_core::SvgStyle::new()
+                    .with_stroke(close_white)
+                    .with_stroke_width(2.0);
+                draw_svg_icon(
+                    passes,
+                    encoder,
+                    view,
+                    queue,
+                    width,
+                    height,
+                    "images/x.svg",
+                    close_origin,
+                    [close_size, close_size],
+                    close_icon_style,
+                );
+            }
+
+            // Note: Select dropdown overlays are now rendered in viewport_ir.rs
+            // at the end of the render pass with high z-index (10000+)
         },
     ));
 
@@ -646,8 +655,10 @@ pub fn run() -> Result<()> {
                         let viewport_local_y =
                             logical_y - viewport_rect.y + zone_manager.viewport.scroll_offset;
 
+                        let mut viewport_ir_lock = viewport_ir.lock().unwrap();
+
                         // Check if any input box is in mouse selection mode
-                        for input_box in viewport_ir.input_boxes.iter_mut() {
+                        for input_box in viewport_ir_lock.input_boxes.iter_mut() {
                             if input_box.focused {
                                 // Extend selection based on click count
                                 if click_count == 3 {
@@ -674,7 +685,7 @@ pub fn run() -> Result<()> {
                         }
 
                         // Check if any text area is in mouse selection mode
-                        for textarea in viewport_ir.text_areas.iter_mut() {
+                        for textarea in viewport_ir_lock.text_areas.iter_mut() {
                             if textarea.focused {
                                 // Extend selection based on click count
                                 if click_count == 3 {
@@ -710,21 +721,25 @@ pub fn run() -> Result<()> {
 
                         let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
                         zone_manager.viewport.scroll(-scroll_delta, viewport_rect.h);
+                        *viewport_scroll_offset.lock().unwrap() =
+                            zone_manager.viewport.scroll_offset;
                         needs_redraw = true;
                         window.request_redraw();
                     }
                     WindowEvent::MouseInput { state, button, .. } => {
+                        let mut viewport_ir_lock = viewport_ir.lock().unwrap();
+
                         if button == winit::event::MouseButton::Left
                             && state == winit::event::ElementState::Released
                         {
                             // End mouse selection on button release
-                            for input_box in viewport_ir.input_boxes.iter_mut() {
+                            for input_box in viewport_ir_lock.input_boxes.iter_mut() {
                                 if input_box.focused {
                                     input_box.end_mouse_selection();
                                     break;
                                 }
                             }
-                            for textarea in viewport_ir.text_areas.iter_mut() {
+                            for textarea in viewport_ir_lock.text_areas.iter_mut() {
                                 if textarea.focused {
                                     textarea.end_mouse_selection();
                                     break;
@@ -760,7 +775,7 @@ pub fn run() -> Result<()> {
 
                                 let mut clicked_input = false;
                                 for (idx, input_box) in
-                                    viewport_ir.input_boxes.iter_mut().enumerate()
+                                    viewport_ir_lock.input_boxes.iter_mut().enumerate()
                                 {
                                     let in_bounds = viewport_local_x >= input_box.rect.x
                                         && viewport_local_x <= input_box.rect.x + input_box.rect.w
@@ -769,10 +784,10 @@ pub fn run() -> Result<()> {
 
                                     if in_bounds {
                                         // Unfocus all, focus this one
-                                        for other in viewport_ir.input_boxes.iter_mut() {
+                                        for other in viewport_ir_lock.input_boxes.iter_mut() {
                                             other.focused = false;
                                         }
-                                        let input = &mut viewport_ir.input_boxes[idx];
+                                        let input = &mut viewport_ir_lock.input_boxes[idx];
                                         input.focused = true;
 
                                         // Phase 5: Handle double-click and triple-click
@@ -808,7 +823,7 @@ pub fn run() -> Result<()> {
                                 let mut clicked_textarea = false;
                                 if !clicked_input {
                                     for (idx, textarea) in
-                                        viewport_ir.text_areas.iter_mut().enumerate()
+                                        viewport_ir_lock.text_areas.iter_mut().enumerate()
                                     {
                                         let in_bounds = viewport_local_x >= textarea.rect.x
                                             && viewport_local_x
@@ -819,14 +834,14 @@ pub fn run() -> Result<()> {
 
                                         if in_bounds {
                                             // Unfocus all input boxes and text areas
-                                            for input in viewport_ir.input_boxes.iter_mut() {
+                                            for input in viewport_ir_lock.input_boxes.iter_mut() {
                                                 input.focused = false;
                                             }
-                                            for other in viewport_ir.text_areas.iter_mut() {
+                                            for other in viewport_ir_lock.text_areas.iter_mut() {
                                                 other.focused = false;
                                             }
 
-                                            let textarea = &mut viewport_ir.text_areas[idx];
+                                            let textarea = &mut viewport_ir_lock.text_areas[idx];
                                             textarea.focused = true;
 
                                             // Handle double-click and triple-click
@@ -859,7 +874,9 @@ pub fn run() -> Result<()> {
                                 // Check if click is on a checkbox or its label (adjust for viewport transform and scroll)
                                 let mut clicked_checkbox = false;
                                 if !clicked_input && !clicked_textarea {
-                                    for (idx, checkbox) in viewport_ir.checkboxes.iter_mut().enumerate() {
+                                    for (idx, checkbox) in
+                                        viewport_ir_lock.checkboxes.iter_mut().enumerate()
+                                    {
                                         // Calculate clickable area including label
                                         // Label starts at rect.x + rect.w + 8.0 (8px gap)
                                         // Estimate label width: ~7px per character at 16px font size (conservative estimate)
@@ -869,34 +886,37 @@ pub fn run() -> Result<()> {
                                         } else {
                                             0.0
                                         };
-                                        
+
                                         // Clickable area includes checkbox + label
                                         let clickable_width = checkbox.rect.w + label_width;
-                                        let clickable_height = checkbox.rect.h.max(checkbox.label_size * 1.2); // ensure label height is covered
-                                        
+                                        let clickable_height =
+                                            checkbox.rect.h.max(checkbox.label_size * 1.2); // ensure label height is covered
+
                                         let in_bounds = viewport_local_x >= checkbox.rect.x
-                                            && viewport_local_x <= checkbox.rect.x + clickable_width
+                                            && viewport_local_x
+                                                <= checkbox.rect.x + clickable_width
                                             && viewport_local_y >= checkbox.rect.y
-                                            && viewport_local_y <= checkbox.rect.y + clickable_height;
+                                            && viewport_local_y
+                                                <= checkbox.rect.y + clickable_height;
 
                                         if in_bounds {
                                             // Toggle the checkbox
                                             checkbox.checked = !checkbox.checked;
-                                            
+
                                             // Clear focus from all checkboxes, input boxes, and text areas
-                                            for cb in viewport_ir.checkboxes.iter_mut() {
+                                            for cb in viewport_ir_lock.checkboxes.iter_mut() {
                                                 cb.focused = false;
                                             }
-                                            for input in viewport_ir.input_boxes.iter_mut() {
+                                            for input in viewport_ir_lock.input_boxes.iter_mut() {
                                                 input.focused = false;
                                             }
-                                            for ta in viewport_ir.text_areas.iter_mut() {
+                                            for ta in viewport_ir_lock.text_areas.iter_mut() {
                                                 ta.focused = false;
                                             }
-                                            
+
                                             // Set focus on clicked checkbox
-                                            viewport_ir.checkboxes[idx].focused = true;
-                                            
+                                            viewport_ir_lock.checkboxes[idx].focused = true;
+
                                             clicked_checkbox = true;
                                             needs_redraw = true;
                                             window.request_redraw();
@@ -908,13 +928,15 @@ pub fn run() -> Result<()> {
                                 // Check if click is on a radio button or its label (adjust for viewport transform and scroll)
                                 let mut clicked_radio = false;
                                 if !clicked_input && !clicked_textarea && !clicked_checkbox {
-                                    for (idx, radio) in viewport_ir.radios.iter_mut().enumerate() {
+                                    for (idx, radio) in
+                                        viewport_ir_lock.radios.iter_mut().enumerate()
+                                    {
                                         // Calculate clickable area including label
                                         // Radio uses center and radius, so convert to bounds
                                         let radio_left = radio.center[0] - radio.radius;
                                         let radio_top = radio.center[1] - radio.radius;
                                         let radio_size = radio.radius * 2.0;
-                                        
+
                                         // Label starts at center[0] + radius + 8.0 (8px gap)
                                         let label_width = if let Some(label) = radio.label {
                                             let char_width = radio.label_size * 0.5; // rough estimate
@@ -922,11 +944,12 @@ pub fn run() -> Result<()> {
                                         } else {
                                             0.0
                                         };
-                                        
+
                                         // Clickable area includes radio circle + label
                                         let clickable_width = radio_size + label_width;
-                                        let clickable_height = radio_size.max(radio.label_size * 1.2);
-                                        
+                                        let clickable_height =
+                                            radio_size.max(radio.label_size * 1.2);
+
                                         let in_bounds = viewport_local_x >= radio_left
                                             && viewport_local_x <= radio_left + clickable_width
                                             && viewport_local_y >= radio_top
@@ -934,25 +957,27 @@ pub fn run() -> Result<()> {
 
                                         if in_bounds {
                                             // Select this radio button and deselect all others in the group
-                                            for (i, r) in viewport_ir.radios.iter_mut().enumerate() {
+                                            for (i, r) in
+                                                viewport_ir_lock.radios.iter_mut().enumerate()
+                                            {
                                                 r.selected = i == idx;
                                                 r.focused = false;
                                             }
-                                            
+
                                             // Clear focus from all other UI elements
-                                            for cb in viewport_ir.checkboxes.iter_mut() {
+                                            for cb in viewport_ir_lock.checkboxes.iter_mut() {
                                                 cb.focused = false;
                                             }
-                                            for input in viewport_ir.input_boxes.iter_mut() {
+                                            for input in viewport_ir_lock.input_boxes.iter_mut() {
                                                 input.focused = false;
                                             }
-                                            for ta in viewport_ir.text_areas.iter_mut() {
+                                            for ta in viewport_ir_lock.text_areas.iter_mut() {
                                                 ta.focused = false;
                                             }
-                                            
+
                                             // Set focus on clicked radio button
-                                            viewport_ir.radios[idx].focused = true;
-                                            
+                                            viewport_ir_lock.radios[idx].focused = true;
+
                                             clicked_radio = true;
                                             needs_redraw = true;
                                             window.request_redraw();
@@ -961,32 +986,92 @@ pub fn run() -> Result<()> {
                                     }
                                 }
 
-                                // If clicked outside all input boxes, text areas, checkboxes, and radios, unfocus all
-                                if !clicked_input && !clicked_textarea && !clicked_checkbox && !clicked_radio {
-                                    for input_box in viewport_ir.input_boxes.iter_mut() {
+                                // Check if click is on a select dropdown (adjust for viewport transform and scroll)
+                                let mut clicked_select = false;
+                                if !clicked_input
+                                    && !clicked_textarea
+                                    && !clicked_checkbox
+                                    && !clicked_radio
+                                {
+                                    for (idx, select) in
+                                        viewport_ir_lock.selects.iter_mut().enumerate()
+                                    {
+                                        let in_bounds = viewport_local_x >= select.rect.x
+                                            && viewport_local_x <= select.rect.x + select.rect.w
+                                            && viewport_local_y >= select.rect.y
+                                            && viewport_local_y <= select.rect.y + select.rect.h;
+
+                                        if in_bounds {
+                                            // Toggle the select dropdown
+                                            select.open = !select.open;
+
+                                            // Clear focus from all other UI elements
+                                            for cb in viewport_ir_lock.checkboxes.iter_mut() {
+                                                cb.focused = false;
+                                            }
+                                            for input in viewport_ir_lock.input_boxes.iter_mut() {
+                                                input.focused = false;
+                                            }
+                                            for ta in viewport_ir_lock.text_areas.iter_mut() {
+                                                ta.focused = false;
+                                            }
+                                            for r in viewport_ir_lock.radios.iter_mut() {
+                                                r.focused = false;
+                                            }
+                                            for s in viewport_ir_lock.selects.iter_mut() {
+                                                s.focused = false;
+                                            }
+
+                                            // Set focus on clicked select
+                                            viewport_ir_lock.selects[idx].focused = true;
+
+                                            clicked_select = true;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                // If clicked outside all input boxes, text areas, checkboxes, radios, and selects, unfocus all
+                                if !clicked_input
+                                    && !clicked_textarea
+                                    && !clicked_checkbox
+                                    && !clicked_radio
+                                    && !clicked_select
+                                {
+                                    for input_box in viewport_ir_lock.input_boxes.iter_mut() {
                                         if input_box.focused {
                                             input_box.focused = false;
                                             needs_redraw = true;
                                             window.request_redraw();
                                         }
                                     }
-                                    for textarea in viewport_ir.text_areas.iter_mut() {
+                                    for textarea in viewport_ir_lock.text_areas.iter_mut() {
                                         if textarea.focused {
                                             textarea.focused = false;
                                             needs_redraw = true;
                                             window.request_redraw();
                                         }
                                     }
-                                    for checkbox in viewport_ir.checkboxes.iter_mut() {
+                                    for checkbox in viewport_ir_lock.checkboxes.iter_mut() {
                                         if checkbox.focused {
                                             checkbox.focused = false;
                                             needs_redraw = true;
                                             window.request_redraw();
                                         }
                                     }
-                                    for radio in viewport_ir.radios.iter_mut() {
+                                    for radio in viewport_ir_lock.radios.iter_mut() {
                                         if radio.focused {
                                             radio.focused = false;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                    for select in viewport_ir_lock.selects.iter_mut() {
+                                        if select.focused || select.open {
+                                            select.focused = false;
+                                            select.open = false;
                                             needs_redraw = true;
                                             window.request_redraw();
                                         }
@@ -994,8 +1079,13 @@ pub fn run() -> Result<()> {
                                 }
 
                                 // Perform hit test using the stored hit index
-                                // Only if we didn't click on an input box, text area, checkbox, or radio
-                                if !clicked_input && !clicked_textarea && !clicked_checkbox && !clicked_radio {
+                                // Only if we didn't click on an input box, text area, checkbox, radio, or select
+                                if !clicked_input
+                                    && !clicked_textarea
+                                    && !clicked_checkbox
+                                    && !clicked_radio
+                                    && !clicked_select
+                                {
                                     if let Some(ref index) = hit_index {
                                         if let Some(hit) = index.topmost_at([logical_x, logical_y])
                                         {
@@ -1058,14 +1148,18 @@ pub fn run() -> Result<()> {
                     WindowEvent::KeyboardInput { event, .. } => {
                         use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 
+                        let mut viewport_ir_lock = viewport_ir.lock().unwrap();
+
                         // Baseline single-line InputBox editing path for viewport_ir:
                         // keyboard events are translated into InputBox editing methods
                         // (insert_char, delete_before_cursor, cursor movement, etc.).
                         // Phase 0 keeps this wiring as the source of truth while
                         // allowing InputBox to internally toggle its TextLayout backend.
                         // Find the focused input box
-                        if let Some(focused_input) =
-                            viewport_ir.input_boxes.iter_mut().find(|ib| ib.focused)
+                        if let Some(focused_input) = viewport_ir_lock
+                            .input_boxes
+                            .iter_mut()
+                            .find(|ib| ib.focused)
                         {
                             if event.state == winit::event::ElementState::Pressed {
                                 let has_cmd = modifiers_state.contains(ModifiersState::SUPER);
@@ -1260,7 +1354,7 @@ pub fn run() -> Result<()> {
                                 }
                             }
                         } else if let Some(focused_textarea) =
-                            viewport_ir.text_areas.iter_mut().find(|ta| ta.focused)
+                            viewport_ir_lock.text_areas.iter_mut().find(|ta| ta.focused)
                         {
                             // TextArea keyboard handling (multi-line editing)
                             if event.state == winit::event::ElementState::Pressed {
@@ -1578,21 +1672,24 @@ pub fn run() -> Result<()> {
                             let delta_time = (now - last_frame_time).as_secs_f32();
                             last_frame_time = now;
 
-                            for input_box in viewport_ir.input_boxes.iter_mut() {
-                                input_box.update_blink(delta_time);
-                            }
-
-                            for textarea in viewport_ir.text_areas.iter_mut() {
-                                textarea.update_blink(delta_time);
-                            }
-
-                            // Request continuous redraw for cursor blinking while any input or textarea is focused.
-                            if viewport_ir.input_boxes.iter().any(|ib| ib.focused)
-                                || viewport_ir.text_areas.iter().any(|ta| ta.focused)
                             {
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
+                                let mut viewport_ir_lock = viewport_ir.lock().unwrap();
+                                for input_box in viewport_ir_lock.input_boxes.iter_mut() {
+                                    input_box.update_blink(delta_time);
+                                }
+
+                                for textarea in viewport_ir_lock.text_areas.iter_mut() {
+                                    textarea.update_blink(delta_time);
+                                }
+
+                                // Request continuous redraw for cursor blinking while any input or textarea is focused.
+                                if viewport_ir_lock.input_boxes.iter().any(|ib| ib.focused)
+                                    || viewport_ir_lock.text_areas.iter().any(|ta| ta.focused)
+                                {
+                                    needs_redraw = true;
+                                    window.request_redraw();
+                                }
+                            } // Release viewport_ir lock
 
                             // Render sample UI elements in viewport zone with local coordinates.
                             let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
@@ -1618,13 +1715,16 @@ pub fn run() -> Result<()> {
                                 -zone_manager.viewport.scroll_offset,
                             ));
 
-                            let content_height = viewport_ir.render(
-                                &mut canvas,
-                                scale_factor,
-                                viewport_rect.w as u32,
-                                provider.as_ref(),
-                                text_cache.as_ref(),
-                            );
+                            let content_height = {
+                                let mut viewport_ir_lock = viewport_ir.lock().unwrap();
+                                viewport_ir_lock.render(
+                                    &mut canvas,
+                                    scale_factor,
+                                    viewport_rect.w as u32,
+                                    provider.as_ref(),
+                                    text_cache.as_ref(),
+                                )
+                            };
 
                             canvas.pop_transform(); // Pop scroll transform
                             canvas.pop_clip(); // Pop clip rect
@@ -1735,8 +1835,10 @@ pub fn run() -> Result<()> {
                         // Keep needs_redraw true while an input box is focused so
                         // cursor blinking continues to drive redraws.
                         if should_render_full {
-                            let any_focused_input =
-                                viewport_ir.input_boxes.iter().any(|ib| ib.focused);
+                            let any_focused_input = {
+                                let viewport_ir_lock = viewport_ir.lock().unwrap();
+                                viewport_ir_lock.input_boxes.iter().any(|ib| ib.focused)
+                            };
                             if !any_focused_input {
                                 needs_redraw = false;
                             }

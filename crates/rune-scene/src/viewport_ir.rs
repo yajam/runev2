@@ -66,6 +66,8 @@ pub struct SelectData {
     pub label_color: ColorLinPremul,
     pub open: bool,
     pub focused: bool,
+    pub options: Vec<String>,
+    pub selected_index: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -277,8 +279,16 @@ pub fn create_sample_elements() -> SampleUIElements {
         label: "Select an option",
         label_size: 16.0,
         label_color: Color::rgba(240, 240, 240, 255),
-        open: false,
+        open: true, // Set to true for testing
         focused: false,
+        options: vec![
+            "Option 1".to_string(),
+            "Option 2".to_string(),
+            "Option 3".to_string(),
+            "Option 4".to_string(),
+            "Option 5".to_string(),
+        ],
+        selected_index: Some(0),
     }];
 
     let labels = vec![LabelData {
@@ -514,7 +524,7 @@ impl SampleUIElements {
                 color: cb_data.color,
             };
             cb.render(canvas, 20);
-            
+
             // Register hit region for checkbox
             let region_id = match idx {
                 0 => CHECKBOX1_REGION_ID,
@@ -562,15 +572,17 @@ impl SampleUIElements {
             textarea.render(canvas, 60, provider);
         }
 
-        // Render all selects (z=70)
+        // Render all selects (z=70) - but NOT their dropdown overlays yet
         for select_data in self.selects.iter() {
             let select = elements::select::Select {
                 rect: select_data.rect,
                 label: select_data.label.to_string(),
                 label_size: select_data.label_size,
                 label_color: select_data.label_color,
-                open: select_data.open,
+                open: false, // Temporarily set to false to skip overlay rendering
                 focused: select_data.focused,
+                options: select_data.options.clone(),
+                selected_index: select_data.selected_index,
             };
             select.render(canvas, 70);
         }
@@ -685,6 +697,25 @@ impl SampleUIElements {
         // Account for multiline text height based on actual layout result
         let multiline_bottom = self.multiline_y + multiline_height;
         max_y = max_y.max(multiline_bottom);
+
+        // Render select dropdown overlays LAST with very high z-index
+        // This ensures they appear above all viewport content
+        for select_data in self.selects.iter() {
+            if select_data.open {
+                let select = elements::select::Select {
+                    rect: select_data.rect,
+                    label: select_data.label.to_string(),
+                    label_size: select_data.label_size,
+                    label_color: select_data.label_color,
+                    open: select_data.open,
+                    focused: select_data.focused,
+                    options: select_data.options.clone(),
+                    selected_index: select_data.selected_index,
+                };
+                // Render the entire select (which will render the overlay) at very high z
+                select.render(canvas, 10000);
+            }
+        }
 
         max_y
     }

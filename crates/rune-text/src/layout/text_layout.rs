@@ -160,8 +160,7 @@ impl TextLayout {
 
     fn resolve_line_height(line_height_override: Option<f32>, scaled: &ScaledFontMetrics) -> f32 {
         let min_height = scaled.ascent + scaled.descent;
-        line_height_override
-            .unwrap_or(min_height + scaled.line_gap)
+        line_height_override.unwrap_or(min_height + scaled.line_gap)
     }
 
     /// Convenience: layout text using a default system font.
