@@ -4,7 +4,7 @@ pub mod loader;
 
 pub use metrics::{FontMetrics, ScaledFontMetrics};
 pub use face::FontFace;
-pub use loader::{FontCache, FontKey};
+pub use loader::{FontCache, FontKey, load_system_default_font};
 
 use core::fmt;
 
@@ -34,4 +34,3 @@ impl From<std::io::Error> for FontError {
 
 /// Convenient result alias for font-related operations.
 pub type Result<T> = std::result::Result<T, FontError>;
-

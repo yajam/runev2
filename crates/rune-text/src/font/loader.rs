@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use hashbrown::HashMap;
 
-use crate::font::{FontFace, Result};
+use crate::font::{FontError, FontFace, Result};
 
 /// Key for identifying a font within the cache.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -66,4 +66,42 @@ impl FontCache {
 /// Load a font face directly from disk without caching.
 pub fn load_font(path: impl AsRef<Path>, index: usize) -> Result<FontFace> {
     FontFace::from_path(path, index)
+}
+
+/// Load a reasonable default system sans-serif font using `fontdb`.
+///
+/// This mirrors the selection used by `engine-core::RuneTextProvider::from_system_fonts`
+/// so that layout metrics match the primary rendering path.
+pub fn load_system_default_font() -> Result<FontFace> {
+    use fontdb::{Database, Family, Query, Source, Style, Stretch, Weight};
+
+    let mut db = Database::new();
+    db.load_system_fonts();
+
+    let id = db
+        .query(&Query {
+            families: &[
+                Family::SansSerif,
+                Family::Name("Segoe UI".into()),
+                Family::Name("SF Pro Text".into()),
+                Family::Name("Arial".into()),
+            ],
+            weight: Weight::NORMAL,
+            stretch: Stretch::Normal,
+            style: Style::Normal,
+            ..Query::default()
+        })
+        .ok_or(FontError::InvalidFont)?;
+
+    let face = db
+        .face(id)
+        .ok_or(FontError::InvalidFont)?;
+
+    let bytes: Vec<u8> = match &face.source {
+        Source::File(path) => std::fs::read(path)?,
+        Source::Binary(data) => data.as_ref().as_ref().to_vec(),
+        Source::SharedFile(_, data) => data.as_ref().as_ref().to_vec(),
+    };
+
+    FontFace::from_vec(bytes, face.index as usize)
 }

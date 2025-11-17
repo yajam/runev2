@@ -17,7 +17,7 @@ use engine_core::{
 pub mod elements;
 pub mod text;
 pub mod zones;
-pub mod sample_ui;
+pub mod viewport_ir;
 
 use zones::{ZoneManager, ZoneId, DevToolsTab, TOGGLE_BUTTON_REGION_ID, DEVTOOLS_BUTTON_REGION_ID, DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_ELEMENTS_TAB_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID};
 
@@ -130,8 +130,8 @@ pub fn run() -> Result<()> {
     let logical_height = (size.height as f32 / scale_factor) as u32;
     let mut zone_manager = ZoneManager::new(logical_width, logical_height);
     
-    // Sample UI elements (will be replaced with IR-based rendering)
-    let mut sample_ui = sample_ui::create_sample_elements();
+    // Viewport IR content (formerly sample_ui)
+    let mut viewport_ir = viewport_ir::create_sample_elements();
     
     // Text layout cache for efficient resize performance
     let text_cache = std::sync::Arc::new(engine_core::TextLayoutCache::new(200));
@@ -562,13 +562,55 @@ pub fn run() -> Result<()> {
     // Track time for cursor blink animation
     let mut last_frame_time = std::time::Instant::now();
     
+    // Track modifier keys state
+    let mut modifiers_state = winit::keyboard::ModifiersState::empty();
+    
+    // Phase 5: Track click timing for double-click and triple-click detection
+    let mut last_click_time: Option<std::time::Instant> = None;
+    let mut click_count: u32 = 0;
+    let double_click_threshold = std::time::Duration::from_millis(500);
+    
     Ok(event_loop.run(move |event, elwt| {
         match event {
             Event::WindowEvent { window_id, event } if window_id == window.id() => {
                 match event {
                     WindowEvent::CloseRequested => elwt.exit(),
+                    WindowEvent::ModifiersChanged(new_state) => {
+                        modifiers_state = new_state.state();
+                    }
                     WindowEvent::CursorMoved { position, .. } => {
                         cursor_position = Some((position.x as f32, position.y as f32));
+                        
+                        // Phase 5: Handle mouse drag for selection extension
+                        let logical_x = position.x as f32 / scale_factor;
+                        let logical_y = position.y as f32 / scale_factor;
+                        let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
+                        let viewport_local_x = logical_x - viewport_rect.x;
+                        let viewport_local_y = logical_y - viewport_rect.y + zone_manager.viewport.scroll_offset;
+                        
+                        // Check if any input box is in mouse selection mode
+                        for input_box in viewport_ir.input_boxes.iter_mut() {
+                            if input_box.focused {
+                                // Extend selection based on click count
+                                if click_count == 3 {
+                                    input_box.extend_line_selection(viewport_local_x, viewport_local_y);
+                                    input_box.update_scroll();
+                                    needs_redraw = true;
+                                    window.request_redraw();
+                                } else if click_count == 2 {
+                                    input_box.extend_word_selection(viewport_local_x, viewport_local_y);
+                                    input_box.update_scroll();
+                                    needs_redraw = true;
+                                    window.request_redraw();
+                                } else {
+                                    input_box.extend_mouse_selection(viewport_local_x, viewport_local_y);
+                                    input_box.update_scroll();
+                                    needs_redraw = true;
+                                    window.request_redraw();
+                                }
+                                break;
+                            }
+                        }
                     }
                     WindowEvent::MouseWheel { delta, .. } => {
                         // Handle scrolling in viewport
@@ -584,10 +626,33 @@ pub fn run() -> Result<()> {
                         window.request_redraw();
                     }
                     WindowEvent::MouseInput { state, button, .. } => {
-                        if button == winit::event::MouseButton::Left && state == winit::event::ElementState::Pressed {
+                        if button == winit::event::MouseButton::Left && state == winit::event::ElementState::Released {
+                            // Phase 5: End mouse selection on button release
+                            for input_box in viewport_ir.input_boxes.iter_mut() {
+                                if input_box.focused {
+                                    input_box.end_mouse_selection();
+                                    break;
+                                }
+                            }
+                        } else if button == winit::event::MouseButton::Left && state == winit::event::ElementState::Pressed {
                             if let Some((cursor_x, cursor_y)) = cursor_position {
                                 let logical_x = cursor_x / scale_factor;
                                 let logical_y = cursor_y / scale_factor;
+                                
+                                // Phase 5: Track click timing for double/triple-click detection
+                                let now = std::time::Instant::now();
+                                let is_quick_click = if let Some(last_time) = last_click_time {
+                                    now.duration_since(last_time) < double_click_threshold
+                                } else {
+                                    false
+                                };
+                                
+                                if is_quick_click {
+                                    click_count += 1;
+                                } else {
+                                    click_count = 1;
+                                }
+                                last_click_time = Some(now);
                                 
                                 // Check if click is on an input box (adjust for viewport transform and scroll)
                                 let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
@@ -595,7 +660,7 @@ pub fn run() -> Result<()> {
                                 let viewport_local_y = logical_y - viewport_rect.y + zone_manager.viewport.scroll_offset;
                                 
                                 let mut clicked_input = false;
-                                for (idx, input_box) in sample_ui.input_boxes.iter_mut().enumerate() {
+                                for (idx, input_box) in viewport_ir.input_boxes.iter_mut().enumerate() {
                                     let in_bounds = viewport_local_x >= input_box.rect.x 
                                         && viewport_local_x <= input_box.rect.x + input_box.rect.w
                                         && viewport_local_y >= input_box.rect.y
@@ -603,15 +668,24 @@ pub fn run() -> Result<()> {
                                     
                                     if in_bounds {
                                         // Unfocus all, focus this one
-                                        for other in sample_ui.input_boxes.iter_mut() {
+                                        for other in viewport_ir.input_boxes.iter_mut() {
                                             other.focused = false;
                                         }
-                                        let input = &mut sample_ui.input_boxes[idx];
+                                        let input = &mut viewport_ir.input_boxes[idx];
                                         input.focused = true;
-                                        // Place cursor at end (or start if empty) and
-                                        // ensure scroll is updated so caret is visible.
-                                        input.move_cursor_to_end();
-                                        input.update_scroll(provider.as_ref());
+                                        
+                                        // Phase 5: Handle double-click and triple-click
+                                        if click_count == 3 {
+                                            // Triple-click: select entire line
+                                            input.start_line_selection(viewport_local_x, viewport_local_y);
+                                        } else if click_count == 2 {
+                                            // Double-click: select word
+                                            input.start_word_selection(viewport_local_x, viewport_local_y);
+                                        } else {
+                                            // Single click: start mouse selection (place cursor)
+                                            input.start_mouse_selection(viewport_local_x, viewport_local_y);
+                                        }
+                                        input.update_scroll();
                                         
                                         clicked_input = true;
                                         needs_redraw = true;
@@ -622,7 +696,7 @@ pub fn run() -> Result<()> {
                                 
                                 // If clicked outside all input boxes, unfocus all
                                 if !clicked_input {
-                                    for input_box in sample_ui.input_boxes.iter_mut() {
+                                    for input_box in viewport_ir.input_boxes.iter_mut() {
                                         if input_box.focused {
                                             input_box.focused = false;
                                             needs_redraw = true;
@@ -670,51 +744,176 @@ pub fn run() -> Result<()> {
                         }
                     }
                     WindowEvent::KeyboardInput { event, .. } => {
-                        use winit::keyboard::{KeyCode, PhysicalKey};
+                        use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
                         
+                        // Baseline single-line InputBox editing path for viewport_ir:
+                        // keyboard events are translated into InputBox editing methods
+                        // (insert_char, delete_before_cursor, cursor movement, etc.).
+                        // Phase 0 keeps this wiring as the source of truth while
+                        // allowing InputBox to internally toggle its TextLayout backend.
                         // Find the focused input box
-                        if let Some(focused_input) = sample_ui.input_boxes.iter_mut().find(|ib| ib.focused) {
+                        if let Some(focused_input) = viewport_ir.input_boxes.iter_mut().find(|ib| ib.focused) {
                             if event.state == winit::event::ElementState::Pressed {
+                                let has_cmd = modifiers_state.contains(ModifiersState::SUPER);
+                                let has_ctrl = modifiers_state.contains(ModifiersState::CONTROL);
+                                let has_alt = modifiers_state.contains(ModifiersState::ALT);
+                                let has_shift = modifiers_state.contains(ModifiersState::SHIFT);
+                                
+                                // On macOS: Cmd for line start/end, Option for word movement
+                                // On Windows/Linux: Ctrl for line start/end, Ctrl for word movement (same as Cmd on macOS)
+                                let line_modifier = has_cmd || has_ctrl;
+                                let word_modifier = has_alt;
+
+                                // Phase 5: Handle clipboard and undo/redo shortcuts
+                                // Cmd/Ctrl+C: Copy, Cmd/Ctrl+X: Cut, Cmd/Ctrl+V: Paste
+                                // Cmd/Ctrl+Z: Undo, Cmd/Ctrl+Shift+Z or Ctrl+Y: Redo
+                                // Cmd/Ctrl+A: Select All
                                 match event.physical_key {
+                                    PhysicalKey::Code(KeyCode::KeyA) if line_modifier && !has_shift => {
+                                        // Cmd/Ctrl+A: Select all text
+                                        focused_input.select_all();
+                                        focused_input.update_scroll();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyC) if line_modifier && !has_shift => {
+                                        // Cmd/Ctrl+C: Copy to clipboard
+                                        if let Err(e) = focused_input.copy_to_clipboard() {
+                                            eprintln!("Failed to copy: {}", e);
+                                        }
+                                        // No redraw needed for copy
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyX) if line_modifier && !has_shift => {
+                                        // Cmd/Ctrl+X: Cut to clipboard
+                                        if let Err(e) = focused_input.cut_to_clipboard() {
+                                            eprintln!("Failed to cut: {}", e);
+                                        } else {
+                                            focused_input.update_scroll();
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyV) if line_modifier && !has_shift => {
+                                        // Cmd/Ctrl+V: Paste from clipboard
+                                        if let Err(e) = focused_input.paste_from_clipboard() {
+                                            eprintln!("Failed to paste: {}", e);
+                                        } else {
+                                            focused_input.update_scroll();
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyZ) if line_modifier && has_shift => {
+                                        // Cmd/Ctrl+Shift+Z: Redo
+                                        if focused_input.redo() {
+                                            focused_input.update_scroll();
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyZ) if line_modifier && !has_shift => {
+                                        // Cmd/Ctrl+Z: Undo
+                                        if focused_input.undo() {
+                                            focused_input.update_scroll();
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyY) if has_ctrl && !has_shift => {
+                                        // Ctrl+Y: Redo (Windows/Linux alternative)
+                                        if focused_input.redo() {
+                                            focused_input.update_scroll();
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
                                     PhysicalKey::Code(KeyCode::Backspace) => {
                                         focused_input.delete_before_cursor();
-                                        focused_input.update_scroll(provider.as_ref());
+                                        focused_input.update_scroll();
                                         needs_redraw = true;
                                         window.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::Delete) => {
                                         focused_input.delete_after_cursor();
-                                        focused_input.update_scroll(provider.as_ref());
+                                        focused_input.update_scroll();
                                         needs_redraw = true;
                                         window.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                                        focused_input.move_cursor_left();
-                                        focused_input.update_scroll(provider.as_ref());
+                                        if line_modifier && has_shift {
+                                            // Cmd+Shift+Left (macOS) or Ctrl+Shift+Left (Windows): select to line start
+                                            focused_input.extend_selection_to_line_start();
+                                        } else if line_modifier {
+                                            // Cmd+Left (macOS) or Ctrl+Left (Windows): move to line start
+                                            focused_input.move_cursor_line_start();
+                                        } else if word_modifier && has_shift {
+                                            // Option+Shift+Left (macOS) or Alt+Shift+Left (Windows): extend selection left by word
+                                            focused_input.extend_selection_left_word();
+                                        } else if word_modifier {
+                                            // Option+Left (macOS) or Alt+Left (Windows): move left by word
+                                            focused_input.move_cursor_left_word();
+                                        } else if has_shift {
+                                            // Shift+Left: extend selection left by character
+                                            focused_input.extend_selection_left();
+                                        } else {
+                                            // Left: move left by character
+                                            focused_input.move_cursor_left();
+                                        }
+                                        focused_input.update_scroll();
                                         needs_redraw = true;
                                         window.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowRight) => {
-                                        focused_input.move_cursor_right();
-                                        focused_input.update_scroll(provider.as_ref());
+                                        if line_modifier && has_shift {
+                                            // Cmd+Shift+Right (macOS) or Ctrl+Shift+Right (Windows): select to line end
+                                            focused_input.extend_selection_to_line_end();
+                                        } else if line_modifier {
+                                            // Cmd+Right (macOS) or Ctrl+Right (Windows): move to line end
+                                            focused_input.move_cursor_line_end();
+                                        } else if word_modifier && has_shift {
+                                            // Option+Shift+Right (macOS) or Alt+Shift+Right (Windows): extend selection right by word
+                                            focused_input.extend_selection_right_word();
+                                        } else if word_modifier {
+                                            // Option+Right (macOS) or Alt+Right (Windows): move right by word
+                                            focused_input.move_cursor_right_word();
+                                        } else if has_shift {
+                                            // Shift+Right: extend selection right by character
+                                            focused_input.extend_selection_right();
+                                        } else {
+                                            // Right: move right by character
+                                            focused_input.move_cursor_right();
+                                        }
+                                        focused_input.update_scroll();
                                         needs_redraw = true;
                                         window.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::Home) => {
-                                        focused_input.move_cursor_to_start();
-                                        focused_input.update_scroll(provider.as_ref());
+                                        if has_shift {
+                                            // Shift+Home: extend selection to start
+                                            focused_input.extend_selection_to_start();
+                                        } else {
+                                            // Home: move cursor to start
+                                            focused_input.move_cursor_to_start();
+                                        }
+                                        focused_input.update_scroll();
                                         needs_redraw = true;
                                         window.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::End) => {
-                                        focused_input.move_cursor_to_end();
-                                        focused_input.update_scroll(provider.as_ref());
+                                        if has_shift {
+                                            // Shift+End: extend selection to end
+                                            focused_input.extend_selection_to_end();
+                                        } else {
+                                            // End: move cursor to end
+                                            focused_input.move_cursor_to_end();
+                                        }
+                                        focused_input.update_scroll();
                                         needs_redraw = true;
                                         window.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::Space) => {
                                         focused_input.insert_char(' ');
-                                        focused_input.update_scroll(provider.as_ref());
+                                        focused_input.update_scroll();
                                         needs_redraw = true;
                                         window.request_redraw();
                                     }
@@ -727,7 +926,7 @@ pub fn run() -> Result<()> {
                                                     focused_input.insert_char(ch);
                                                 }
                                             }
-                                            focused_input.update_scroll(provider.as_ref());
+                                            focused_input.update_scroll();
                                             needs_redraw = true;
                                             window.request_redraw();
                                         }
@@ -826,12 +1025,12 @@ pub fn run() -> Result<()> {
                             let delta_time = (now - last_frame_time).as_secs_f32();
                             last_frame_time = now;
                             
-                            for input_box in sample_ui.input_boxes.iter_mut() {
+                            for input_box in viewport_ir.input_boxes.iter_mut() {
                                 input_box.update_blink(delta_time);
                             }
                             
                             // Request continuous redraw for cursor blinking while any input is focused.
-                            if sample_ui.input_boxes.iter().any(|ib| ib.focused) {
+                            if viewport_ir.input_boxes.iter().any(|ib| ib.focused) {
                                 needs_redraw = true;
                                 window.request_redraw();
                             }
@@ -854,7 +1053,7 @@ pub fn run() -> Result<()> {
                             // Apply scroll offset as a nested transform (negative to scroll down)
                             canvas.push_transform(Transform2D::translate(0.0, -zone_manager.viewport.scroll_offset));
                             
-                            let content_height = sample_ui.render(
+                            let content_height = viewport_ir.render(
                                 &mut canvas,
                                 scale_factor,
                                 viewport_rect.w as u32,
@@ -949,7 +1148,7 @@ pub fn run() -> Result<()> {
                         // Keep needs_redraw true while an input box is focused so
                         // cursor blinking continues to drive redraws.
                         if should_render_full {
-                            let any_focused_input = sample_ui.input_boxes.iter().any(|ib| ib.focused);
+                            let any_focused_input = viewport_ir.input_boxes.iter().any(|ib| ib.focused);
                             if !any_focused_input {
                                 needs_redraw = false;
                             }

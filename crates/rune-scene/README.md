@@ -66,7 +66,7 @@ rune-scene/
 ├── src/
 │   ├── lib.rs           # Main entry point with zone rendering
 │   ├── zones.rs         # Zone layout and styling system
-│   ├── sample_ui.rs     # Sample UI elements (temporary)
+│   ├── viewport_ir.rs   # Viewport IR + UI elements
 │   ├── elements/        # UI element implementations
 │   └── text.rs          # Text rendering utilities
 ```
@@ -95,11 +95,11 @@ let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
 zone_manager.resize(new_width, new_height);
 ```
 
-#### `sample_ui.rs`
+#### `viewport_ir.rs`
 
-Contains sample UI elements for demonstration. **This module will be replaced with IR-based rendering into the viewport zone.**
+Contains the viewport IR + UI elements for demonstration (formerly `sample_ui.rs`). This module is evolving into the extended IR implementation for the viewport zone.
 
-Current sample elements:
+Current elements:
 - Text, Checkboxes, Buttons, Radio buttons
 - Input boxes, Text areas, Select dropdowns
 - Labels, Images, Multiline text
@@ -160,8 +160,8 @@ let mut canvas = surf.begin_frame(width, height);
 // 1. Render zones
 render_zones(&mut canvas, &zone_manager);
 
-// 2. Render content (sample UI or IR-based)
-sample_ui.render(&mut canvas, scale_factor, width);
+// 2. Render content (viewport IR / UI)
+viewport_ir.render(&mut canvas, scale_factor, width);
 
 surf.end_frame(frame, canvas);
 ```

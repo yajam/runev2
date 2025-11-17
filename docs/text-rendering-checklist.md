@@ -169,6 +169,8 @@ A comprehensive guide for implementing robust multiline text rendering in rune-d
 
 ## Phase 6: Text Editing Support
 
+> **Note:** For UI widget integration of text editing features (InputBox, TextArea), see [`inputbox-textlayout-checklist.md`](./inputbox-textlayout-checklist.md) which documents how to build editing widgets on top of `rune-text::TextLayout`.
+
 ### 6.1 Cursor Management
 
 - [x] Implement cursor position tracking (byte offset)

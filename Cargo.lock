@@ -1876,7 +1876,6 @@ dependencies = [
  "pollster",
  "rune-surface",
  "rune-text",
- "unicode-segmentation",
  "wgpu",
  "winit",
 ]
@@ -1895,6 +1894,7 @@ name = "rune-text"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "fontdb 0.23.0",
  "harfrust",
  "hashbrown 0.14.5",
  "swash 0.1.19",

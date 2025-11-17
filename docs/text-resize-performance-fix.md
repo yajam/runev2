@@ -152,9 +152,9 @@ GPU texture atlas
    - Added `TextLayoutCache` instance (200 entry capacity)
    - Changed resize handling to debounced strategy
    - Removed continuous redraw loop
-   - Pass cache to sample_ui.render()
+   - Pass cache to viewport_ir.render()
 
-2. **`crates/rune-scene/src/sample_ui.rs`**
+2. **`crates/rune-scene/src/viewport_ir.rs`**
    - Added `text_cache` parameter to `render()`
    - Calculate `max_width` based on viewport width
    - Changed from `render_simple()` to `render_cached()`

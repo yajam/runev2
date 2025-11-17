@@ -124,6 +124,21 @@ impl TextLayout {
         }
     }
 
+    /// Convenience: layout text using a default system font.
+    ///
+    /// This uses `fontdb` to pick a reasonable sans-serif font from the host
+    /// system (same heuristic as `engine-core::RuneTextProvider::from_system_fonts`)
+    /// so callers don't need to manage a `FontFace` directly.
+    pub fn with_system_font(
+        text: impl Into<String>,
+        font_size: f32,
+        max_width: Option<f32>,
+        wrap_mode: WrapMode,
+    ) -> crate::font::Result<Self> {
+        let font = crate::font::load_system_default_font()?;
+        Ok(Self::with_wrap(text, &font, font_size, max_width, wrap_mode))
+    }
+
     /// Underlying source text.
     pub fn text(&self) -> &str {
         &self.text

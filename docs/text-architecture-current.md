@@ -258,7 +258,7 @@ crates/rune-surface/src/
 crates/rune-scene/src/
 ├── elements/
 │   └── multiline_text.rs      # Paragraph-aware rendering
-└── sample_ui.rs               # Demo UI with text
+└── viewport_ir.rs             # Viewport IR + demo UI with text
 ```
 
 ### Files to Clean Up (See cleanup plan)

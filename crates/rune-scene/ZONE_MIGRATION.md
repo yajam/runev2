@@ -38,26 +38,26 @@ Implemented:
   - Handles window resizing
   - Provides zone rectangles and styles
 
-### 2. Created Sample UI Module (`sample_ui.rs`)
+### 2. Created Viewport IR / Sample UI Module (`viewport_ir.rs`)
 
-**File**: `crates/rune-scene/src/sample_ui.rs`
+**File**: `crates/rune-scene/src/viewport_ir.rs` (originally `sample_ui.rs`)
 
-Moved all existing UI element data structures and rendering logic:
+Moved all existing UI element data structures and rendering logic into a dedicated viewport IR module:
 - `CheckboxData`, `ButtonData`, `TextData`, `RadioData`, etc.
 - `UIElement` enum
 - `SampleUIElements` struct with all sample elements
 - `create_sample_elements()` function
 - `render()` method for rendering all elements
 
-**Purpose**: This module is temporary and will be replaced with IR-based rendering into the viewport zone.
+**Purpose**: This module hosts the viewport's extended IR / UI representation and will continue to evolve along with the IR-based rendering into the viewport zone.
 
 ### 3. Refactored Main Library (`lib.rs`)
 
 **File**: `crates/rune-scene/src/lib.rs`
 
 Changes:
-- Removed all UI element definitions (moved to `sample_ui.rs`)
-- Added `zones` and `sample_ui` modules
+- Removed all UI element definitions (moved to `viewport_ir.rs`)
+- Added `zones` and `viewport_ir` modules
 - Created `render_zones()` function:
   - Renders zone backgrounds at z=0
   - Renders zone borders at z=1
@@ -127,8 +127,8 @@ canvas.draw_text_run(pos, text, size, color, z);
 
 ## Next Steps (Future Work)
 
-1. **Replace Sample UI with IR-Based Rendering**
-   - Remove `sample_ui.rs` module
+1. **Replace Viewport IR Demo with Full IR-Based Rendering**
+   - Eventually replace the `viewport_ir.rs` module with a more general IR tree
    - Implement IR tree structure
    - Layout engine for viewport zone
    - Paint commands generation
@@ -154,7 +154,7 @@ canvas.draw_text_run(pos, text, size, color, z);
 
 ### Created
 - `crates/rune-scene/src/zones.rs` (175 lines)
-- `crates/rune-scene/src/sample_ui.rs` (422 lines)
+- `crates/rune-scene/src/viewport_ir.rs` (422 lines, originally `sample_ui.rs`)
 - `crates/rune-scene/README.md` (documentation)
 - `crates/rune-scene/ZONE_MIGRATION.md` (this file)
 

@@ -87,7 +87,7 @@ crates/rune-surface/src/
 
 crates/rune-scene/src/
 ├── lib.rs               # Debounced resize handling
-├── sample_ui.rs         # Demo UI with text
+├── viewport_ir.rs       # Viewport IR + demo UI with text
 └── elements/
     └── multiline_text.rs  # Paragraph rendering
 ```

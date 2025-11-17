@@ -14,3 +14,4 @@ swash = { workspace = true }
 hashbrown = "0.14"
 harfrust = { workspace = true }
 arboard = { workspace = true }
+fontdb = { workspace = true }

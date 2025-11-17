@@ -1,6 +1,6 @@
 use crate::elements;
-/// Sample UI module - contains example UI elements for demonstration
-/// This will be replaced with IR-based rendering into the viewport zone
+/// Viewport IR module - contains the extended UI/IR elements for the viewport zone
+/// (formerly `sample_ui`, now evolving into the extended IR implementation)
 use engine_core::{Color, ColorLinPremul, Rect};
 
 // UI Element Data Structures
