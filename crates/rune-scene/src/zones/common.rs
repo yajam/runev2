@@ -1,4 +1,4 @@
-use engine_core::{Rect, ColorLinPremul};
+use engine_core::{ColorLinPremul, Rect};
 
 /// Zone identifiers for hit testing and layout
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

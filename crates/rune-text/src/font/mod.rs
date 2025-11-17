@@ -1,10 +1,10 @@
-pub mod metrics;
 pub mod face;
 pub mod loader;
+pub mod metrics;
 
-pub use metrics::{FontMetrics, ScaledFontMetrics};
 pub use face::FontFace;
 pub use loader::{FontCache, FontKey, load_system_default_font};
+pub use metrics::{FontMetrics, ScaledFontMetrics};
 
 use core::fmt;
 

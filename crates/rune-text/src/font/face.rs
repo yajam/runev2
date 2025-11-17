@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use swash::{FontRef, GlyphId, Metrics};
-use swash::scale::{ScaleContext, StrikeWith};
 use swash::scale::image::Image;
 use swash::scale::outline::Outline;
+use swash::scale::{ScaleContext, StrikeWith};
+use swash::{FontRef, GlyphId, Metrics};
 
 use crate::font::{FontError, FontMetrics, Result, ScaledFontMetrics};
 

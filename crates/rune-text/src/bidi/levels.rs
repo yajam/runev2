@@ -1,6 +1,6 @@
 use core::ops::Range;
 
-use unicode_bidi::{BidiInfo, Level, LTR_LEVEL, RTL_LEVEL};
+use unicode_bidi::{BidiInfo, LTR_LEVEL, Level, RTL_LEVEL};
 
 /// Base direction hint for paragraph analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

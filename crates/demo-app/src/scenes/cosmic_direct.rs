@@ -1,6 +1,6 @@
-use engine_core::{DisplayList, PassManager, Viewport};
-use engine_core::{ColorLinPremul, SubpixelOrientation, TextRun};
 use engine_core::TextProvider;
+use engine_core::{ColorLinPremul, SubpixelOrientation, TextRun};
+use engine_core::{DisplayList, PassManager, Viewport};
 
 use super::{Scene, SceneKind};
 
@@ -17,10 +17,9 @@ impl CosmicDirectScene {
     fn build_provider() -> engine_core::CosmicTextProvider {
         if let Ok(path) = std::env::var("DEMO_FONT") {
             if let Ok(bytes) = std::fs::read(path) {
-                if let Ok(p) = engine_core::CosmicTextProvider::from_bytes(
-                    &bytes,
-                    SubpixelOrientation::RGB,
-                ) {
+                if let Ok(p) =
+                    engine_core::CosmicTextProvider::from_bytes(&bytes, SubpixelOrientation::RGB)
+                {
                     return p;
                 }
             }
@@ -90,7 +89,9 @@ impl CosmicDirectScene {
             for g in self.provider.rasterize_run(&run) {
                 let origin_x = margin_x + g.offset[0];
                 let origin_y = baseline_y + g.offset[1];
-                glyph_batch.glyphs.push((g.mask, [origin_x, origin_y], color));
+                glyph_batch
+                    .glyphs
+                    .push((g.mask, [origin_x, origin_y], color));
             }
         }
 
@@ -107,7 +108,9 @@ impl CosmicDirectScene {
             for g in self.provider.rasterize_run(&run) {
                 let origin_x = margin_x + g.offset[0];
                 let origin_y = y + g.offset[1];
-                glyph_batch.glyphs.push((g.mask, [origin_x, origin_y], color));
+                glyph_batch
+                    .glyphs
+                    .push((g.mask, [origin_x, origin_y], color));
             }
             y += line_height;
         }
@@ -156,7 +159,14 @@ impl Scene for CosmicDirectScene {
         );
 
         if !self.glyphs.is_empty() {
-            passes.draw_text_mask(encoder, surface_view, width, height, &self.glyphs.glyphs, queue);
+            passes.draw_text_mask(
+                encoder,
+                surface_view,
+                width,
+                height,
+                &self.glyphs.glyphs,
+                queue,
+            );
         }
     }
 }

@@ -23,18 +23,30 @@ impl GraphicsEngine {
         let device = Arc::new(device);
         let queue = Arc::new(queue);
         let allocator = RenderAllocator::new(device.clone());
-        Self { device, queue, allocator }
+        Self {
+            device,
+            queue,
+            allocator,
+        }
     }
 
     /// Get a clone of the device handle.
-    pub fn device(&self) -> Arc<wgpu::Device> { self.device.clone() }
+    pub fn device(&self) -> Arc<wgpu::Device> {
+        self.device.clone()
+    }
 
     /// Get a clone of the queue handle.
-    pub fn queue(&self) -> Arc<wgpu::Queue> { self.queue.clone() }
+    pub fn queue(&self) -> Arc<wgpu::Queue> {
+        self.queue.clone()
+    }
 
     /// Access the allocator.
-    pub fn allocator(&self) -> &RenderAllocator { &self.allocator }
-    pub fn allocator_mut(&mut self) -> &mut RenderAllocator { &mut self.allocator }
+    pub fn allocator(&self) -> &RenderAllocator {
+        &self.allocator
+    }
+    pub fn allocator_mut(&mut self) -> &mut RenderAllocator {
+        &mut self.allocator
+    }
 
     /// Placeholder render function to be expanded later.
     pub fn render_dummy(&self) -> Result<()> {
@@ -45,7 +57,10 @@ impl GraphicsEngine {
 }
 
 /// Choose an sRGB surface format when available; otherwise, pick the first format.
-pub fn choose_srgb_surface_format(adapter: &wgpu::Adapter, surface: &wgpu::Surface) -> wgpu::TextureFormat {
+pub fn choose_srgb_surface_format(
+    adapter: &wgpu::Adapter,
+    surface: &wgpu::Surface,
+) -> wgpu::TextureFormat {
     let caps = surface.get_capabilities(adapter);
     caps.formats
         .iter()
@@ -88,31 +103,31 @@ pub fn make_surface_config(
 }
 
 // Scene and display list (Phase 2)
-mod scene;
 mod color; // sRGB conversion helpers for ColorLinPremul
 mod display_list;
-mod painter;
-mod upload;
-mod pipeline;
-mod pass_manager;
+mod dpi;
 mod hit_test;
+mod image_cache;
+mod painter;
+mod pass_manager;
+mod pipeline;
+mod scene;
+mod svg;
 mod text;
 mod text_layout;
-mod svg;
-mod image_cache;
-mod dpi;
+mod upload;
 
-pub use scene::*;
 pub use display_list::*;
-pub use painter::*;
-pub use upload::*;
-pub use pipeline::*;
-pub use pass_manager::*;
-pub use pass_manager::Background as RootBackground;
-pub use pipeline::Blitter;
+pub use dpi::*;
 pub use hit_test::*;
+pub use image_cache::*;
+pub use painter::*;
+pub use pass_manager::Background as RootBackground;
+pub use pass_manager::*;
+pub use pipeline::Blitter;
+pub use pipeline::*;
+pub use scene::*;
+pub use svg::*;
 pub use text::*;
 pub use text_layout::*;
-pub use svg::*;
-pub use image_cache::*;
-pub use dpi::*;
+pub use upload::*;

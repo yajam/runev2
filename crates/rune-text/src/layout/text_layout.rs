@@ -1,14 +1,14 @@
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::font::FontFace;
+use crate::font::{FontFace, ScaledFontMetrics};
 use crate::layout::{
+    LineBox, PrefixSums, WrapMode,
     cursor::{Cursor, CursorAffinity, CursorPosition, CursorRect},
     cursor_movement::CursorMovement,
     hit_test::{HitTestPolicy, HitTestResult, Point, Position},
     line_breaker::{compute_line_breaks, compute_word_boundaries},
     selection::{Selection, SelectionRect},
     undo::{TextOperation, UndoStack},
-    LineBox, PrefixSums, WrapMode,
 };
 use crate::shaping::TextShaper;
 
@@ -27,6 +27,8 @@ pub struct TextLayout {
     prefix_sums: PrefixSums,
     /// Undo/redo stack for text editing operations.
     undo_stack: UndoStack,
+    /// Optional override for the line height (in pixels) used during layout.
+    line_height_override: Option<f32>,
 }
 
 impl TextLayout {
@@ -52,12 +54,43 @@ impl TextLayout {
         max_width: Option<f32>,
         wrap_mode: WrapMode,
     ) -> Self {
+        Self::with_wrap_internal(text, font, font_size, max_width, wrap_mode, None)
+    }
+
+    /// Layout text with an explicit line height override.
+    pub fn with_wrap_and_line_height(
+        text: impl Into<String>,
+        font: &FontFace,
+        font_size: f32,
+        max_width: Option<f32>,
+        wrap_mode: WrapMode,
+        line_height: f32,
+    ) -> Self {
+        Self::with_wrap_internal(
+            text,
+            font,
+            font_size,
+            max_width,
+            wrap_mode,
+            Some(line_height),
+        )
+    }
+
+    fn with_wrap_internal(
+        text: impl Into<String>,
+        font: &FontFace,
+        font_size: f32,
+        max_width: Option<f32>,
+        wrap_mode: WrapMode,
+        line_height_override: Option<f32>,
+    ) -> Self {
         let text = text.into();
         let mut lines = Vec::new();
 
         // Compute scaled metrics once; reused for all lines.
         let scaled = font.scaled_metrics(font_size);
-        let line_height = scaled.ascent + scaled.descent + scaled.line_gap;
+        let line_height = Self::resolve_line_height(line_height_override, &scaled);
+        let leading = (line_height - scaled.ascent - scaled.descent).max(0.0);
 
         let mut y = 0.0f32;
 
@@ -74,7 +107,7 @@ impl TextLayout {
                     line_height,
                     scaled.ascent,
                     scaled.descent,
-                    scaled.line_gap,
+                    leading,
                     max_width,
                     wrap_mode,
                     &mut y,
@@ -89,7 +122,7 @@ impl TextLayout {
                     line_height,
                     scaled.ascent,
                     scaled.descent,
-                    scaled.line_gap,
+                    leading,
                     max_width,
                     wrap_mode,
                     &mut y,
@@ -107,7 +140,7 @@ impl TextLayout {
                 line_height,
                 scaled.ascent,
                 scaled.descent,
-                scaled.line_gap,
+                leading,
                 max_width,
                 wrap_mode,
                 &mut y,
@@ -121,7 +154,14 @@ impl TextLayout {
             lines,
             prefix_sums,
             undo_stack: UndoStack::new(),
+            line_height_override,
         }
+    }
+
+    fn resolve_line_height(line_height_override: Option<f32>, scaled: &ScaledFontMetrics) -> f32 {
+        let min_height = scaled.ascent + scaled.descent;
+        line_height_override
+            .unwrap_or(min_height + scaled.line_gap)
     }
 
     /// Convenience: layout text using a default system font.
@@ -136,7 +176,9 @@ impl TextLayout {
         wrap_mode: WrapMode,
     ) -> crate::font::Result<Self> {
         let font = crate::font::load_system_default_font()?;
-        Ok(Self::with_wrap(text, &font, font_size, max_width, wrap_mode))
+        Ok(Self::with_wrap(
+            text, &font, font_size, max_width, wrap_mode,
+        ))
     }
 
     /// Underlying source text.
@@ -178,11 +220,13 @@ impl TextLayout {
         if self.text.is_empty() {
             if byte_offset == 0 && !self.lines.is_empty() {
                 let line = &self.lines[0];
+                // Use ascent + descent for cursor height to cover full text height
+                let cursor_height = line.ascent + line.descent;
                 return Some(CursorRect::new(
                     0.0,
                     line.y_offset,
                     1.0, // Default cursor width
-                    line.height,
+                    cursor_height,
                 ));
             }
             return None;
@@ -200,11 +244,13 @@ impl TextLayout {
         // Calculate X position within the line
         let x = self.calculate_x_at_byte_offset(line, byte_offset);
 
+        // Use ascent + descent for cursor height to cover full text height
+        let cursor_height = line.ascent + line.descent;
         Some(CursorRect::new(
             x,
             line.y_offset,
             1.0, // Default cursor width
-            line.height,
+            cursor_height,
         ))
     }
 
@@ -247,20 +293,20 @@ impl TextLayout {
 
             // Cursor is within this run - use cluster information for precise positioning
             let offset_in_run = byte_offset - run.text_range.start;
-            
+
             // Find the cluster containing or just before this offset
             let mut current_x = 0.0;
             let mut i = 0;
-            
+
             while i < run.clusters.len() {
                 let cluster_start = run.clusters[i];
-                
+
                 // If this cluster starts at or after our target offset, we're done
                 if cluster_start as usize >= offset_in_run {
                     x += current_x;
                     return x;
                 }
-                
+
                 // Accumulate width of all glyphs in this cluster
                 let mut cluster_width = 0.0;
                 let mut j = i;
@@ -268,7 +314,7 @@ impl TextLayout {
                     cluster_width += run.advances[j];
                     j += 1;
                 }
-                
+
                 // Check if our offset is within this cluster
                 // Find the next cluster boundary
                 let next_cluster_start = if j < run.clusters.len() {
@@ -276,18 +322,18 @@ impl TextLayout {
                 } else {
                     run.text_range.len()
                 };
-                
+
                 if offset_in_run < next_cluster_start {
                     // Offset is within this cluster
                     // Position at start of cluster (ligatures are indivisible)
                     x += current_x;
                     return x;
                 }
-                
+
                 current_x += cluster_width;
                 i = j;
             }
-            
+
             // Offset is after all clusters, position at end of run
             x += run.width;
             break;
@@ -328,11 +374,7 @@ impl TextLayout {
         // Handle empty text
         if self.text.is_empty() {
             return match policy {
-                HitTestPolicy::Clamp => Some(HitTestResult::new(
-                    0,
-                    CursorAffinity::Downstream,
-                    0,
-                )),
+                HitTestPolicy::Clamp => Some(HitTestResult::new(0, CursorAffinity::Downstream, 0)),
                 HitTestPolicy::Strict => None,
             };
         }
@@ -442,7 +484,7 @@ impl TextLayout {
                 HitTestPolicy::Clamp => {
                     // For BiDi, find the visually first run
                     self.find_visual_start_offset(line)
-                },
+                }
                 HitTestPolicy::Strict => None,
             };
         }
@@ -453,7 +495,7 @@ impl TextLayout {
                 HitTestPolicy::Clamp => {
                     // For BiDi, find the visually last run
                     self.find_visual_end_offset(line)
-                },
+                }
                 HitTestPolicy::Strict => None,
             };
         }
@@ -492,7 +534,7 @@ impl TextLayout {
         if line.runs.is_empty() {
             return Some(line.text_range.start);
         }
-        
+
         // The first run in visual order
         let first_run = &line.runs[0];
         if first_run.direction == crate::shaping::Direction::RightToLeft {
@@ -509,7 +551,7 @@ impl TextLayout {
         if line.runs.is_empty() {
             return Some(line.text_range.end);
         }
-        
+
         // The last run in visual order
         let last_run = &line.runs[line.runs.len() - 1];
         if last_run.direction == crate::shaping::Direction::RightToLeft {
@@ -539,14 +581,14 @@ impl TextLayout {
         // Build cluster boundaries with their X positions
         // This handles ligatures correctly since multiple glyphs can map to same cluster
         let mut cluster_bounds: Vec<(u32, f32, f32)> = Vec::new(); // (cluster_byte_offset, x_start, x_end)
-        
+
         let mut current_x = 0.0;
         let mut i = 0;
-        
+
         while i < run.clusters.len() {
             let cluster_start = run.clusters[i];
             let cluster_x_start = current_x;
-            
+
             // Find all glyphs belonging to this cluster
             let mut cluster_width = 0.0;
             let mut j = i;
@@ -554,10 +596,10 @@ impl TextLayout {
                 cluster_width += run.advances[j];
                 j += 1;
             }
-            
+
             let cluster_x_end = current_x + cluster_width;
             cluster_bounds.push((cluster_start, cluster_x_start, cluster_x_end));
-            
+
             current_x = cluster_x_end;
             i = j;
         }
@@ -575,14 +617,14 @@ impl TextLayout {
                     // This handles ligatures correctly
                     let run_text = &self.text[run.text_range.clone()];
                     let cluster_byte_start = *cluster_offset as usize;
-                    
+
                     // Find the next grapheme boundary after this cluster
                     for (idx, _) in run_text.grapheme_indices(true) {
                         if idx > cluster_byte_start {
                             return Some(run.text_range.start + idx);
                         }
                     }
-                    
+
                     // If no next boundary found, return end of run
                     return Some(run.text_range.end);
                 }
@@ -637,27 +679,39 @@ impl TextLayout {
             return (byte_offset, preferred_x.unwrap_or(0.0));
         };
 
-        // If we're on the first line, stay at current position
-        if current_line_idx == 0 {
-            let x = preferred_x.unwrap_or_else(|| {
-                self.calculate_x_at_byte_offset(&self.lines[current_line_idx], byte_offset)
-            });
-            return (byte_offset, x);
-        }
-
         // Calculate X position if not provided
         let x = preferred_x.unwrap_or_else(|| {
             self.calculate_x_at_byte_offset(&self.lines[current_line_idx], byte_offset)
         });
 
-        // Move to previous line
-        let prev_line = &self.lines[current_line_idx - 1];
+        // If we're on the first line, stay at current position
+        if current_line_idx == 0 {
+            return (byte_offset, x);
+        }
 
-        // Hit test at the same X position on the previous line
-        let new_offset = self.hit_test_line(prev_line, x, HitTestPolicy::Clamp)
-            .unwrap_or(prev_line.text_range.start);
+        // Walk upwards until we either change byte offset or hit the top.
+        let mut line_idx = current_line_idx.saturating_sub(1);
+        loop {
+            let line = &self.lines[line_idx];
+            let new_offset = self
+                .hit_test_line(line, x, HitTestPolicy::Clamp)
+                .unwrap_or(line.text_range.start);
 
-        (new_offset, x)
+            // If this move changes the logical position, or we've reached
+            // the first line, stop. This avoids the "no-op" case when the
+            // previous line is visually separate but maps to the same byte
+            // offset (e.g. empty lines around '\n').
+            if new_offset != byte_offset || line_idx == 0 {
+                return (new_offset, x);
+            }
+
+            if line_idx == 0 {
+                break;
+            }
+            line_idx -= 1;
+        }
+
+        (byte_offset, x)
     }
 
     /// Move cursor down by one line, maintaining horizontal position.
@@ -672,27 +726,36 @@ impl TextLayout {
             return (byte_offset, preferred_x.unwrap_or(0.0));
         };
 
-        // If we're on the last line, stay at current position
-        if current_line_idx >= self.lines.len() - 1 {
-            let x = preferred_x.unwrap_or_else(|| {
-                self.calculate_x_at_byte_offset(&self.lines[current_line_idx], byte_offset)
-            });
-            return (byte_offset, x);
-        }
-
         // Calculate X position if not provided
         let x = preferred_x.unwrap_or_else(|| {
             self.calculate_x_at_byte_offset(&self.lines[current_line_idx], byte_offset)
         });
 
-        // Move to next line
-        let next_line = &self.lines[current_line_idx + 1];
+        // If we're on the last line, stay at current position
+        if current_line_idx >= self.lines.len() - 1 {
+            return (byte_offset, x);
+        }
 
-        // Hit test at the same X position on the next line
-        let new_offset = self.hit_test_line(next_line, x, HitTestPolicy::Clamp)
-            .unwrap_or(next_line.text_range.start);
+        // Walk downwards until we either change byte offset or hit the last line.
+        let mut line_idx = current_line_idx + 1;
+        while line_idx < self.lines.len() {
+            let line = &self.lines[line_idx];
+            let new_offset = self
+                .hit_test_line(line, x, HitTestPolicy::Clamp)
+                .unwrap_or(line.text_range.start);
 
-        (new_offset, x)
+            // If this move changes the logical position, or we've reached
+            // the last line, stop. This avoids the "no-op" case when the
+            // next line is visually separate but maps to the same byte
+            // offset (e.g. empty lines around '\n').
+            if new_offset != byte_offset || line_idx == self.lines.len() - 1 {
+                return (new_offset, x);
+            }
+
+            line_idx += 1;
+        }
+
+        (byte_offset, x)
     }
 
     /// Move cursor to the start of the current line.
@@ -704,9 +767,10 @@ impl TextLayout {
         };
 
         let line = &self.lines[line_idx];
-        
+
         // For BiDi text, find the visual start of the line
-        self.find_visual_start_offset(line).unwrap_or(line.text_range.start)
+        self.find_visual_start_offset(line)
+            .unwrap_or(line.text_range.start)
     }
 
     /// Move cursor to the end of the current line.
@@ -718,9 +782,10 @@ impl TextLayout {
         };
 
         let line = &self.lines[line_idx];
-        
+
         // For BiDi text, find the visual end of the line
-        self.find_visual_end_offset(line).unwrap_or(line.text_range.end)
+        self.find_visual_end_offset(line)
+            .unwrap_or(line.text_range.end)
     }
 
     /// Move cursor to the start of the document.
@@ -771,11 +836,14 @@ impl TextLayout {
             let x_start = self.calculate_x_at_byte_offset(line, line_sel_start);
             let x_end = self.calculate_x_at_byte_offset(line, line_sel_end);
 
+            // Use ascent + descent for selection height to cover full text height
+            // even when line_height is smaller for tighter spacing
+            let selection_height = line.ascent + line.descent;
             rects.push(SelectionRect::new(
                 x_start,
                 line.y_offset,
                 x_end - x_start,
-                line.height,
+                selection_height,
             ));
         }
 
@@ -970,10 +1038,10 @@ impl TextLayout {
         if let Some(result) = self.hit_test(point, HitTestPolicy::Clamp) {
             // Get the word at the current mouse position
             let current_word = self.select_word_at(result.byte_offset);
-            
+
             // Determine which direction we're extending
             let anchor = selection.anchor();
-            
+
             if current_word.start() < anchor {
                 // Extending backward - anchor at original end, active at new word start
                 Selection::new(selection.end(), current_word.start())
@@ -1019,10 +1087,10 @@ impl TextLayout {
         if let Some(result) = self.hit_test(point, HitTestPolicy::Clamp) {
             // Get the line at the current mouse position
             let current_line = self.select_line_at(result.byte_offset);
-            
+
             // Determine which direction we're extending
             let anchor = selection.anchor();
-            
+
             if current_line.start() < anchor {
                 // Extending backward - anchor at original end, active at new line start
                 Selection::new(selection.end(), current_line.start())
@@ -1080,18 +1148,18 @@ impl TextLayout {
         margin: f32,
     ) -> Option<(f32, f32)> {
         let position = self.offset_to_position(cursor_offset)?;
-        
+
         let cursor_x = position.x;
         let cursor_y = position.y;
-        
+
         // Find the line to get cursor height
         let line = self.lines.get(position.line_index)?;
         let cursor_height = line.height;
-        
+
         let mut new_scroll_x = viewport_x;
         let mut new_scroll_y = viewport_y;
         let mut needs_scroll = false;
-        
+
         // Check horizontal scrolling
         if cursor_x < viewport_x {
             // Cursor is left of viewport
@@ -1110,7 +1178,7 @@ impl TextLayout {
             new_scroll_x = cursor_x - viewport_width + margin;
             needs_scroll = true;
         }
-        
+
         // Check vertical scrolling
         if cursor_y < viewport_y {
             // Cursor is above viewport
@@ -1129,7 +1197,7 @@ impl TextLayout {
             new_scroll_y = cursor_y + cursor_height - viewport_height + margin;
             needs_scroll = true;
         }
-        
+
         if needs_scroll {
             Some((new_scroll_x, new_scroll_y))
         } else {
@@ -1216,10 +1284,10 @@ impl TextLayout {
     pub fn scroll_bounds(&self, viewport_width: f32, viewport_height: f32) -> (f32, f32) {
         let content_width = self.max_line_width();
         let content_height = self.total_height();
-        
+
         let max_scroll_x = (content_width - viewport_width).max(0.0);
         let max_scroll_y = (content_height - viewport_height).max(0.0);
-        
+
         (max_scroll_x, max_scroll_y)
     }
 
@@ -1315,7 +1383,15 @@ impl TextLayout {
         wrap_mode: WrapMode,
     ) -> usize {
         let selection_before = Selection::collapsed(cursor_offset);
-        self.insert_str_with_undo(cursor_offset, text, selection_before, font, font_size, max_width, wrap_mode)
+        self.insert_str_with_undo(
+            cursor_offset,
+            text,
+            selection_before,
+            font,
+            font_size,
+            max_width,
+            wrap_mode,
+        )
     }
 
     /// Insert a string at the cursor position with undo tracking.
@@ -1361,10 +1437,10 @@ impl TextLayout {
 
         // Insert the text
         self.text.insert_str(offset, text);
-        
+
         // Trigger layout invalidation and re-layout
         self.relayout(font, font_size, max_width, wrap_mode);
-        
+
         new_cursor
     }
 
@@ -1394,7 +1470,15 @@ impl TextLayout {
     ) -> usize {
         if selection.is_collapsed() {
             // No selection, just insert at cursor
-            return self.insert_str_with_undo(selection.active(), text, selection.clone(), font, font_size, max_width, wrap_mode);
+            return self.insert_str_with_undo(
+                selection.active(),
+                text,
+                selection.clone(),
+                font,
+                font_size,
+                max_width,
+                wrap_mode,
+            );
         }
 
         let range = selection.range();
@@ -1420,13 +1504,13 @@ impl TextLayout {
 
         // Delete the selection
         self.text.replace_range(start..end, "");
-        
+
         // Insert the new text
         self.text.insert_str(start, text);
-        
+
         // Trigger layout invalidation and re-layout
         self.relayout(font, font_size, max_width, wrap_mode);
-        
+
         new_cursor
     }
 
@@ -1511,10 +1595,10 @@ impl TextLayout {
 
         // Delete from prev_boundary to cursor_offset
         self.text.replace_range(prev_boundary..cursor_offset, "");
-        
+
         // Trigger layout invalidation and re-layout
         self.relayout(font, font_size, max_width, wrap_mode);
-        
+
         prev_boundary
     }
 
@@ -1555,10 +1639,10 @@ impl TextLayout {
 
         // Delete from cursor_offset to next_boundary
         self.text.replace_range(cursor_offset..next_boundary, "");
-        
+
         // Trigger layout invalidation and re-layout
         self.relayout(font, font_size, max_width, wrap_mode);
-        
+
         cursor_offset
     }
 
@@ -1579,13 +1663,13 @@ impl TextLayout {
 
         // Find the previous word boundary
         let prev_word_offset = CursorMovement::move_left_word(&self.text, cursor_offset);
-        
+
         // Delete from prev_word_offset to cursor_offset
         self.text.replace_range(prev_word_offset..cursor_offset, "");
-        
+
         // Trigger layout invalidation and re-layout
         self.relayout(font, font_size, max_width, wrap_mode);
-        
+
         prev_word_offset
     }
 
@@ -1606,13 +1690,13 @@ impl TextLayout {
 
         // Find the next word boundary
         let next_word_offset = CursorMovement::move_right_word(&self.text, cursor_offset);
-        
+
         // Delete from cursor_offset to next_word_offset
         self.text.replace_range(cursor_offset..next_word_offset, "");
-        
+
         // Trigger layout invalidation and re-layout
         self.relayout(font, font_size, max_width, wrap_mode);
-        
+
         cursor_offset
     }
 
@@ -1659,10 +1743,10 @@ impl TextLayout {
 
         // Delete the range
         self.text.replace_range(start..end, "");
-        
+
         // Trigger layout invalidation and re-layout
         self.relayout(font, font_size, max_width, wrap_mode);
-        
+
         start
     }
 
@@ -1705,10 +1789,10 @@ impl TextLayout {
 
         // Delete the line
         self.text.replace_range(line_start..line_end, "");
-        
+
         // Trigger layout invalidation and re-layout
         self.relayout(font, font_size, max_width, wrap_mode);
-        
+
         line_start.min(self.text.len())
     }
 
@@ -1738,10 +1822,11 @@ impl TextLayout {
         let selected_text = &self.text[start..end];
 
         // Access clipboard and set text
-        let mut clipboard = arboard::Clipboard::new()
-            .map_err(|e| format!("Failed to access clipboard: {}", e))?;
-        
-        clipboard.set_text(selected_text.to_string())
+        let mut clipboard =
+            arboard::Clipboard::new().map_err(|e| format!("Failed to access clipboard: {}", e))?;
+
+        clipboard
+            .set_text(selected_text.to_string())
             .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
 
         Ok(())
@@ -1812,17 +1897,25 @@ impl TextLayout {
         wrap_mode: WrapMode,
     ) -> Result<usize, String> {
         // Access clipboard and get text
-        let mut clipboard = arboard::Clipboard::new()
-            .map_err(|e| format!("Failed to access clipboard: {}", e))?;
-        
-        let clipboard_text = clipboard.get_text()
+        let mut clipboard =
+            arboard::Clipboard::new().map_err(|e| format!("Failed to access clipboard: {}", e))?;
+
+        let clipboard_text = clipboard
+            .get_text()
             .map_err(|e| format!("Failed to read from clipboard: {}", e))?;
 
         // Normalize the clipboard text (handle different line endings)
         let normalized_text = Self::normalize_clipboard_text(&clipboard_text);
 
         // Insert the text at cursor position
-        let new_cursor = self.insert_str(cursor_offset, &normalized_text, font, font_size, max_width, wrap_mode);
+        let new_cursor = self.insert_str(
+            cursor_offset,
+            &normalized_text,
+            font,
+            font_size,
+            max_width,
+            wrap_mode,
+        );
 
         Ok(new_cursor)
     }
@@ -1853,17 +1946,25 @@ impl TextLayout {
         wrap_mode: WrapMode,
     ) -> Result<usize, String> {
         // Access clipboard and get text
-        let mut clipboard = arboard::Clipboard::new()
-            .map_err(|e| format!("Failed to access clipboard: {}", e))?;
-        
-        let clipboard_text = clipboard.get_text()
+        let mut clipboard =
+            arboard::Clipboard::new().map_err(|e| format!("Failed to access clipboard: {}", e))?;
+
+        let clipboard_text = clipboard
+            .get_text()
             .map_err(|e| format!("Failed to read from clipboard: {}", e))?;
 
         // Normalize the clipboard text
         let normalized_text = Self::normalize_clipboard_text(&clipboard_text);
 
         // Replace selection with pasted text
-        let new_cursor = self.replace_selection(selection, &normalized_text, font, font_size, max_width, wrap_mode);
+        let new_cursor = self.replace_selection(
+            selection,
+            &normalized_text,
+            font,
+            font_size,
+            max_width,
+            wrap_mode,
+        );
 
         Ok(new_cursor)
     }
@@ -1922,7 +2023,12 @@ impl TextLayout {
                     // Undo delete by inserting
                     self.text.insert_str(*offset, text);
                 }
-                TextOperation::Replace { offset, old_text, new_text, .. } => {
+                TextOperation::Replace {
+                    offset,
+                    old_text,
+                    new_text,
+                    ..
+                } => {
                     // Undo replace by replacing back
                     let end = offset + new_text.len();
                     self.text.replace_range(*offset..end, old_text);
@@ -1975,7 +2081,12 @@ impl TextLayout {
                     let end = offset + text.len();
                     self.text.replace_range(*offset..end, "");
                 }
-                TextOperation::Replace { offset, old_text, new_text, .. } => {
+                TextOperation::Replace {
+                    offset,
+                    old_text,
+                    new_text,
+                    ..
+                } => {
                     let end = offset + old_text.len();
                     self.text.replace_range(*offset..end, new_text);
                 }
@@ -2058,7 +2169,7 @@ impl TextLayout {
         if text.is_empty() {
             return 0.0;
         }
-        
+
         let run = TextShaper::shape_ltr(text, 0..text.len(), font, 0, font_size);
         run.width
     }
@@ -2076,7 +2187,9 @@ impl TextLayout {
             return (0.0, 0.0);
         }
 
-        let max_width = self.lines.iter()
+        let max_width = self
+            .lines
+            .iter()
             .map(|line| line.width)
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(0.0);
@@ -2117,7 +2230,7 @@ impl TextLayout {
             let mut i = 0;
             while i < run.clusters.len() {
                 let cluster_start = run.clusters[i] as usize;
-                
+
                 // Find the next cluster boundary
                 let next_cluster_start = if i + 1 < run.clusters.len() {
                     // Find next different cluster value
@@ -2194,7 +2307,11 @@ impl TextLayout {
     /// # Returns
     /// `(first_visible_line, last_visible_line)` as inclusive indices,
     /// or `None` if no lines are visible.
-    pub fn visible_line_range(&self, viewport_y: f32, viewport_height: f32) -> Option<(usize, usize)> {
+    pub fn visible_line_range(
+        &self,
+        viewport_y: f32,
+        viewport_height: f32,
+    ) -> Option<(usize, usize)> {
         if self.lines.is_empty() {
             return None;
         }
@@ -2283,7 +2400,8 @@ impl TextLayout {
 
     /// Get the maximum width of any line in the layout.
     pub fn max_line_width(&self) -> f32 {
-        self.lines.iter()
+        self.lines
+            .iter()
             .map(|line| line.width)
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(0.0)
@@ -2308,7 +2426,8 @@ impl TextLayout {
 
         // Compute scaled metrics once; reused for all lines.
         let scaled = font.scaled_metrics(font_size);
-        let line_height = scaled.ascent + scaled.descent + scaled.line_gap;
+        let line_height = Self::resolve_line_height(self.line_height_override, &scaled);
+        let leading = (line_height - scaled.ascent - scaled.descent).max(0.0);
 
         let mut y = 0.0f32;
 
@@ -2325,7 +2444,7 @@ impl TextLayout {
                     line_height,
                     scaled.ascent,
                     scaled.descent,
-                    scaled.line_gap,
+                    leading,
                     max_width,
                     wrap_mode,
                     &mut y,
@@ -2340,7 +2459,7 @@ impl TextLayout {
                     line_height,
                     scaled.ascent,
                     scaled.descent,
-                    scaled.line_gap,
+                    leading,
                     max_width,
                     wrap_mode,
                     &mut y,
@@ -2358,7 +2477,7 @@ impl TextLayout {
                 line_height,
                 scaled.ascent,
                 scaled.descent,
-                scaled.line_gap,
+                leading,
                 max_width,
                 wrap_mode,
                 &mut y,
@@ -2702,7 +2821,7 @@ mod tests {
             .parent()
             .unwrap()
             .join("fonts/Geist/Geist-VariableFont_wght.ttf");
-        
+
         FontFace::from_path(&font_path, 0).expect("Failed to load test font")
     }
 
@@ -2710,10 +2829,10 @@ mod tests {
     fn test_insert_char() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         // Insert a character in the middle
         let new_cursor = layout.insert_char(5, '!', &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello!");
         assert_eq!(new_cursor, 6);
     }
@@ -2722,10 +2841,10 @@ mod tests {
     fn test_insert_str() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         // Insert a string in the middle
         let new_cursor = layout.insert_str(5, " World", &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello World");
         assert_eq!(new_cursor, 11);
     }
@@ -2734,9 +2853,9 @@ mod tests {
     fn test_insert_at_start() {
         let font = create_test_font();
         let mut layout = TextLayout::new("World", &font, 16.0);
-        
+
         let new_cursor = layout.insert_str(0, "Hello ", &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello World");
         assert_eq!(new_cursor, 6);
     }
@@ -2745,9 +2864,9 @@ mod tests {
     fn test_insert_newline() {
         let font = create_test_font();
         let mut layout = TextLayout::new("HelloWorld", &font, 16.0);
-        
+
         let new_cursor = layout.insert_newline(5, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello\nWorld");
         assert_eq!(new_cursor, 6);
         // The layout creates 3 lines: "Hello", empty line after \n, and "World"
@@ -2758,9 +2877,9 @@ mod tests {
     fn test_insert_tab() {
         let font = create_test_font();
         let mut layout = TextLayout::new("HelloWorld", &font, 16.0);
-        
+
         let new_cursor = layout.insert_tab(5, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello\tWorld");
         assert_eq!(new_cursor, 6);
     }
@@ -2769,11 +2888,12 @@ mod tests {
     fn test_replace_selection() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Replace "World" with "Rust"
         let selection = Selection::new(6, 11);
-        let new_cursor = layout.replace_selection(&selection, "Rust", &font, 16.0, None, WrapMode::NoWrap);
-        
+        let new_cursor =
+            layout.replace_selection(&selection, "Rust", &font, 16.0, None, WrapMode::NoWrap);
+
         assert_eq!(layout.text(), "Hello Rust");
         assert_eq!(new_cursor, 10);
     }
@@ -2782,11 +2902,12 @@ mod tests {
     fn test_replace_collapsed_selection() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         // Collapsed selection should just insert
         let selection = Selection::collapsed(5);
-        let new_cursor = layout.replace_selection(&selection, "!", &font, 16.0, None, WrapMode::NoWrap);
-        
+        let new_cursor =
+            layout.replace_selection(&selection, "!", &font, 16.0, None, WrapMode::NoWrap);
+
         assert_eq!(layout.text(), "Hello!");
         assert_eq!(new_cursor, 6);
     }
@@ -2795,10 +2916,10 @@ mod tests {
     fn test_delete_backward() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello!", &font, 16.0);
-        
+
         // Delete the '!'
         let new_cursor = layout.delete_backward(6, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello");
         assert_eq!(new_cursor, 5);
     }
@@ -2807,10 +2928,10 @@ mod tests {
     fn test_delete_backward_at_start() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         // Delete at start should do nothing
         let new_cursor = layout.delete_backward(0, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello");
         assert_eq!(new_cursor, 0);
     }
@@ -2819,10 +2940,10 @@ mod tests {
     fn test_delete_forward() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello!", &font, 16.0);
-        
+
         // Delete the 'H'
         let new_cursor = layout.delete_forward(0, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "ello!");
         assert_eq!(new_cursor, 0);
     }
@@ -2831,10 +2952,10 @@ mod tests {
     fn test_delete_forward_at_end() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         // Delete at end should do nothing
         let new_cursor = layout.delete_forward(5, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello");
         assert_eq!(new_cursor, 5);
     }
@@ -2843,10 +2964,10 @@ mod tests {
     fn test_delete_word_backward() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Delete "World"
         let new_cursor = layout.delete_word_backward(11, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello ");
         assert_eq!(new_cursor, 6);
     }
@@ -2855,10 +2976,10 @@ mod tests {
     fn test_delete_word_forward() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Delete "Hello"
         let new_cursor = layout.delete_word_forward(0, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), " World");
         assert_eq!(new_cursor, 0);
     }
@@ -2867,11 +2988,11 @@ mod tests {
     fn test_delete_selection() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Delete "World"
         let selection = Selection::new(6, 11);
         let new_cursor = layout.delete_selection(&selection, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello ");
         assert_eq!(new_cursor, 6);
     }
@@ -2880,11 +3001,11 @@ mod tests {
     fn test_delete_collapsed_selection() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         // Collapsed selection should do nothing
         let selection = Selection::collapsed(3);
         let new_cursor = layout.delete_selection(&selection, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello");
         assert_eq!(new_cursor, 3);
     }
@@ -2893,10 +3014,10 @@ mod tests {
     fn test_delete_line() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Line 1\nLine 2\nLine 3", &font, 16.0);
-        
+
         // Delete the second line
         let new_cursor = layout.delete_line(10, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Line 1\nLine 3");
         assert_eq!(new_cursor, 7);
     }
@@ -2905,10 +3026,10 @@ mod tests {
     fn test_delete_line_first() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Line 1\nLine 2", &font, 16.0);
-        
+
         // Delete the first line
         let new_cursor = layout.delete_line(3, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Line 2");
         assert_eq!(new_cursor, 0);
     }
@@ -2917,10 +3038,10 @@ mod tests {
     fn test_delete_line_last() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Line 1\nLine 2", &font, 16.0);
-        
+
         // Delete the last line
         let new_cursor = layout.delete_line(10, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Line 1\n");
         assert_eq!(new_cursor, 7);
     }
@@ -2929,10 +3050,10 @@ mod tests {
     fn test_insert_with_unicode() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         // Insert emoji
         let new_cursor = layout.insert_str(5, " 👋", &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello 👋");
         assert!(new_cursor > 5);
     }
@@ -2941,11 +3062,11 @@ mod tests {
     fn test_delete_backward_with_unicode() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello 👋", &font, 16.0);
-        
+
         let text_len = layout.text().len();
         // Delete the emoji (grapheme cluster)
         let new_cursor = layout.delete_backward(text_len, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello ");
         assert_eq!(new_cursor, 6);
     }
@@ -2954,10 +3075,17 @@ mod tests {
     fn test_insert_and_relayout() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Short", &font, 16.0);
-        
+
         // Insert text and verify layout is updated
-        layout.insert_str(5, " text that should wrap", &font, 16.0, Some(100.0), WrapMode::BreakWord);
-        
+        layout.insert_str(
+            5,
+            " text that should wrap",
+            &font,
+            16.0,
+            Some(100.0),
+            WrapMode::BreakWord,
+        );
+
         // Should have multiple lines due to wrapping
         assert!(layout.lines().len() > 1);
     }
@@ -2966,11 +3094,11 @@ mod tests {
     fn test_delete_and_relayout() {
         let font = create_test_font();
         let mut layout = TextLayout::new("This is a very long text that wraps", &font, 16.0);
-        
+
         // Delete most of the text
         let selection = Selection::new(4, 36);
         layout.delete_selection(&selection, &font, 16.0, Some(100.0), WrapMode::BreakWord);
-        
+
         assert_eq!(layout.text(), "This");
         // Should have only one line now
         assert_eq!(layout.lines().len(), 1);
@@ -2980,11 +3108,11 @@ mod tests {
     fn test_combining_marks() {
         let font = create_test_font();
         let mut layout = TextLayout::new("café", &font, 16.0);
-        
+
         let initial_len = layout.text().len();
         // Delete the 'é' (which might be e + combining accent)
         let new_cursor = layout.delete_backward(initial_len, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "caf");
         assert!(new_cursor < initial_len);
     }
@@ -2993,11 +3121,11 @@ mod tests {
     fn test_copy_to_clipboard() {
         let font = create_test_font();
         let layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Copy "World"
         let selection = Selection::new(6, 11);
         let result = layout.copy_to_clipboard(&selection);
-        
+
         // Should succeed (or fail gracefully if no clipboard available in test environment)
         assert!(result.is_ok() || result.is_err());
     }
@@ -3006,11 +3134,11 @@ mod tests {
     fn test_copy_collapsed_selection() {
         let font = create_test_font();
         let layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         // Collapsed selection should do nothing but succeed
         let selection = Selection::collapsed(3);
         let result = layout.copy_to_clipboard(&selection);
-        
+
         assert!(result.is_ok());
     }
 
@@ -3018,11 +3146,11 @@ mod tests {
     fn test_cut_to_clipboard() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Cut "World"
         let selection = Selection::new(6, 11);
         let result = layout.cut_to_clipboard(&selection, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         // If clipboard is available, text should be deleted
         if result.is_ok() {
             assert_eq!(layout.text(), "Hello ");
@@ -3034,10 +3162,10 @@ mod tests {
     fn test_paste_from_clipboard() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         // Try to paste (may fail if clipboard is empty or unavailable in test env)
         let result = layout.paste_from_clipboard(5, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         // Just verify it doesn't panic
         assert!(result.is_ok() || result.is_err());
     }
@@ -3048,17 +3176,17 @@ mod tests {
         let windows_text = "Line 1\r\nLine 2\r\nLine 3";
         let normalized = TextLayout::normalize_clipboard_text(windows_text);
         assert_eq!(normalized, "Line 1\nLine 2\nLine 3");
-        
+
         // Test CR normalization (old Mac)
         let old_mac_text = "Line 1\rLine 2\rLine 3";
         let normalized = TextLayout::normalize_clipboard_text(old_mac_text);
         assert_eq!(normalized, "Line 1\nLine 2\nLine 3");
-        
+
         // Test LF (Unix) - should remain unchanged
         let unix_text = "Line 1\nLine 2\nLine 3";
         let normalized = TextLayout::normalize_clipboard_text(unix_text);
         assert_eq!(normalized, "Line 1\nLine 2\nLine 3");
-        
+
         // Test mixed line endings
         let mixed_text = "Line 1\r\nLine 2\rLine 3\nLine 4";
         let normalized = TextLayout::normalize_clipboard_text(mixed_text);
@@ -3073,16 +3201,16 @@ mod tests {
     fn test_undo_insert() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         // Insert text
         let selection = Selection::collapsed(5);
         layout.insert_str_with_undo(5, " World", selection, &font, 16.0, None, WrapMode::NoWrap);
         assert_eq!(layout.text(), "Hello World");
-        
+
         // Undo the insertion
         let current_selection = Selection::collapsed(11);
         let result = layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert!(result.is_some());
         assert_eq!(layout.text(), "Hello");
         let (cursor, _) = result.unwrap();
@@ -3093,16 +3221,16 @@ mod tests {
     fn test_undo_delete() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Delete text
         let selection = Selection::new(5, 11);
         layout.delete_selection(&selection, &font, 16.0, None, WrapMode::NoWrap);
         assert_eq!(layout.text(), "Hello");
-        
+
         // Undo the deletion
         let current_selection = Selection::collapsed(5);
         let result = layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert!(result.is_some());
         assert_eq!(layout.text(), "Hello World");
     }
@@ -3111,21 +3239,21 @@ mod tests {
     fn test_redo() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         // Insert text
         let selection = Selection::collapsed(5);
         layout.insert_str_with_undo(5, "!", selection, &font, 16.0, None, WrapMode::NoWrap);
         assert_eq!(layout.text(), "Hello!");
-        
+
         // Undo
         let current_selection = Selection::collapsed(6);
         layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
         assert_eq!(layout.text(), "Hello");
-        
+
         // Redo
         let current_selection = Selection::collapsed(5);
         let result = layout.redo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert!(result.is_some());
         assert_eq!(layout.text(), "Hello!");
     }
@@ -3134,28 +3262,28 @@ mod tests {
     fn test_can_undo_redo() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         assert!(!layout.can_undo());
         assert!(!layout.can_redo());
-        
+
         // Insert text
         let selection = Selection::collapsed(5);
         layout.insert_str_with_undo(5, "!", selection, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert!(layout.can_undo());
         assert!(!layout.can_redo());
-        
+
         // Undo
         let current_selection = Selection::collapsed(6);
         layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert!(!layout.can_undo());
         assert!(layout.can_redo());
-        
+
         // Redo
         let current_selection = Selection::collapsed(5);
         layout.redo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert!(layout.can_undo());
         assert!(!layout.can_redo());
     }
@@ -3165,28 +3293,28 @@ mod tests {
         let font = create_test_font();
         let mut layout = TextLayout::new("", &font, 16.0);
         layout.set_undo_grouping(false); // Disable grouping for this test
-        
+
         // Perform multiple operations
         let sel1 = Selection::collapsed(0);
         layout.insert_str_with_undo(0, "Hello", sel1, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         let sel2 = Selection::collapsed(5);
         layout.insert_str_with_undo(5, " ", sel2, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         let sel3 = Selection::collapsed(6);
         layout.insert_str_with_undo(6, "World", sel3, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hello World");
-        
+
         // Undo all operations
         let mut current_selection = Selection::collapsed(11);
         layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
         assert_eq!(layout.text(), "Hello ");
-        
+
         current_selection = Selection::collapsed(6);
         layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
         assert_eq!(layout.text(), "Hello");
-        
+
         current_selection = Selection::collapsed(5);
         layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
         assert_eq!(layout.text(), "");
@@ -3196,16 +3324,16 @@ mod tests {
     fn test_undo_replace() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Replace text
         let selection = Selection::new(6, 11);
         layout.replace_selection(&selection, "Rust", &font, 16.0, None, WrapMode::NoWrap);
         assert_eq!(layout.text(), "Hello Rust");
-        
+
         // Undo the replacement
         let current_selection = Selection::collapsed(10);
         let result = layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert!(result.is_some());
         assert_eq!(layout.text(), "Hello World");
     }
@@ -3214,16 +3342,16 @@ mod tests {
     fn test_clear_undo_history() {
         let font = create_test_font();
         let mut layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         // Insert text
         let selection = Selection::collapsed(5);
         layout.insert_str_with_undo(5, "!", selection, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert!(layout.can_undo());
-        
+
         // Clear history
         layout.clear_undo_history();
-        
+
         assert!(!layout.can_undo());
         assert!(!layout.can_redo());
     }
@@ -3234,16 +3362,16 @@ mod tests {
         let mut layout = TextLayout::new("", &font, 16.0);
         layout.set_undo_limit(3);
         layout.set_undo_grouping(false); // Disable grouping for this test
-        
+
         // Insert more operations than the limit
         for i in 0..5 {
             let sel = Selection::collapsed(i);
             layout.insert_str_with_undo(i, "x", sel, &font, 16.0, None, WrapMode::NoWrap);
         }
-        
+
         // Should only keep the last 3 operations
         assert_eq!(layout.undo_limit(), 3);
-        
+
         // Undo 3 times should work
         let mut current_selection = Selection::collapsed(5);
         layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
@@ -3251,7 +3379,7 @@ mod tests {
         layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
         current_selection = Selection::collapsed(3);
         layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         // Should not be able to undo more
         assert!(!layout.can_undo());
         assert_eq!(layout.text(), "xx");
@@ -3261,23 +3389,23 @@ mod tests {
     fn test_undo_grouping() {
         let font = create_test_font();
         let mut layout = TextLayout::new("", &font, 16.0);
-        
+
         // Insert consecutive characters (should be grouped)
         let sel1 = Selection::collapsed(0);
         layout.insert_str_with_undo(0, "H", sel1, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         let sel2 = Selection::collapsed(1);
         layout.insert_str_with_undo(1, "e", sel2, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         let sel3 = Selection::collapsed(2);
         layout.insert_str_with_undo(2, "l", sel3, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "Hel");
-        
+
         // Should undo all grouped operations at once
         let current_selection = Selection::collapsed(3);
         layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "");
         assert!(!layout.can_undo());
     }
@@ -3287,21 +3415,21 @@ mod tests {
         let font = create_test_font();
         let mut layout = TextLayout::new("", &font, 16.0);
         layout.set_undo_grouping(false);
-        
+
         // Insert consecutive characters (should NOT be grouped)
         let sel1 = Selection::collapsed(0);
         layout.insert_str_with_undo(0, "H", sel1, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         let sel2 = Selection::collapsed(1);
         layout.insert_str_with_undo(1, "e", sel2, &font, 16.0, None, WrapMode::NoWrap);
-        
+
         assert_eq!(layout.text(), "He");
-        
+
         // Should undo one operation at a time
         let mut current_selection = Selection::collapsed(2);
         layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
         assert_eq!(layout.text(), "H");
-        
+
         current_selection = Selection::collapsed(1);
         layout.undo(&current_selection, &font, 16.0, None, WrapMode::NoWrap);
         assert_eq!(layout.text(), "");
@@ -3314,15 +3442,15 @@ mod tests {
     #[test]
     fn test_measure_single_line_width() {
         let font = create_test_font();
-        
+
         // Measure empty text
         let width = TextLayout::measure_single_line_width("", &font, 16.0);
         assert_eq!(width, 0.0);
-        
+
         // Measure simple text
         let width = TextLayout::measure_single_line_width("Hello", &font, 16.0);
         assert!(width > 0.0);
-        
+
         // Longer text should be wider
         let width1 = TextLayout::measure_single_line_width("Hi", &font, 16.0);
         let width2 = TextLayout::measure_single_line_width("Hello World", &font, 16.0);
@@ -3332,25 +3460,25 @@ mod tests {
     #[test]
     fn test_text_bounds() {
         let font = create_test_font();
-        
+
         // Empty text - has one empty line with 0 width but non-zero height
         let layout = TextLayout::new("", &font, 16.0);
         let (width, height) = layout.text_bounds();
         assert_eq!(width, 0.0);
         assert!(height > 0.0); // Empty text still has line height
-        
+
         // Single line
         let layout = TextLayout::new("Hello", &font, 16.0);
         let (width, height) = layout.text_bounds();
         assert!(width > 0.0);
         assert!(height > 0.0);
-        
+
         // Multi-line text
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3", &font, 16.0);
         let (width, height) = layout.text_bounds();
         assert!(width > 0.0);
         assert!(height > 0.0);
-        
+
         // Height should be greater for multi-line
         let single_line = TextLayout::new("Hello", &font, 16.0);
         let (_, single_height) = single_line.text_bounds();
@@ -3361,16 +3489,16 @@ mod tests {
     fn test_character_width() {
         let font = create_test_font();
         let layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         // Get width of first character
         let width = layout.character_width(0);
         assert!(width.is_some());
         assert!(width.unwrap() > 0.0);
-        
+
         // Invalid offset
         let width = layout.character_width(100);
         assert!(width.is_none());
-        
+
         // Width at end of text
         let width = layout.character_width(layout.text().len());
         assert!(width.is_none());
@@ -3379,13 +3507,13 @@ mod tests {
     #[test]
     fn test_line_height() {
         let font = create_test_font();
-        
+
         // Empty layout
         let layout = TextLayout::new("", &font, 16.0);
         let height = layout.line_height();
         assert!(height.is_some());
         assert!(height.unwrap() > 0.0);
-        
+
         // Non-empty layout
         let layout = TextLayout::new("Hello", &font, 16.0);
         let height = layout.line_height();
@@ -3397,7 +3525,7 @@ mod tests {
     fn test_baseline_offset() {
         let font = create_test_font();
         let layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         let offset = layout.baseline_offset();
         assert!(offset.is_some());
         assert!(offset.unwrap() > 0.0);
@@ -3407,16 +3535,16 @@ mod tests {
     fn test_line_baseline_y() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3", &font, 16.0);
-        
+
         // First line baseline
         let baseline = layout.line_baseline_y(0);
         assert!(baseline.is_some());
-        
+
         // Second line baseline should be lower
         let baseline1 = layout.line_baseline_y(0).unwrap();
         let baseline2 = layout.line_baseline_y(1).unwrap();
         assert!(baseline2 > baseline1);
-        
+
         // Invalid line index
         let baseline = layout.line_baseline_y(100);
         assert!(baseline.is_none());
@@ -3426,21 +3554,21 @@ mod tests {
     fn test_visible_line_range() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3\nLine 4\nLine 5", &font, 16.0);
-        
+
         let line_height = layout.line_height().unwrap();
-        
+
         // Viewport showing first 2 lines
         let range = layout.visible_line_range(0.0, line_height * 2.0);
         assert!(range.is_some());
         let (first, _last) = range.unwrap();
         assert_eq!(first, 0);
-        
+
         // Viewport in the middle
         let range = layout.visible_line_range(line_height * 2.0, line_height * 2.0);
         assert!(range.is_some());
         let (first, _) = range.unwrap();
         assert!(first > 0);
-        
+
         // Empty layout
         let empty_layout = TextLayout::new("", &font, 16.0);
         let range = empty_layout.visible_line_range(0.0, 100.0);
@@ -3451,24 +3579,24 @@ mod tests {
     fn test_measure_range_width() {
         let font = create_test_font();
         let layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Measure "Hello"
         let width = layout.measure_range_width(0, 5);
         assert!(width.is_some());
         assert!(width.unwrap() > 0.0);
-        
+
         // Measure "World"
         let width = layout.measure_range_width(6, 11);
         assert!(width.is_some());
         assert!(width.unwrap() > 0.0);
-        
+
         // Invalid range
         let width = layout.measure_range_width(5, 5);
         assert!(width.is_none());
-        
+
         let width = layout.measure_range_width(10, 5);
         assert!(width.is_none());
-        
+
         // Range exceeds text length
         let width = layout.measure_range_width(0, 100);
         assert!(width.is_none());
@@ -3478,7 +3606,7 @@ mod tests {
     fn test_measure_range_width_multiline() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2", &font, 16.0);
-        
+
         // Measure across multiple lines
         let width = layout.measure_range_width(0, layout.text().len());
         assert!(width.is_some());
@@ -3488,16 +3616,16 @@ mod tests {
     #[test]
     fn test_line_count() {
         let font = create_test_font();
-        
+
         // Single line
         let layout = TextLayout::new("Hello", &font, 16.0);
         assert_eq!(layout.line_count(), 1);
-        
+
         // Multiple lines
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3", &font, 16.0);
         // Note: Each \n creates an empty line, so we have 5 lines total
         assert_eq!(layout.line_count(), 5);
-        
+
         // Empty text
         let layout = TextLayout::new("", &font, 16.0);
         assert_eq!(layout.line_count(), 1); // Empty text has one empty line
@@ -3506,17 +3634,17 @@ mod tests {
     #[test]
     fn test_total_height() {
         let font = create_test_font();
-        
+
         // Single line
         let layout = TextLayout::new("Hello", &font, 16.0);
         let height = layout.total_height();
         assert!(height > 0.0);
-        
+
         // Multiple lines should be taller
         let layout_multi = TextLayout::new("Line 1\nLine 2\nLine 3", &font, 16.0);
         let height_multi = layout_multi.total_height();
         assert!(height_multi > height);
-        
+
         // Empty text
         let layout = TextLayout::new("", &font, 16.0);
         let height = layout.total_height();
@@ -3526,17 +3654,17 @@ mod tests {
     #[test]
     fn test_max_line_width() {
         let font = create_test_font();
-        
+
         // Single line
         let layout = TextLayout::new("Hello", &font, 16.0);
         let width = layout.max_line_width();
         assert!(width > 0.0);
-        
+
         // Multiple lines with different widths
         let layout = TextLayout::new("Short\nThis is a longer line\nMed", &font, 16.0);
         let max_width = layout.max_line_width();
         assert!(max_width > 0.0);
-        
+
         // The max width should be from the longest line
         let (bounds_width, _) = layout.text_bounds();
         assert_eq!(max_width, bounds_width);
@@ -3546,11 +3674,11 @@ mod tests {
     fn test_text_bounds_equals_max_and_total() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3", &font, 16.0);
-        
+
         let (bounds_width, bounds_height) = layout.text_bounds();
         let max_width = layout.max_line_width();
         let total_height = layout.total_height();
-        
+
         assert_eq!(bounds_width, max_width);
         assert_eq!(bounds_height, total_height);
     }
@@ -3558,7 +3686,7 @@ mod tests {
     #[test]
     fn test_measure_with_wrapping() {
         let font = create_test_font();
-        
+
         // Create layout with wrapping
         let layout = TextLayout::with_wrap(
             "This is a very long line that should wrap",
@@ -3567,15 +3695,15 @@ mod tests {
             Some(100.0),
             WrapMode::BreakWord,
         );
-        
+
         // Should have multiple lines due to wrapping
         assert!(layout.line_count() > 1);
-        
+
         // Total height should reflect multiple lines
         let height = layout.total_height();
         let line_height = layout.line_height().unwrap();
         assert!(height > line_height);
-        
+
         // Max width should be at most the wrap width
         let max_width = layout.max_line_width();
         assert!(max_width <= 100.0 + 1.0); // Allow small tolerance
@@ -3589,7 +3717,7 @@ mod tests {
     fn test_start_mouse_selection() {
         let font = create_test_font();
         let layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Click at the beginning
         let point = Point::new(0.0, 0.0);
         let selection = layout.start_mouse_selection(point);
@@ -3603,15 +3731,15 @@ mod tests {
     fn test_extend_mouse_selection() {
         let font = create_test_font();
         let layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Start selection at beginning
         let start_point = Point::new(0.0, 0.0);
         let selection = layout.start_mouse_selection(start_point).unwrap();
-        
+
         // Drag to the right
         let end_point = Point::new(50.0, 0.0);
         let extended = layout.extend_mouse_selection(&selection, end_point);
-        
+
         // Selection should no longer be collapsed
         assert!(!extended.is_collapsed());
         assert!(extended.len() > 0);
@@ -3621,16 +3749,16 @@ mod tests {
     fn test_extend_mouse_selection_backward() {
         let font = create_test_font();
         let layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Start selection in the middle
         let start_point = Point::new(50.0, 0.0);
         let selection = layout.start_mouse_selection(start_point).unwrap();
         let anchor = selection.anchor();
-        
+
         // Drag backward (to the left)
         let end_point = Point::new(10.0, 0.0);
         let extended = layout.extend_mouse_selection(&selection, end_point);
-        
+
         // Anchor should remain at original position
         assert_eq!(extended.anchor(), anchor);
         // Selection should be backward
@@ -3641,13 +3769,13 @@ mod tests {
     fn test_start_word_selection() {
         let font = create_test_font();
         let layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Double-click on "Hello"
         let point = Point::new(10.0, 0.0);
         let selection = layout.start_word_selection(point);
         assert!(selection.is_some());
         let sel = selection.unwrap();
-        
+
         // Should select the entire word
         assert!(!sel.is_collapsed());
         let selected_text = sel.text(layout.text());
@@ -3658,16 +3786,16 @@ mod tests {
     fn test_extend_word_selection_forward() {
         let font = create_test_font();
         let layout = TextLayout::new("Hello World Test", &font, 16.0);
-        
+
         // Start with "Hello" selected
         let start_point = Point::new(10.0, 0.0);
         let selection = layout.start_word_selection(start_point).unwrap();
-        
+
         // Drag to "Test"
         let (width, _) = layout.text_bounds();
         let end_point = Point::new(width - 10.0, 0.0);
         let extended = layout.extend_word_selection(&selection, end_point);
-        
+
         // Should extend to include more words
         assert!(extended.len() >= selection.len());
     }
@@ -3676,16 +3804,16 @@ mod tests {
     fn test_extend_word_selection_backward() {
         let font = create_test_font();
         let layout = TextLayout::new("Hello World Test", &font, 16.0);
-        
+
         // Start with "Test" selected (at the end)
         let (width, _) = layout.text_bounds();
         let start_point = Point::new(width - 10.0, 0.0);
         let selection = layout.start_word_selection(start_point).unwrap();
-        
+
         // Drag backward to "Hello"
         let end_point = Point::new(10.0, 0.0);
         let extended = layout.extend_word_selection(&selection, end_point);
-        
+
         // Should extend backward to include more words
         assert!(extended.len() >= selection.len());
     }
@@ -3694,13 +3822,13 @@ mod tests {
     fn test_start_line_selection() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3", &font, 16.0);
-        
+
         // Triple-click on first line
         let point = Point::new(10.0, 0.0);
         let selection = layout.start_line_selection(point);
         assert!(selection.is_some());
         let sel = selection.unwrap();
-        
+
         // Should select the entire line
         assert!(!sel.is_collapsed());
         let selected_text = sel.text(layout.text());
@@ -3711,16 +3839,16 @@ mod tests {
     fn test_extend_line_selection_down() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3", &font, 16.0);
-        
+
         // Start with first line selected
         let start_point = Point::new(10.0, 0.0);
         let selection = layout.start_line_selection(start_point).unwrap();
-        
+
         // Drag down to third line
         let line_height = layout.line_height().unwrap();
         let end_point = Point::new(10.0, line_height * 4.0);
         let extended = layout.extend_line_selection(&selection, end_point);
-        
+
         // Should extend to include more lines
         assert!(extended.len() >= selection.len());
     }
@@ -3729,16 +3857,16 @@ mod tests {
     fn test_extend_line_selection_up() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3", &font, 16.0);
-        
+
         // Start with third line selected
         let line_height = layout.line_height().unwrap();
         let start_point = Point::new(10.0, line_height * 4.0);
         let selection = layout.start_line_selection(start_point).unwrap();
-        
+
         // Drag up to first line
         let end_point = Point::new(10.0, 0.0);
         let extended = layout.extend_line_selection(&selection, end_point);
-        
+
         // Should extend backward to include more lines
         assert!(extended.len() >= selection.len());
     }
@@ -3747,20 +3875,20 @@ mod tests {
     fn test_mouse_selection_multiline() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3", &font, 16.0);
-        
+
         // Start selection on first line
         let start_point = Point::new(0.0, 0.0);
         let selection = layout.start_mouse_selection(start_point).unwrap();
-        
+
         // Drag to third line
         let line_height = layout.line_height().unwrap();
         let end_point = Point::new(50.0, line_height * 4.0);
         let extended = layout.extend_mouse_selection(&selection, end_point);
-        
+
         // Should span multiple lines
         assert!(!extended.is_collapsed());
         assert!(extended.len() > 0);
-        
+
         // Should include text from multiple lines
         let selected_text = extended.text(layout.text());
         assert!(selected_text.contains('\n') || selected_text.len() > 6);
@@ -3770,7 +3898,7 @@ mod tests {
     fn test_mouse_selection_with_empty_text() {
         let font = create_test_font();
         let layout = TextLayout::new("", &font, 16.0);
-        
+
         let point = Point::new(0.0, 0.0);
         let selection = layout.start_mouse_selection(point);
         assert!(selection.is_some());
@@ -3787,11 +3915,11 @@ mod tests {
     fn test_scroll_to_cursor_visible() {
         let font = create_test_font();
         let layout = TextLayout::new("Hello World", &font, 16.0);
-        
+
         // Cursor at start with no margin - should be visible
         let result = layout.scroll_to_cursor(0, 0.0, 0.0, 800.0, 600.0, 0.0);
         assert!(result.is_none()); // No scroll needed when margin is 0
-        
+
         // Large viewport, small text - cursor should always be visible
         let result = layout.scroll_to_cursor(0, 0.0, 0.0, 10000.0, 10000.0, 50.0);
         assert!(result.is_none()); // No scroll needed with huge viewport
@@ -3801,13 +3929,13 @@ mod tests {
     fn test_scroll_to_cursor_below_viewport() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3\nLine 4\nLine 5", &font, 16.0);
-        
+
         let line_height = layout.line_height().unwrap();
-        
+
         // Cursor on last line, viewport showing first line
         let last_offset = layout.text().len();
         let result = layout.scroll_to_cursor(last_offset, 0.0, 0.0, 800.0, line_height * 2.0, 10.0);
-        
+
         assert!(result.is_some());
         let (_, scroll_y) = result.unwrap();
         assert!(scroll_y > 0.0); // Should scroll down
@@ -3817,12 +3945,13 @@ mod tests {
     fn test_scroll_to_cursor_above_viewport() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3\nLine 4\nLine 5", &font, 16.0);
-        
+
         let line_height = layout.line_height().unwrap();
-        
+
         // Cursor at start, viewport scrolled down
-        let result = layout.scroll_to_cursor(0, 0.0, line_height * 3.0, 800.0, line_height * 2.0, 10.0);
-        
+        let result =
+            layout.scroll_to_cursor(0, 0.0, line_height * 3.0, 800.0, line_height * 2.0, 10.0);
+
         assert!(result.is_some());
         let (_, scroll_y) = result.unwrap();
         assert!(scroll_y < line_height * 3.0); // Should scroll up
@@ -3832,11 +3961,11 @@ mod tests {
     fn test_scroll_to_cursor_horizontal() {
         let font = create_test_font();
         let layout = TextLayout::new("This is a very long line of text", &font, 16.0);
-        
+
         // Cursor at end, narrow viewport
         let end_offset = layout.text().len();
         let result = layout.scroll_to_cursor(end_offset, 0.0, 0.0, 100.0, 600.0, 10.0);
-        
+
         assert!(result.is_some());
         let (scroll_x, _) = result.unwrap();
         assert!(scroll_x > 0.0); // Should scroll right
@@ -3846,13 +3975,14 @@ mod tests {
     fn test_scroll_to_selection() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3", &font, 16.0);
-        
+
         let line_height = layout.line_height().unwrap();
-        
+
         // Selection on last line
         let selection = Selection::new(0, layout.text().len());
-        let result = layout.scroll_to_selection(&selection, 0.0, 0.0, 800.0, line_height * 1.5, 10.0);
-        
+        let result =
+            layout.scroll_to_selection(&selection, 0.0, 0.0, 800.0, line_height * 1.5, 10.0);
+
         assert!(result.is_some());
         let (_, scroll_y) = result.unwrap();
         assert!(scroll_y > 0.0); // Should scroll to show active end
@@ -3862,9 +3992,9 @@ mod tests {
     fn test_scroll_to_line_centered() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3\nLine 4\nLine 5", &font, 16.0);
-        
+
         let viewport_height = 200.0;
-        
+
         // Center the third line (index 2)
         let scroll_y = layout.scroll_to_line_centered(2, viewport_height);
         assert!(scroll_y.is_some());
@@ -3875,11 +4005,11 @@ mod tests {
     fn test_scroll_to_line_top() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3", &font, 16.0);
-        
+
         // Scroll to show second line at top
         let scroll_y = layout.scroll_to_line_top(1, 10.0);
         assert!(scroll_y.is_some());
-        
+
         let line_height = layout.line_height().unwrap();
         // Should be roughly at the second line's position
         assert!(scroll_y.unwrap() > 0.0);
@@ -3890,12 +4020,12 @@ mod tests {
     fn test_scroll_bounds() {
         let font = create_test_font();
         let layout = TextLayout::new("Short\nThis is a much longer line\nShort", &font, 16.0);
-        
+
         let viewport_width = 100.0;
         let viewport_height = 50.0;
-        
+
         let (max_x, max_y) = layout.scroll_bounds(viewport_width, viewport_height);
-        
+
         // Should have horizontal scroll space
         assert!(max_x > 0.0);
         // Should have vertical scroll space
@@ -3906,12 +4036,12 @@ mod tests {
     fn test_scroll_bounds_small_content() {
         let font = create_test_font();
         let layout = TextLayout::new("Hi", &font, 16.0);
-        
+
         let viewport_width = 800.0;
         let viewport_height = 600.0;
-        
+
         let (max_x, max_y) = layout.scroll_bounds(viewport_width, viewport_height);
-        
+
         // Content fits in viewport, no scroll needed
         assert_eq!(max_x, 0.0);
         assert_eq!(max_y, 0.0);
@@ -3923,12 +4053,12 @@ mod tests {
         let (dx, dy) = TextLayout::wheel_scroll_delta(0.0, 1.0, 20.0);
         assert_eq!(dx, 0.0);
         assert_eq!(dy, 20.0);
-        
+
         // Test horizontal scrolling
         let (dx, dy) = TextLayout::wheel_scroll_delta(1.0, 0.0, 20.0);
         assert_eq!(dx, 20.0);
         assert_eq!(dy, 0.0);
-        
+
         // Test negative (reverse) scrolling
         let (dx, dy) = TextLayout::wheel_scroll_delta(0.0, -1.0, 20.0);
         assert_eq!(dx, 0.0);
@@ -3939,10 +4069,10 @@ mod tests {
     fn test_default_line_scroll_amount() {
         let font = create_test_font();
         let layout = TextLayout::new("Hello", &font, 16.0);
-        
+
         let amount = layout.default_line_scroll_amount();
         assert!(amount > 0.0);
-        
+
         // Should be roughly 3x line height
         let line_height = layout.line_height().unwrap();
         assert!((amount - line_height * 3.0).abs() < 1.0);
@@ -3952,13 +4082,13 @@ mod tests {
     fn test_scroll_with_margin() {
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3", &font, 16.0);
-        
+
         let line_height = layout.line_height().unwrap();
-        
+
         // Test with different margins
         let result1 = layout.scroll_to_cursor(0, 0.0, line_height, 800.0, line_height * 2.0, 5.0);
         let result2 = layout.scroll_to_cursor(0, 0.0, line_height, 800.0, line_height * 2.0, 20.0);
-        
+
         // Larger margin should trigger scroll sooner
         assert!(result1.is_some() || result2.is_some());
     }
@@ -3968,10 +4098,10 @@ mod tests {
         // This was already implemented in 6.9, just verify it works
         let font = create_test_font();
         let layout = TextLayout::new("Line 1\nLine 2\nLine 3\nLine 4\nLine 5", &font, 16.0);
-        
+
         let line_height = layout.line_height().unwrap();
         let range = layout.visible_line_range(0.0, line_height * 2.0);
-        
+
         assert!(range.is_some());
         let (first, last) = range.unwrap();
         assert_eq!(first, 0);

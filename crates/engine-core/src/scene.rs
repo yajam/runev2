@@ -1,5 +1,3 @@
-
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Transform2D {
     // Affine 2D: [a, b, c, d, e, f] for matrix [[a c e],[b d f],[0 0 1]]
@@ -7,7 +5,11 @@ pub struct Transform2D {
 }
 
 impl Transform2D {
-    pub fn identity() -> Self { Self { m: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0] } }
+    pub fn identity() -> Self {
+        Self {
+            m: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        }
+    }
 
     /// Compose two transforms: self ∘ other (apply `other`, then `self`).
     pub fn concat(self, other: Self) -> Self {
@@ -19,12 +21,22 @@ impl Transform2D {
         let d = b1 * c2 + d1 * d2;
         let e = a1 * e2 + c1 * f2 + e1;
         let f = b1 * e2 + d1 * f2 + f1;
-        Self { m: [a, b, c, d, e, f] }
+        Self {
+            m: [a, b, c, d, e, f],
+        }
     }
 
-    pub fn scale(sx: f32, sy: f32) -> Self { Self { m: [sx, 0.0, 0.0, sy, 0.0, 0.0] } }
-    
-    pub fn translate(tx: f32, ty: f32) -> Self { Self { m: [1.0, 0.0, 0.0, 1.0, tx, ty] } }
+    pub fn scale(sx: f32, sy: f32) -> Self {
+        Self {
+            m: [sx, 0.0, 0.0, sy, 0.0, 0.0],
+        }
+    }
+
+    pub fn translate(tx: f32, ty: f32) -> Self {
+        Self {
+            m: [1.0, 0.0, 0.0, 1.0, tx, ty],
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -111,7 +123,10 @@ pub struct TextRun {
 // --- Path geometry (for SVG import / lyon) ---
 
 #[derive(Clone, Copy, Debug)]
-pub enum FillRule { NonZero, EvenOdd }
+pub enum FillRule {
+    NonZero,
+    EvenOdd,
+}
 
 #[derive(Clone, Debug)]
 pub enum PathCmd {

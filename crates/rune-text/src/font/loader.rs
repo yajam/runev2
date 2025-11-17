@@ -37,11 +37,7 @@ impl FontCache {
     }
 
     /// Get a font face from the cache or load it from disk.
-    pub fn get_or_load(
-        &mut self,
-        path: impl AsRef<Path>,
-        index: usize,
-    ) -> Result<Arc<FontFace>> {
+    pub fn get_or_load(&mut self, path: impl AsRef<Path>, index: usize) -> Result<Arc<FontFace>> {
         let key = FontKey::new(&path, index);
         if let Some(face) = self.fonts.get(&key) {
             return Ok(face.clone());
@@ -73,7 +69,7 @@ pub fn load_font(path: impl AsRef<Path>, index: usize) -> Result<FontFace> {
 /// This mirrors the selection used by `engine-core::RuneTextProvider::from_system_fonts`
 /// so that layout metrics match the primary rendering path.
 pub fn load_system_default_font() -> Result<FontFace> {
-    use fontdb::{Database, Family, Query, Source, Style, Stretch, Weight};
+    use fontdb::{Database, Family, Query, Source, Stretch, Style, Weight};
 
     let mut db = Database::new();
     db.load_system_fonts();
@@ -93,9 +89,7 @@ pub fn load_system_default_font() -> Result<FontFace> {
         })
         .ok_or(FontError::InvalidFont)?;
 
-    let face = db
-        .face(id)
-        .ok_or(FontError::InvalidFont)?;
+    let face = db.face(id).ok_or(FontError::InvalidFont)?;
 
     let bytes: Vec<u8> = match &face.source {
         Source::File(path) => std::fs::read(path)?,

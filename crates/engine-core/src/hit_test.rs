@@ -97,7 +97,10 @@ impl HitIndex {
         for cmd in &list.commands {
             match cmd {
                 Command::PushClip(ClipRect(rect)) => {
-                    clips.push(ClipEntry { rect: *rect, transform: *tstack.last().unwrap() });
+                    clips.push(ClipEntry {
+                        rect: *rect,
+                        transform: *tstack.last().unwrap(),
+                    });
                 }
                 Command::PopClip => {
                     let _ = clips.pop();
@@ -108,7 +111,9 @@ impl HitIndex {
                 Command::PopTransform => {
                     let _ = tstack.pop();
                 }
-                Command::DrawRect { rect, z, transform, .. } => {
+                Command::DrawRect {
+                    rect, z, transform, ..
+                } => {
                     items.push(HitItem {
                         id: next_id,
                         z: *z,
@@ -120,7 +125,12 @@ impl HitIndex {
                     });
                     next_id += 1;
                 }
-                Command::DrawRoundedRect { rrect, z, transform, .. } => {
+                Command::DrawRoundedRect {
+                    rrect,
+                    z,
+                    transform,
+                    ..
+                } => {
                     items.push(HitItem {
                         id: next_id,
                         z: *z,
@@ -132,43 +142,72 @@ impl HitIndex {
                     });
                     next_id += 1;
                 }
-                Command::DrawEllipse { center, radii, z, transform, .. } => {
+                Command::DrawEllipse {
+                    center,
+                    radii,
+                    z,
+                    transform,
+                    ..
+                } => {
                     items.push(HitItem {
                         id: next_id,
                         z: *z,
                         kind: HitKind::Ellipse,
                         transform: *transform,
-                        data: HitData::Ellipse { center: *center, radii: *radii },
+                        data: HitData::Ellipse {
+                            center: *center,
+                            radii: *radii,
+                        },
                         clips: clips.clone(),
                         region_id: None,
                     });
                     next_id += 1;
                 }
-                Command::StrokeRect { rect, stroke, z, transform, .. } => {
+                Command::StrokeRect {
+                    rect,
+                    stroke,
+                    z,
+                    transform,
+                    ..
+                } => {
                     items.push(HitItem {
                         id: next_id,
                         z: *z,
                         kind: HitKind::StrokeRect,
                         transform: *transform,
-                        data: HitData::StrokeRect { rect: *rect, width: stroke.width },
+                        data: HitData::StrokeRect {
+                            rect: *rect,
+                            width: stroke.width,
+                        },
                         clips: clips.clone(),
                         region_id: None,
                     });
                     next_id += 1;
                 }
-                Command::StrokeRoundedRect { rrect, stroke, z, transform, .. } => {
+                Command::StrokeRoundedRect {
+                    rrect,
+                    stroke,
+                    z,
+                    transform,
+                    ..
+                } => {
                     items.push(HitItem {
                         id: next_id,
                         z: *z,
                         kind: HitKind::StrokeRoundedRect,
                         transform: *transform,
-                        data: HitData::StrokeRoundedRect { rrect: *rrect, width: stroke.width },
+                        data: HitData::StrokeRoundedRect {
+                            rrect: *rrect,
+                            width: stroke.width,
+                        },
                         clips: clips.clone(),
                         region_id: None,
                     });
                     next_id += 1;
                 }
-                Command::DrawText { run, z, transform, .. } => {
+                Command::DrawText {
+                    run, z, transform, ..
+                } => {
                     items.push(HitItem {
                         id: next_id,
                         z: *z,
@@ -182,7 +221,10 @@ impl HitIndex {
                 }
                 Command::FillPath { .. } => {
                     // Coarse bbox hit: compute path bounding box (approximate using control/end points).
-                    if let Command::FillPath { path, z, transform, .. } = cmd {
+                    if let Command::FillPath {
+                        path, z, transform, ..
+                    } = cmd
+                    {
                         if let Some(rect) = bbox_for_path(path) {
                             items.push(HitItem {
                                 id: next_id,
@@ -197,10 +239,18 @@ impl HitIndex {
                         }
                     }
                 }
-                Command::StrokePath { path, z, transform, .. } => {
+                Command::StrokePath {
+                    path, z, transform, ..
+                } => {
                     if let Some(mut rect) = bbox_for_path(path) {
                         // Expand bbox by half of stroke width conservatively
-                        if let Command::StrokePath { stroke, .. } = cmd { let w = stroke.width.max(0.0) * 0.5; rect.x -= w; rect.y -= w; rect.w += w * 2.0; rect.h += w * 2.0; }
+                        if let Command::StrokePath { stroke, .. } = cmd {
+                            let w = stroke.width.max(0.0) * 0.5;
+                            rect.x -= w;
+                            rect.y -= w;
+                            rect.w += w * 2.0;
+                            rect.h += w * 2.0;
+                        }
                         items.push(HitItem {
                             id: next_id,
                             z: *z,
@@ -213,7 +263,12 @@ impl HitIndex {
                         next_id += 1;
                     }
                 }
-                Command::BoxShadow { rrect, z, transform, .. } => {
+                Command::BoxShadow {
+                    rrect,
+                    z,
+                    transform,
+                    ..
+                } => {
                     items.push(HitItem {
                         id: next_id,
                         z: *z,
@@ -225,7 +280,12 @@ impl HitIndex {
                     });
                     next_id += 1;
                 }
-                Command::HitRegionRect { id, rect, z, transform } => {
+                Command::HitRegionRect {
+                    id,
+                    rect,
+                    z,
+                    transform,
+                } => {
                     items.push(HitItem {
                         id: next_id,
                         z: *z,
@@ -237,7 +297,12 @@ impl HitIndex {
                     });
                     next_id += 1;
                 }
-                Command::HitRegionRoundedRect { id, rrect, z, transform } => {
+                Command::HitRegionRoundedRect {
+                    id,
+                    rrect,
+                    z,
+                    transform,
+                } => {
                     items.push(HitItem {
                         id: next_id,
                         z: *z,
@@ -249,13 +314,22 @@ impl HitIndex {
                     });
                     next_id += 1;
                 }
-                Command::HitRegionEllipse { id, center, radii, z, transform } => {
+                Command::HitRegionEllipse {
+                    id,
+                    center,
+                    radii,
+                    z,
+                    transform,
+                } => {
                     items.push(HitItem {
                         id: next_id,
                         z: *z,
                         kind: HitKind::HitRegion,
                         transform: *transform,
-                        data: HitData::Ellipse { center: *center, radii: *radii },
+                        data: HitData::Ellipse {
+                            center: *center,
+                            radii: *radii,
+                        },
                         clips: clips.clone(),
                         region_id: Some(*id),
                     });
@@ -266,7 +340,12 @@ impl HitIndex {
 
         // Always include a root viewport hit region to capture scene-surface hits
         // Use minimal z so it doesn't occlude content.
-        let root_rect = Rect { x: 0.0, y: 0.0, w: list.viewport.width as f32, h: list.viewport.height as f32 };
+        let root_rect = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: list.viewport.width as f32,
+            h: list.viewport.height as f32,
+        };
         items.push(HitItem {
             id: next_id,
             z: i32::MIN,
@@ -303,24 +382,33 @@ impl HitIndex {
         best.map(|it| {
             let (local_pos, local_uv) = compute_locals(&it, pos);
             HitResult {
-            id: it.id,
-            z: it.z,
-            kind: it.kind,
-            shape: match &it.data {
-                HitData::Rect(r) => HitShape::Rect(*r),
-                HitData::RoundedRect(rr) => HitShape::RoundedRect(*rr),
-                HitData::Ellipse { center, radii } => HitShape::Ellipse { center: *center, radii: *radii },
-                HitData::StrokeRect { rect, width } => HitShape::StrokeRect { rect: *rect, width: *width },
-                HitData::StrokeRoundedRect { rrect, width } => HitShape::StrokeRoundedRect { rrect: *rrect, width: *width },
-                HitData::PathBBox(r) => HitShape::PathBBox { rect: *r },
-                HitData::Text(_) => HitShape::Text,
-                HitData::BoxShadow { rrect } => HitShape::BoxShadow { rrect: *rrect },
-            },
-            transform: it.transform,
-            region_id: it.region_id,
-            local_pos,
-            local_uv,
-        }
+                id: it.id,
+                z: it.z,
+                kind: it.kind,
+                shape: match &it.data {
+                    HitData::Rect(r) => HitShape::Rect(*r),
+                    HitData::RoundedRect(rr) => HitShape::RoundedRect(*rr),
+                    HitData::Ellipse { center, radii } => HitShape::Ellipse {
+                        center: *center,
+                        radii: *radii,
+                    },
+                    HitData::StrokeRect { rect, width } => HitShape::StrokeRect {
+                        rect: *rect,
+                        width: *width,
+                    },
+                    HitData::StrokeRoundedRect { rrect, width } => HitShape::StrokeRoundedRect {
+                        rrect: *rrect,
+                        width: *width,
+                    },
+                    HitData::PathBBox(r) => HitShape::PathBBox { rect: *r },
+                    HitData::Text(_) => HitShape::Text,
+                    HitData::BoxShadow { rrect } => HitShape::BoxShadow { rrect: *rrect },
+                },
+                transform: it.transform,
+                region_id: it.region_id,
+                local_pos,
+                local_uv,
+            }
         })
     }
 }
@@ -334,23 +422,40 @@ fn bbox_for_path(path: &Path) -> Option<Rect> {
     for cmd in &path.cmds {
         match *cmd {
             PathCmd::MoveTo(p) | PathCmd::LineTo(p) => {
-                minx = minx.min(p[0]); miny = miny.min(p[1]);
-                maxx = maxx.max(p[0]); maxy = maxy.max(p[1]);
+                minx = minx.min(p[0]);
+                miny = miny.min(p[1]);
+                maxx = maxx.max(p[0]);
+                maxy = maxy.max(p[1]);
                 any = true;
             }
             PathCmd::QuadTo(c, p) => {
-                for q in [c, p] { minx = minx.min(q[0]); miny = miny.min(q[1]); maxx = maxx.max(q[0]); maxy = maxy.max(q[1]); }
+                for q in [c, p] {
+                    minx = minx.min(q[0]);
+                    miny = miny.min(q[1]);
+                    maxx = maxx.max(q[0]);
+                    maxy = maxy.max(q[1]);
+                }
                 any = true;
             }
             PathCmd::CubicTo(c1, c2, p) => {
-                for q in [c1, c2, p] { minx = minx.min(q[0]); miny = miny.min(q[1]); maxx = maxx.max(q[0]); maxy = maxy.max(q[1]); }
+                for q in [c1, c2, p] {
+                    minx = minx.min(q[0]);
+                    miny = miny.min(q[1]);
+                    maxx = maxx.max(q[0]);
+                    maxy = maxy.max(q[1]);
+                }
                 any = true;
             }
             PathCmd::Close => {}
         }
     }
     if any {
-        Some(Rect { x: minx, y: miny, w: (maxx - minx).max(0.0), h: (maxy - miny).max(0.0) })
+        Some(Rect {
+            x: minx,
+            y: miny,
+            w: (maxx - minx).max(0.0),
+            h: (maxy - miny).max(0.0),
+        })
     } else {
         None
     }
@@ -369,8 +474,12 @@ fn hit_item_contains(item: &HitItem, world: [f32; 2]) -> bool {
     match &item.data {
         HitData::Rect(r) => point_in_rect_local(world, &item.transform, *r),
         HitData::RoundedRect(r) => point_in_rounded_rect_local(world, &item.transform, *r),
-        HitData::Ellipse { center, radii } => point_in_ellipse_local(world, &item.transform, *center, *radii),
-        HitData::StrokeRect { rect, width } => point_in_stroke_rect_local(world, &item.transform, *rect, *width),
+        HitData::Ellipse { center, radii } => {
+            point_in_ellipse_local(world, &item.transform, *center, *radii)
+        }
+        HitData::StrokeRect { rect, width } => {
+            point_in_stroke_rect_local(world, &item.transform, *rect, *width)
+        }
         HitData::StrokeRoundedRect { rrect, width } => {
             point_in_stroke_rounded_rect_local(world, &item.transform, *rrect, *width)
         }
@@ -382,16 +491,17 @@ fn hit_item_contains(item: &HitItem, world: [f32; 2]) -> bool {
 
 fn point_in_rect_local(world: [f32; 2], transform: &Transform2D, rect: Rect) -> bool {
     if let Some(p) = transform.inverse_apply(world) {
-        p[0] >= rect.x
-            && p[1] >= rect.y
-            && p[0] <= rect.x + rect.w
-            && p[1] <= rect.y + rect.h
+        p[0] >= rect.x && p[1] >= rect.y && p[0] <= rect.x + rect.w && p[1] <= rect.y + rect.h
     } else {
         false
     }
 }
 
-fn point_in_rounded_rect_local(world: [f32; 2], transform: &Transform2D, rrect: RoundedRect) -> bool {
+fn point_in_rounded_rect_local(
+    world: [f32; 2],
+    transform: &Transform2D,
+    rrect: RoundedRect,
+) -> bool {
     if let Some(p) = transform.inverse_apply(world) {
         let Rect { x, y, w, h } = rrect.rect;
         let tl = rrect.radii.tl.min(w * 0.5).min(h * 0.5);
@@ -448,12 +558,33 @@ fn point_in_ellipse_local(
     }
 }
 
-fn point_in_stroke_rect_local(world: [f32; 2], transform: &Transform2D, rect: Rect, width: f32) -> bool {
+fn point_in_stroke_rect_local(
+    world: [f32; 2],
+    transform: &Transform2D,
+    rect: Rect,
+    width: f32,
+) -> bool {
     if let Some(p) = transform.inverse_apply(world) {
-        let outer = Rect { x: rect.x - width * 0.5, y: rect.y - width * 0.5, w: rect.w + width, h: rect.h + width };
-        let inner = Rect { x: rect.x + width * 0.5, y: rect.y + width * 0.5, w: (rect.w - width).max(0.0), h: (rect.h - width).max(0.0) };
-        let in_outer = p[0] >= outer.x && p[1] >= outer.y && p[0] <= outer.x + outer.w && p[1] <= outer.y + outer.h;
-        let in_inner = p[0] >= inner.x && p[1] >= inner.y && p[0] <= inner.x + inner.w && p[1] <= inner.y + inner.h;
+        let outer = Rect {
+            x: rect.x - width * 0.5,
+            y: rect.y - width * 0.5,
+            w: rect.w + width,
+            h: rect.h + width,
+        };
+        let inner = Rect {
+            x: rect.x + width * 0.5,
+            y: rect.y + width * 0.5,
+            w: (rect.w - width).max(0.0),
+            h: (rect.h - width).max(0.0),
+        };
+        let in_outer = p[0] >= outer.x
+            && p[1] >= outer.y
+            && p[0] <= outer.x + outer.w
+            && p[1] <= outer.y + outer.h;
+        let in_inner = p[0] >= inner.x
+            && p[1] >= inner.y
+            && p[0] <= inner.x + inner.w
+            && p[1] <= inner.y + inner.h;
         in_outer && !in_inner
     } else {
         false
@@ -470,11 +601,18 @@ fn point_in_stroke_rounded_rect_local(
     if let Some(p) = transform.inverse_apply(world) {
         // Outer check
         let outer_hit = point_in_rounded_rect_untransformed(p, rrect);
-        if !outer_hit { return false; }
+        if !outer_hit {
+            return false;
+        }
         // Inner check (inset by stroke width)
         let inset = width.max(0.0) * 0.5;
         let inner = RoundedRect {
-            rect: Rect { x: rrect.rect.x + inset, y: rrect.rect.y + inset, w: (rrect.rect.w - width).max(0.0), h: (rrect.rect.h - width).max(0.0) },
+            rect: Rect {
+                x: rrect.rect.x + inset,
+                y: rrect.rect.y + inset,
+                w: (rrect.rect.w - width).max(0.0),
+                h: (rrect.rect.h - width).max(0.0),
+            },
             radii: RoundedRadii {
                 tl: (rrect.radii.tl - inset).max(0.0),
                 tr: (rrect.radii.tr - inset).max(0.0),
@@ -573,8 +711,16 @@ fn compute_locals(item: &HitItem, world: [f32; 2]) -> (Option<[f32; 2]>, Option<
         HitData::Rect(r) => {
             let local = [p[0] - r.x, p[1] - r.y];
             let uv = [
-                if r.w.abs() > 1e-6 { (local[0] / r.w).clamp(0.0, 1.0) } else { 0.0 },
-                if r.h.abs() > 1e-6 { (local[1] / r.h).clamp(0.0, 1.0) } else { 0.0 },
+                if r.w.abs() > 1e-6 {
+                    (local[0] / r.w).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
+                if r.h.abs() > 1e-6 {
+                    (local[1] / r.h).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
             ];
             (Some(local), Some(uv))
         }
@@ -582,16 +728,32 @@ fn compute_locals(item: &HitItem, world: [f32; 2]) -> (Option<[f32; 2]>, Option<
             let r = rr.rect;
             let local = [p[0] - r.x, p[1] - r.y];
             let uv = [
-                if r.w.abs() > 1e-6 { (local[0] / r.w).clamp(0.0, 1.0) } else { 0.0 },
-                if r.h.abs() > 1e-6 { (local[1] / r.h).clamp(0.0, 1.0) } else { 0.0 },
+                if r.w.abs() > 1e-6 {
+                    (local[0] / r.w).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
+                if r.h.abs() > 1e-6 {
+                    (local[1] / r.h).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
             ];
             (Some(local), Some(uv))
         }
         HitData::Ellipse { center, radii } => {
             let local = [p[0] - center[0], p[1] - center[1]];
             let uv = [
-                0.5 + if radii[0].abs() > 1e-6 { local[0] / (2.0 * radii[0]) } else { 0.0 },
-                0.5 + if radii[1].abs() > 1e-6 { local[1] / (2.0 * radii[1]) } else { 0.0 },
+                0.5 + if radii[0].abs() > 1e-6 {
+                    local[0] / (2.0 * radii[0])
+                } else {
+                    0.0
+                },
+                0.5 + if radii[1].abs() > 1e-6 {
+                    local[1] / (2.0 * radii[1])
+                } else {
+                    0.0
+                },
             ];
             (Some(local), Some(uv))
         }
@@ -608,8 +770,16 @@ fn compute_locals(item: &HitItem, world: [f32; 2]) -> (Option<[f32; 2]>, Option<
         HitData::PathBBox(r) => {
             let local = [p[0] - r.x, p[1] - r.y];
             let uv = [
-                if r.w.abs() > 1e-6 { (local[0] / r.w).clamp(0.0, 1.0) } else { 0.0 },
-                if r.h.abs() > 1e-6 { (local[1] / r.h).clamp(0.0, 1.0) } else { 0.0 },
+                if r.w.abs() > 1e-6 {
+                    (local[0] / r.w).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
+                if r.h.abs() > 1e-6 {
+                    (local[1] / r.h).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
             ];
             (Some(local), Some(uv))
         }
@@ -617,8 +787,16 @@ fn compute_locals(item: &HitItem, world: [f32; 2]) -> (Option<[f32; 2]>, Option<
             let r = rrect.rect;
             let local = [p[0] - r.x, p[1] - r.y];
             let uv = [
-                if r.w.abs() > 1e-6 { (local[0] / r.w).clamp(0.0, 1.0) } else { 0.0 },
-                if r.h.abs() > 1e-6 { (local[1] / r.h).clamp(0.0, 1.0) } else { 0.0 },
+                if r.w.abs() > 1e-6 {
+                    (local[0] / r.w).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
+                if r.h.abs() > 1e-6 {
+                    (local[1] / r.h).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
             ];
             (Some(local), Some(uv))
         }

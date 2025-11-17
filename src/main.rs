@@ -5,4 +5,3 @@ fn main() -> Result<()> {
     // Future: parse CLI/env to choose different runners.
     rune_scene::run()
 }
-

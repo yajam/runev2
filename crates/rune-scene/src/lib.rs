@@ -1,25 +1,21 @@
 use anyhow::Result;
-use winit::event::{Event, WindowEvent};
-use winit::window::WindowBuilder;
-use winit::event_loop::EventLoop;
 use engine_core::{
-    make_surface_config,
-    SubpixelOrientation,
-    Brush,
-    Rect,
-    RoundedRect,
-    RoundedRadii,
-    ColorLinPremul,
-    TextRun,
-    Transform2D,
+    Brush, ColorLinPremul, Rect, RoundedRadii, RoundedRect, SubpixelOrientation, TextRun,
+    Transform2D, make_surface_config,
 };
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::EventLoop;
+use winit::window::WindowBuilder;
 
 pub mod elements;
 pub mod text;
-pub mod zones;
 pub mod viewport_ir;
+pub mod zones;
 
-use zones::{ZoneManager, ZoneId, DevToolsTab, TOGGLE_BUTTON_REGION_ID, DEVTOOLS_BUTTON_REGION_ID, DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_ELEMENTS_TAB_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID};
+use zones::{
+    DEVTOOLS_BUTTON_REGION_ID, DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID,
+    DEVTOOLS_ELEMENTS_TAB_REGION_ID, DevToolsTab, TOGGLE_BUTTON_REGION_ID, ZoneId, ZoneManager,
+};
 
 /// Render zone backgrounds and borders (viewport, toolbar, sidebar).
 fn render_zones(canvas: &mut rune_surface::Canvas, zone_manager: &ZoneManager) {
@@ -42,11 +38,18 @@ fn render_zones(canvas: &mut rune_surface::Canvas, zone_manager: &ZoneManager) {
         // Border (draw as four rectangles)
         let bw = style.border_width;
         let border_brush = Brush::Solid(style.border_color);
-        
+
         // Top border
         canvas.fill_rect(rect.x, rect.y, rect.w, bw, border_brush.clone(), Z);
         // Bottom border
-        canvas.fill_rect(rect.x, rect.y + rect.h - bw, rect.w, bw, border_brush.clone(), Z);
+        canvas.fill_rect(
+            rect.x,
+            rect.y + rect.h - bw,
+            rect.w,
+            bw,
+            border_brush.clone(),
+            Z,
+        );
         // Left border
         canvas.fill_rect(rect.x, rect.y, bw, rect.h, border_brush.clone(), Z);
         // Right border
@@ -55,7 +58,7 @@ fn render_zones(canvas: &mut rune_surface::Canvas, zone_manager: &ZoneManager) {
 }
 
 /// Zone-based rendering architecture for rune-scene
-/// 
+///
 /// Zones:
 /// - Viewport: Main content area (will be replaced with IR-based rendering)
 /// - Sidebar: Left panel for tools/navigation
@@ -76,7 +79,8 @@ pub fn run() -> Result<()> {
         compatible_surface: Some(&surface),
     }))
     .expect("No suitable GPU adapters found");
-    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None))?;
+    let (device, queue) =
+        pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None))?;
 
     let mut size = window.inner_size();
     let scale_factor = window.scale_factor() as f32;
@@ -102,10 +106,9 @@ pub fn run() -> Result<()> {
         // Check for custom font path
         if let Ok(path) = std::env::var("RUNE_TEXT_FONT") {
             if let Ok(bytes) = std::fs::read(&path) {
-                if let Ok(p) = engine_core::RuneTextProvider::from_bytes(
-                    &bytes,
-                    SubpixelOrientation::RGB,
-                ) {
+                if let Ok(p) =
+                    engine_core::RuneTextProvider::from_bytes(&bytes, SubpixelOrientation::RGB)
+                {
                     std::sync::Arc::new(p)
                 } else {
                     create_default_provider()
@@ -121,7 +124,7 @@ pub fn run() -> Result<()> {
     fn create_default_provider() -> std::sync::Arc<dyn engine_core::TextProvider> {
         std::sync::Arc::new(
             engine_core::RuneTextProvider::from_system_fonts(SubpixelOrientation::RGB)
-                .expect("Failed to load system fonts")
+                .expect("Failed to load system fonts"),
         )
     }
 
@@ -129,13 +132,13 @@ pub fn run() -> Result<()> {
     let logical_width = (size.width as f32 / scale_factor) as u32;
     let logical_height = (size.height as f32 / scale_factor) as u32;
     let mut zone_manager = ZoneManager::new(logical_width, logical_height);
-    
+
     // Viewport IR content (formerly sample_ui)
     let mut viewport_ir = viewport_ir::create_sample_elements();
-    
+
     // Text layout cache for efficient resize performance
     let text_cache = std::sync::Arc::new(engine_core::TextLayoutCache::new(200));
-    
+
     // Dirty flag: only redraw when something changes
     let mut needs_redraw = true;
     // Track last resize time to debounce redraws (only redraw after resize settles)
@@ -161,415 +164,469 @@ pub fn run() -> Result<()> {
     // Shared state for devtools visibility
     let devtools_visible = std::sync::Arc::new(std::sync::Mutex::new(false));
     let devtools_visible_overlay = devtools_visible.clone();
-    
+
     // Shared state for devtools active tab
     let devtools_active_tab = std::sync::Arc::new(std::sync::Mutex::new(DevToolsTab::Elements));
     let devtools_active_tab_overlay = devtools_active_tab.clone();
 
     // Overlay callback for toolbar chrome (always) and devtools chrome (when visible)
-    surf.set_overlay(Box::new(move |passes, encoder, view, queue, width, height| {
-        // Recompute layout in logical coordinates for the current size (shared by toolbar/devtools).
-        let sidebar_vis = *sidebar_visible_overlay.lock().unwrap();
-        let logical_width = (width as f32 / overlay_scale).max(0.0) as u32;
-        let logical_height = (height as f32 / overlay_scale).max(0.0) as u32;
-        let layout = zones::ZoneLayout::calculate(logical_width, logical_height, sidebar_vis);
+    surf.set_overlay(Box::new(
+        move |passes, encoder, view, queue, width, height| {
+            // Recompute layout in logical coordinates for the current size (shared by toolbar/devtools).
+            let sidebar_vis = *sidebar_visible_overlay.lock().unwrap();
+            let logical_width = (width as f32 / overlay_scale).max(0.0) as u32;
+            let logical_height = (height as f32 / overlay_scale).max(0.0) as u32;
+            let layout = zones::ZoneLayout::calculate(logical_width, logical_height, sidebar_vis);
 
-        // --- Toolbar overlay: always render above viewport content ---
-        let toolbar_rect = layout.get_zone(ZoneId::Toolbar);
+            // --- Toolbar overlay: always render above viewport content ---
+            let toolbar_rect = layout.get_zone(ZoneId::Toolbar);
 
-        // Toolbar background strip
-        let toolbar_rrect = RoundedRect {
-            rect: toolbar_rect,
-            radii: RoundedRadii { tl: 0.0, tr: 0.0, br: 0.0, bl: 0.0 },
-        };
-        passes.draw_filled_rounded_rect(
-            encoder,
-            view,
-            width,
-            height,
-            toolbar_rrect,
-            toolbar_style.bg_color,
-            queue,
-        );
-
-        // Optional toolbar border (bottom edge to visually separate viewport).
-        if toolbar_style.border_width > 0.0 {
-            let bw = toolbar_style.border_width;
-            let border_rect = Rect {
-                x: toolbar_rect.x,
-                y: toolbar_rect.y + toolbar_rect.h - bw,
-                w: toolbar_rect.w,
-                h: bw,
-            };
-            let border_rrect = RoundedRect {
-                rect: border_rect,
-                radii: RoundedRadii { tl: 0.0, tr: 0.0, br: 0.0, bl: 0.0 },
+            // Toolbar background strip
+            let toolbar_rrect = RoundedRect {
+                rect: toolbar_rect,
+                radii: RoundedRadii {
+                    tl: 0.0,
+                    tr: 0.0,
+                    br: 0.0,
+                    bl: 0.0,
+                },
             };
             passes.draw_filled_rounded_rect(
                 encoder,
                 view,
                 width,
                 height,
-                border_rrect,
-                toolbar_style.border_color,
+                toolbar_rrect,
+                toolbar_style.bg_color,
                 queue,
             );
-        }
 
-        // Toolbar icons (sidebar toggle and devtools toggle)
-        let toggle_size = 24.0;
-        let toggle_margin = 12.0;
+            // Optional toolbar border (bottom edge to visually separate viewport).
+            if toolbar_style.border_width > 0.0 {
+                let bw = toolbar_style.border_width;
+                let border_rect = Rect {
+                    x: toolbar_rect.x,
+                    y: toolbar_rect.y + toolbar_rect.h - bw,
+                    w: toolbar_rect.w,
+                    h: bw,
+                };
+                let border_rrect = RoundedRect {
+                    rect: border_rect,
+                    radii: RoundedRadii {
+                        tl: 0.0,
+                        tr: 0.0,
+                        br: 0.0,
+                        bl: 0.0,
+                    },
+                };
+                passes.draw_filled_rounded_rect(
+                    encoder,
+                    view,
+                    width,
+                    height,
+                    border_rrect,
+                    toolbar_style.border_color,
+                    queue,
+                );
+            }
 
-        // Sidebar toggle on the left
-        let toggle_x = toolbar_rect.x + toggle_margin;
-        let toggle_y = toolbar_rect.y + (toolbar_rect.h - toggle_size) * 0.5;
+            // Toolbar icons (sidebar toggle and devtools toggle)
+            let toggle_size = 24.0;
+            let toggle_margin = 12.0;
 
-        let white = ColorLinPremul::rgba(255, 255, 255, 255);
-        let icon_style = engine_core::SvgStyle::new()
-            .with_stroke(white)
-            .with_stroke_width(1.5);
+            // Sidebar toggle on the left
+            let toggle_x = toolbar_rect.x + toggle_margin;
+            let toggle_y = toolbar_rect.y + (toolbar_rect.h - toggle_size) * 0.5;
 
-        draw_svg_icon(
-            passes,
-            encoder,
-            view,
-            queue,
-            width,
-            height,
-            "images/panel-left.svg",
-            [toggle_x, toggle_y],
-            [toggle_size, toggle_size],
-            icon_style,
-        );
+            let white = ColorLinPremul::rgba(255, 255, 255, 255);
+            let icon_style = engine_core::SvgStyle::new()
+                .with_stroke(white)
+                .with_stroke_width(1.5);
 
-        // Devtools toggle on the right
-        let devtools_x = toolbar_rect.x + toolbar_rect.w - toggle_size - toggle_margin;
-        let devtools_y = toolbar_rect.y + (toolbar_rect.h - toggle_size) * 0.5;
+            draw_svg_icon(
+                passes,
+                encoder,
+                view,
+                queue,
+                width,
+                height,
+                "images/panel-left.svg",
+                [toggle_x, toggle_y],
+                [toggle_size, toggle_size],
+                icon_style,
+            );
 
-        draw_svg_icon(
-            passes,
-            encoder,
-            view,
-            queue,
-            width,
-            height,
-            "images/inspection-panel.svg",
-            [devtools_x, devtools_y],
-            [toggle_size, toggle_size],
-            icon_style,
-        );
+            // Devtools toggle on the right
+            let devtools_x = toolbar_rect.x + toolbar_rect.w - toggle_size - toggle_margin;
+            let devtools_y = toolbar_rect.y + (toolbar_rect.h - toggle_size) * 0.5;
 
-        // --- Devtools overlay: only render when visible ---
-        if !*devtools_visible_overlay.lock().unwrap() {
-            return;
-        }
+            draw_svg_icon(
+                passes,
+                encoder,
+                view,
+                queue,
+                width,
+                height,
+                "images/inspection-panel.svg",
+                [devtools_x, devtools_y],
+                [toggle_size, toggle_size],
+                icon_style,
+            );
 
-        let devtools_rect = layout.get_zone(ZoneId::DevTools);
+            // --- Devtools overlay: only render when visible ---
+            if !*devtools_visible_overlay.lock().unwrap() {
+                return;
+            }
 
-        // Background panel: solid rounded-rect (zero radii => plain rect).
-        let rrect = RoundedRect {
-            rect: devtools_rect,
-            radii: RoundedRadii { tl: 0.0, tr: 0.0, br: 0.0, bl: 0.0 },
-        };
-        passes.draw_filled_rounded_rect(
-            encoder,
-            view,
-            width,
-            height,
-            rrect,
-            devtools_style.bg_color,
-            queue,
-        );
+            let devtools_rect = layout.get_zone(ZoneId::DevTools);
 
-        // Optional border: draw a thin inset rectangle with border color.
-        if devtools_style.border_width > 0.0 {
-            let bw = devtools_style.border_width;
-            let inset_rect = Rect {
-                x: devtools_rect.x + bw * 0.5,
-                y: devtools_rect.y + bw * 0.5,
-                w: (devtools_rect.w - bw).max(0.0),
-                h: (devtools_rect.h - bw).max(0.0),
-            };
-            let border_rrect = RoundedRect {
-                rect: inset_rect,
-                radii: RoundedRadii { tl: 0.0, tr: 0.0, br: 0.0, bl: 0.0 },
+            // Background panel: solid rounded-rect (zero radii => plain rect).
+            let rrect = RoundedRect {
+                rect: devtools_rect,
+                radii: RoundedRadii {
+                    tl: 0.0,
+                    tr: 0.0,
+                    br: 0.0,
+                    bl: 0.0,
+                },
             };
             passes.draw_filled_rounded_rect(
                 encoder,
                 view,
                 width,
                 height,
-                border_rrect,
-                devtools_style.border_color,
+                rrect,
+                devtools_style.bg_color,
                 queue,
             );
-        }
 
-        // Header + tabs
-        let button_size = 18.0;
-        let tab_height = 24.0;
-        let tab_padding = 10.0;
-        let icon_text_gap = 6.0;
-        let white = ColorLinPremul::rgba(255, 255, 255, 255);
-        let inactive_color = ColorLinPremul::rgba(160, 170, 180, 255);
-        let header_bg = ColorLinPremul::rgba(34, 41, 60, 255);
-        let active_tab_bg = ColorLinPremul::rgba(54, 61, 80, 255);
-        let inactive_tab_bg = ColorLinPremul::rgba(40, 47, 66, 255);
-        let header_height = tab_height + 8.0;
+            // Optional border: draw a thin inset rectangle with border color.
+            if devtools_style.border_width > 0.0 {
+                let bw = devtools_style.border_width;
+                let inset_rect = Rect {
+                    x: devtools_rect.x + bw * 0.5,
+                    y: devtools_rect.y + bw * 0.5,
+                    w: (devtools_rect.w - bw).max(0.0),
+                    h: (devtools_rect.h - bw).max(0.0),
+                };
+                let border_rrect = RoundedRect {
+                    rect: inset_rect,
+                    radii: RoundedRadii {
+                        tl: 0.0,
+                        tr: 0.0,
+                        br: 0.0,
+                        bl: 0.0,
+                    },
+                };
+                passes.draw_filled_rounded_rect(
+                    encoder,
+                    view,
+                    width,
+                    height,
+                    border_rrect,
+                    devtools_style.border_color,
+                    queue,
+                );
+            }
 
-        // Header strip behind tabs
-        let header_rect = Rect {
-            x: devtools_rect.x,
-            y: devtools_rect.y,
-            w: devtools_rect.w,
-            h: header_height,
-        };
-        let header_rr = RoundedRect {
-            rect: header_rect,
-            radii: RoundedRadii { tl: 0.0, tr: 0.0, br: 0.0, bl: 0.0 },
-        };
-        passes.draw_filled_rounded_rect(
-            encoder,
-            view,
-            width,
-            height,
-            header_rr,
-            header_bg,
-            queue,
-        );
+            // Header + tabs
+            let button_size = 18.0;
+            let tab_height = 24.0;
+            let tab_padding = 10.0;
+            let icon_text_gap = 6.0;
+            let white = ColorLinPremul::rgba(255, 255, 255, 255);
+            let inactive_color = ColorLinPremul::rgba(160, 170, 180, 255);
+            let header_bg = ColorLinPremul::rgba(34, 41, 60, 255);
+            let active_tab_bg = ColorLinPremul::rgba(54, 61, 80, 255);
+            let inactive_tab_bg = ColorLinPremul::rgba(40, 47, 66, 255);
+            let header_height = tab_height + 8.0;
 
-        // Active tab
-        let active_tab = *devtools_active_tab_overlay.lock().unwrap();
+            // Header strip behind tabs
+            let header_rect = Rect {
+                x: devtools_rect.x,
+                y: devtools_rect.y,
+                w: devtools_rect.w,
+                h: header_height,
+            };
+            let header_rr = RoundedRect {
+                rect: header_rect,
+                radii: RoundedRadii {
+                    tl: 0.0,
+                    tr: 0.0,
+                    br: 0.0,
+                    bl: 0.0,
+                },
+            };
+            passes.draw_filled_rounded_rect(
+                encoder, view, width, height, header_rr, header_bg, queue,
+            );
 
-        // Elements tab geometry
-        let elements_x = devtools_rect.x + tab_padding;
-        let elements_y = devtools_rect.y + (tab_height - button_size) * 0.5;
-        let elements_tab_width = button_size + icon_text_gap + 8.0 + 54.0 + tab_padding * 3.0;
-        let elements_rect = Rect {
-            x: elements_x,
-            y: elements_y,
-            w: elements_tab_width,
-            h: tab_height,
-        };
-        let is_elements_active = active_tab == DevToolsTab::Elements;
-        let elements_bg = if is_elements_active { active_tab_bg } else { inactive_tab_bg };
-        let elements_color = if is_elements_active { white } else { inactive_color };
+            // Active tab
+            let active_tab = *devtools_active_tab_overlay.lock().unwrap();
 
-        let elements_rr = RoundedRect {
-            rect: elements_rect,
-            radii: RoundedRadii { tl: 0.0, tr: 0.0, br: 0.0, bl: 0.0 },
-        };
-        passes.draw_filled_rounded_rect(
-            encoder,
-            view,
-            width,
-            height,
-            elements_rr,
-            elements_bg,
-            queue,
-        );
+            // Elements tab geometry
+            let elements_x = devtools_rect.x + tab_padding;
+            let elements_y = devtools_rect.y + (tab_height - button_size) * 0.5;
+            let elements_tab_width = button_size + icon_text_gap + 8.0 + 54.0 + tab_padding * 3.0;
+            let elements_rect = Rect {
+                x: elements_x,
+                y: elements_y,
+                w: elements_tab_width,
+                h: tab_height,
+            };
+            let is_elements_active = active_tab == DevToolsTab::Elements;
+            let elements_bg = if is_elements_active {
+                active_tab_bg
+            } else {
+                inactive_tab_bg
+            };
+            let elements_color = if is_elements_active {
+                white
+            } else {
+                inactive_color
+            };
 
-        // Console tab geometry
-        let console_x = elements_x + elements_tab_width + 8.0;
-        let console_y = devtools_rect.y + (tab_height - button_size) * 0.5;
-        let console_tab_width = button_size + icon_text_gap + 8.0 + 50.0 + tab_padding * 3.0;
-        let console_rect = Rect {
-            x: console_x,
-            y: console_y,
-            w: console_tab_width,
-            h: tab_height,
-        };
-        let is_console_active = active_tab == DevToolsTab::Console;
-        let console_bg = if is_console_active { active_tab_bg } else { inactive_tab_bg };
-        let console_color = if is_console_active { white } else { inactive_color };
+            let elements_rr = RoundedRect {
+                rect: elements_rect,
+                radii: RoundedRadii {
+                    tl: 0.0,
+                    tr: 0.0,
+                    br: 0.0,
+                    bl: 0.0,
+                },
+            };
+            passes.draw_filled_rounded_rect(
+                encoder,
+                view,
+                width,
+                height,
+                elements_rr,
+                elements_bg,
+                queue,
+            );
 
-        let console_rr = RoundedRect {
-            rect: console_rect,
-            radii: RoundedRadii { tl: 0.0, tr: 0.0, br: 0.0, bl: 0.0 },
-        };
-        passes.draw_filled_rounded_rect(
-            encoder,
-            view,
-            width,
-            height,
-            console_rr,
-            console_bg,
-            queue,
-        );
+            // Console tab geometry
+            let console_x = elements_x + elements_tab_width + 8.0;
+            let console_y = devtools_rect.y + (tab_height - button_size) * 0.5;
+            let console_tab_width = button_size + icon_text_gap + 8.0 + 50.0 + tab_padding * 3.0;
+            let console_rect = Rect {
+                x: console_x,
+                y: console_y,
+                w: console_tab_width,
+                h: tab_height,
+            };
+            let is_console_active = active_tab == DevToolsTab::Console;
+            let console_bg = if is_console_active {
+                active_tab_bg
+            } else {
+                inactive_tab_bg
+            };
+            let console_color = if is_console_active {
+                white
+            } else {
+                inactive_color
+            };
 
-        // Labels and content text via text renderer
-        let mut overlay_list = engine_core::DisplayList {
-            viewport: engine_core::Viewport { width, height },
-            commands: Vec::new(),
-        };
+            let console_rr = RoundedRect {
+                rect: console_rect,
+                radii: RoundedRadii {
+                    tl: 0.0,
+                    tr: 0.0,
+                    br: 0.0,
+                    bl: 0.0,
+                },
+            };
+            passes.draw_filled_rounded_rect(
+                encoder, view, width, height, console_rr, console_bg, queue,
+            );
 
-        // Elements label
-        let elements_label_run = TextRun {
-            text: "Elements".to_string(),
-            pos: [
-                elements_x + button_size + icon_text_gap + 8.0,
-                devtools_rect.y + tab_height - 6.0,
-            ],
-            size: 11.0,
-            color: elements_color,
-        };
-        overlay_list.commands.push(engine_core::Command::DrawText {
-            run: elements_label_run,
-            z: 10100,
-            transform: Transform2D::identity(),
-            id: 1,
-            dynamic: false,
-        });
+            // Labels and content text via text renderer
+            let mut overlay_list = engine_core::DisplayList {
+                viewport: engine_core::Viewport { width, height },
+                commands: Vec::new(),
+            };
 
-        // Console label
-        let console_label_run = TextRun {
-            text: "Console".to_string(),
-            pos: [
-                console_x + button_size + icon_text_gap + 8.0,
-                devtools_rect.y + tab_height - 6.0,
-            ],
-            size: 11.0,
-            color: console_color,
-        };
-        overlay_list.commands.push(engine_core::Command::DrawText {
-            run: console_label_run,
-            z: 10100,
-            transform: Transform2D::identity(),
-            id: 2,
-            dynamic: false,
-        });
+            // Elements label
+            let elements_label_run = TextRun {
+                text: "Elements".to_string(),
+                pos: [
+                    elements_x + button_size + icon_text_gap + 8.0,
+                    devtools_rect.y + tab_height - 6.0,
+                ],
+                size: 11.0,
+                color: elements_color,
+            };
+            overlay_list.commands.push(engine_core::Command::DrawText {
+                run: elements_label_run,
+                z: 10100,
+                transform: Transform2D::identity(),
+                id: 1,
+                dynamic: false,
+            });
 
-        // Content label inside devtools body based on active tab
-        let content_text = match active_tab {
-            DevToolsTab::Console => "Console",
-            DevToolsTab::Elements => "Elements",
-        };
-        let label_color: ColorLinPremul = ColorLinPremul::rgba(220, 230, 240, 255);
-        let content_label_run = TextRun {
-            text: content_text.to_string(),
-            pos: [devtools_rect.x + tab_padding + 4.0, devtools_rect.y + header_height + 14.0],
-            size: 12.0,
-            color: label_color,
-        };
-        overlay_list.commands.push(engine_core::Command::DrawText {
-            run: content_label_run,
-            z: 10150,
-            transform: Transform2D::identity(),
-            id: 3,
-            dynamic: false,
-        });
+            // Console label
+            let console_label_run = TextRun {
+                text: "Console".to_string(),
+                pos: [
+                    console_x + button_size + icon_text_gap + 8.0,
+                    devtools_rect.y + tab_height - 6.0,
+                ],
+                size: 11.0,
+                color: console_color,
+            };
+            overlay_list.commands.push(engine_core::Command::DrawText {
+                run: console_label_run,
+                z: 10100,
+                transform: Transform2D::identity(),
+                id: 2,
+                dynamic: false,
+            });
 
-        passes.render_text_for_list(encoder, view, &overlay_list, queue, overlay_provider.as_ref());
+            // Content label inside devtools body based on active tab
+            let content_text = match active_tab {
+                DevToolsTab::Console => "Console",
+                DevToolsTab::Elements => "Elements",
+            };
+            let label_color: ColorLinPremul = ColorLinPremul::rgba(220, 230, 240, 255);
+            let content_label_run = TextRun {
+                text: content_text.to_string(),
+                pos: [
+                    devtools_rect.x + tab_padding + 4.0,
+                    devtools_rect.y + header_height + 14.0,
+                ],
+                size: 12.0,
+                color: label_color,
+            };
+            overlay_list.commands.push(engine_core::Command::DrawText {
+                run: content_label_run,
+                z: 10150,
+                transform: Transform2D::identity(),
+                id: 3,
+                dynamic: false,
+            });
 
-        // Icons and close button SVGs drawn on top
-        let icon_style_elements = engine_core::SvgStyle::new()
-            .with_stroke(elements_color)
-            .with_stroke_width(2.0);
-        let icon_style_console = engine_core::SvgStyle::new()
-            .with_stroke(console_color)
-            .with_stroke_width(2.0);
-        let close_white = white;
+            passes.render_text_for_list(
+                encoder,
+                view,
+                &overlay_list,
+                queue,
+                overlay_provider.as_ref(),
+            );
 
-        // Helper to draw a styled SVG at the given origin and max size (rasterized).
-        fn draw_svg_icon(
-            passes: &mut engine_core::PassManager,
-            encoder: &mut wgpu::CommandEncoder,
-            view: &wgpu::TextureView,
-            queue: &wgpu::Queue,
-            width: u32,
-            height: u32,
-            path_str: &str,
-            origin: [f32; 2],
-            max_size: [f32; 2],
-            style: engine_core::SvgStyle,
-        ) {
-            let path = std::path::Path::new(path_str);
-            if let Some((_view1x, w1, h1)) = passes.rasterize_svg_to_view(path, 1.0, Some(style), queue) {
-                let base_w = w1.max(1) as f32;
-                let base_h = h1.max(1) as f32;
-                let scale = (max_size[0] / base_w).min(max_size[1] / base_h).max(0.0);
-                if let Some((view_scaled, sw, sh)) = passes.rasterize_svg_to_view(path, scale, Some(style), queue) {
-                    passes.draw_image_quad(
-                        encoder,
-                        view,
-                        origin,
-                        [sw as f32, sh as f32],
-                        &view_scaled,
-                        queue,
-                        width,
-                        height,
-                    );
+            // Icons and close button SVGs drawn on top
+            let icon_style_elements = engine_core::SvgStyle::new()
+                .with_stroke(elements_color)
+                .with_stroke_width(2.0);
+            let icon_style_console = engine_core::SvgStyle::new()
+                .with_stroke(console_color)
+                .with_stroke_width(2.0);
+            let close_white = white;
+
+            // Helper to draw a styled SVG at the given origin and max size (rasterized).
+            fn draw_svg_icon(
+                passes: &mut engine_core::PassManager,
+                encoder: &mut wgpu::CommandEncoder,
+                view: &wgpu::TextureView,
+                queue: &wgpu::Queue,
+                width: u32,
+                height: u32,
+                path_str: &str,
+                origin: [f32; 2],
+                max_size: [f32; 2],
+                style: engine_core::SvgStyle,
+            ) {
+                let path = std::path::Path::new(path_str);
+                if let Some((_view1x, w1, h1)) =
+                    passes.rasterize_svg_to_view(path, 1.0, Some(style), queue)
+                {
+                    let base_w = w1.max(1) as f32;
+                    let base_h = h1.max(1) as f32;
+                    let scale = (max_size[0] / base_w).min(max_size[1] / base_h).max(0.0);
+                    if let Some((view_scaled, sw, sh)) =
+                        passes.rasterize_svg_to_view(path, scale, Some(style), queue)
+                    {
+                        passes.draw_image_quad(
+                            encoder,
+                            view,
+                            origin,
+                            [sw as f32, sh as f32],
+                            &view_scaled,
+                            queue,
+                            width,
+                            height,
+                        );
+                    }
                 }
             }
-        }
 
-        let elements_icon_origin = [elements_x, elements_y];
-        let console_icon_origin = [console_x, console_y];
-        let close_size = 20.0;
-        let close_margin = 12.0;
-        let close_origin = [
-            devtools_rect.x + devtools_rect.w - close_size - close_margin,
-            devtools_rect.y + 6.0,
-        ];
+            let elements_icon_origin = [elements_x, elements_y];
+            let console_icon_origin = [console_x, console_y];
+            let close_size = 20.0;
+            let close_margin = 12.0;
+            let close_origin = [
+                devtools_rect.x + devtools_rect.w - close_size - close_margin,
+                devtools_rect.y + 6.0,
+            ];
 
-        draw_svg_icon(
-            passes,
-            encoder,
-            view,
-            queue,
-            width,
-            height,
-            "images/square-mouse-pointer.svg",
-            elements_icon_origin,
-            [button_size, button_size],
-            icon_style_elements,
-        );
+            draw_svg_icon(
+                passes,
+                encoder,
+                view,
+                queue,
+                width,
+                height,
+                "images/square-mouse-pointer.svg",
+                elements_icon_origin,
+                [button_size, button_size],
+                icon_style_elements,
+            );
 
-        draw_svg_icon(
-            passes,
-            encoder,
-            view,
-            queue,
-            width,
-            height,
-            "images/square-terminal.svg",
-            console_icon_origin,
-            [button_size, button_size],
-            icon_style_console,
-        );
+            draw_svg_icon(
+                passes,
+                encoder,
+                view,
+                queue,
+                width,
+                height,
+                "images/square-terminal.svg",
+                console_icon_origin,
+                [button_size, button_size],
+                icon_style_console,
+            );
 
-        let close_icon_style = engine_core::SvgStyle::new()
-            .with_stroke(close_white)
-            .with_stroke_width(2.0);
-        draw_svg_icon(
-            passes,
-            encoder,
-            view,
-            queue,
-            width,
-            height,
-            "images/x.svg",
-            close_origin,
-            [close_size, close_size],
-            close_icon_style,
-        );
-    }));
+            let close_icon_style = engine_core::SvgStyle::new()
+                .with_stroke(close_white)
+                .with_stroke_width(2.0);
+            draw_svg_icon(
+                passes,
+                encoder,
+                view,
+                queue,
+                width,
+                height,
+                "images/x.svg",
+                close_origin,
+                [close_size, close_size],
+                close_icon_style,
+            );
+        },
+    ));
 
     // Track cursor position and hit index for interaction
     let mut cursor_position: Option<(f32, f32)> = None;
     let mut hit_index: Option<engine_core::HitIndex> = None;
-    
+
     // Track time for cursor blink animation
     let mut last_frame_time = std::time::Instant::now();
-    
+
     // Track modifier keys state
     let mut modifiers_state = winit::keyboard::ModifiersState::empty();
-    
+
     // Phase 5: Track click timing for double-click and triple-click detection
     let mut last_click_time: Option<std::time::Instant> = None;
     let mut click_count: u32 = 0;
     let double_click_threshold = std::time::Duration::from_millis(500);
-    
+
     Ok(event_loop.run(move |event, elwt| {
         match event {
             Event::WindowEvent { window_id, event } if window_id == window.id() => {
@@ -580,30 +637,34 @@ pub fn run() -> Result<()> {
                     }
                     WindowEvent::CursorMoved { position, .. } => {
                         cursor_position = Some((position.x as f32, position.y as f32));
-                        
+
                         // Phase 5: Handle mouse drag for selection extension
                         let logical_x = position.x as f32 / scale_factor;
                         let logical_y = position.y as f32 / scale_factor;
                         let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
                         let viewport_local_x = logical_x - viewport_rect.x;
-                        let viewport_local_y = logical_y - viewport_rect.y + zone_manager.viewport.scroll_offset;
-                        
+                        let viewport_local_y =
+                            logical_y - viewport_rect.y + zone_manager.viewport.scroll_offset;
+
                         // Check if any input box is in mouse selection mode
                         for input_box in viewport_ir.input_boxes.iter_mut() {
                             if input_box.focused {
                                 // Extend selection based on click count
                                 if click_count == 3 {
-                                    input_box.extend_line_selection(viewport_local_x, viewport_local_y);
+                                    input_box
+                                        .extend_line_selection(viewport_local_x, viewport_local_y);
                                     input_box.update_scroll();
                                     needs_redraw = true;
                                     window.request_redraw();
                                 } else if click_count == 2 {
-                                    input_box.extend_word_selection(viewport_local_x, viewport_local_y);
+                                    input_box
+                                        .extend_word_selection(viewport_local_x, viewport_local_y);
                                     input_box.update_scroll();
                                     needs_redraw = true;
                                     window.request_redraw();
                                 } else {
-                                    input_box.extend_mouse_selection(viewport_local_x, viewport_local_y);
+                                    input_box
+                                        .extend_mouse_selection(viewport_local_x, viewport_local_y);
                                     input_box.update_scroll();
                                     needs_redraw = true;
                                     window.request_redraw();
@@ -611,23 +672,26 @@ pub fn run() -> Result<()> {
                                 break;
                             }
                         }
-                        
+
                         // Check if any text area is in mouse selection mode
                         for textarea in viewport_ir.text_areas.iter_mut() {
                             if textarea.focused {
                                 // Extend selection based on click count
                                 if click_count == 3 {
-                                    textarea.extend_line_selection(viewport_local_x, viewport_local_y);
+                                    textarea
+                                        .extend_line_selection(viewport_local_x, viewport_local_y);
                                     textarea.update_scroll();
                                     needs_redraw = true;
                                     window.request_redraw();
                                 } else if click_count == 2 {
-                                    textarea.extend_word_selection(viewport_local_x, viewport_local_y);
+                                    textarea
+                                        .extend_word_selection(viewport_local_x, viewport_local_y);
                                     textarea.update_scroll();
                                     needs_redraw = true;
                                     window.request_redraw();
                                 } else {
-                                    textarea.extend_mouse_selection(viewport_local_x, viewport_local_y);
+                                    textarea
+                                        .extend_mouse_selection(viewport_local_x, viewport_local_y);
                                     textarea.update_scroll();
                                     needs_redraw = true;
                                     window.request_redraw();
@@ -643,14 +707,16 @@ pub fn run() -> Result<()> {
                             MouseScrollDelta::LineDelta(_x, y) => y * 20.0, // 20 pixels per line
                             MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
                         };
-                        
+
                         let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
                         zone_manager.viewport.scroll(-scroll_delta, viewport_rect.h);
                         needs_redraw = true;
                         window.request_redraw();
                     }
                     WindowEvent::MouseInput { state, button, .. } => {
-                        if button == winit::event::MouseButton::Left && state == winit::event::ElementState::Released {
+                        if button == winit::event::MouseButton::Left
+                            && state == winit::event::ElementState::Released
+                        {
                             // End mouse selection on button release
                             for input_box in viewport_ir.input_boxes.iter_mut() {
                                 if input_box.focused {
@@ -664,11 +730,13 @@ pub fn run() -> Result<()> {
                                     break;
                                 }
                             }
-                        } else if button == winit::event::MouseButton::Left && state == winit::event::ElementState::Pressed {
+                        } else if button == winit::event::MouseButton::Left
+                            && state == winit::event::ElementState::Pressed
+                        {
                             if let Some((cursor_x, cursor_y)) = cursor_position {
                                 let logical_x = cursor_x / scale_factor;
                                 let logical_y = cursor_y / scale_factor;
-                                
+
                                 // Phase 5: Track click timing for double/triple-click detection
                                 let now = std::time::Instant::now();
                                 let is_quick_click = if let Some(last_time) = last_click_time {
@@ -676,26 +744,29 @@ pub fn run() -> Result<()> {
                                 } else {
                                     false
                                 };
-                                
+
                                 if is_quick_click {
                                     click_count += 1;
                                 } else {
                                     click_count = 1;
                                 }
                                 last_click_time = Some(now);
-                                
+
                                 // Check if click is on an input box (adjust for viewport transform and scroll)
                                 let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
                                 let viewport_local_x = logical_x - viewport_rect.x;
-                                let viewport_local_y = logical_y - viewport_rect.y + zone_manager.viewport.scroll_offset;
-                                
+                                let viewport_local_y = logical_y - viewport_rect.y
+                                    + zone_manager.viewport.scroll_offset;
+
                                 let mut clicked_input = false;
-                                for (idx, input_box) in viewport_ir.input_boxes.iter_mut().enumerate() {
-                                    let in_bounds = viewport_local_x >= input_box.rect.x 
+                                for (idx, input_box) in
+                                    viewport_ir.input_boxes.iter_mut().enumerate()
+                                {
+                                    let in_bounds = viewport_local_x >= input_box.rect.x
                                         && viewport_local_x <= input_box.rect.x + input_box.rect.w
                                         && viewport_local_y >= input_box.rect.y
                                         && viewport_local_y <= input_box.rect.y + input_box.rect.h;
-                                    
+
                                     if in_bounds {
                                         // Unfocus all, focus this one
                                         for other in viewport_ir.input_boxes.iter_mut() {
@@ -703,36 +774,49 @@ pub fn run() -> Result<()> {
                                         }
                                         let input = &mut viewport_ir.input_boxes[idx];
                                         input.focused = true;
-                                        
+
                                         // Phase 5: Handle double-click and triple-click
                                         if click_count == 3 {
                                             // Triple-click: select entire line
-                                            input.start_line_selection(viewport_local_x, viewport_local_y);
+                                            input.start_line_selection(
+                                                viewport_local_x,
+                                                viewport_local_y,
+                                            );
                                         } else if click_count == 2 {
                                             // Double-click: select word
-                                            input.start_word_selection(viewport_local_x, viewport_local_y);
+                                            input.start_word_selection(
+                                                viewport_local_x,
+                                                viewport_local_y,
+                                            );
                                         } else {
                                             // Single click: start mouse selection (place cursor)
-                                            input.start_mouse_selection(viewport_local_x, viewport_local_y);
+                                            input.start_mouse_selection(
+                                                viewport_local_x,
+                                                viewport_local_y,
+                                            );
                                         }
                                         input.update_scroll();
-                                        
+
                                         clicked_input = true;
                                         needs_redraw = true;
                                         window.request_redraw();
                                         break;
                                     }
                                 }
-                                
+
                                 // Check if click is on a text area
                                 let mut clicked_textarea = false;
                                 if !clicked_input {
-                                    for (idx, textarea) in viewport_ir.text_areas.iter_mut().enumerate() {
-                                        let in_bounds = viewport_local_x >= textarea.rect.x 
-                                            && viewport_local_x <= textarea.rect.x + textarea.rect.w
+                                    for (idx, textarea) in
+                                        viewport_ir.text_areas.iter_mut().enumerate()
+                                    {
+                                        let in_bounds = viewport_local_x >= textarea.rect.x
+                                            && viewport_local_x
+                                                <= textarea.rect.x + textarea.rect.w
                                             && viewport_local_y >= textarea.rect.y
-                                            && viewport_local_y <= textarea.rect.y + textarea.rect.h;
-                                        
+                                            && viewport_local_y
+                                                <= textarea.rect.y + textarea.rect.h;
+
                                         if in_bounds {
                                             // Unfocus all input boxes and text areas
                                             for input in viewport_ir.input_boxes.iter_mut() {
@@ -741,20 +825,29 @@ pub fn run() -> Result<()> {
                                             for other in viewport_ir.text_areas.iter_mut() {
                                                 other.focused = false;
                                             }
-                                            
+
                                             let textarea = &mut viewport_ir.text_areas[idx];
                                             textarea.focused = true;
-                                            
+
                                             // Handle double-click and triple-click
                                             if click_count == 3 {
-                                                textarea.start_line_selection(viewport_local_x, viewport_local_y);
+                                                textarea.start_line_selection(
+                                                    viewport_local_x,
+                                                    viewport_local_y,
+                                                );
                                             } else if click_count == 2 {
-                                                textarea.start_word_selection(viewport_local_x, viewport_local_y);
+                                                textarea.start_word_selection(
+                                                    viewport_local_x,
+                                                    viewport_local_y,
+                                                );
                                             } else {
-                                                textarea.start_mouse_selection(viewport_local_x, viewport_local_y);
+                                                textarea.start_mouse_selection(
+                                                    viewport_local_x,
+                                                    viewport_local_y,
+                                                );
                                             }
                                             textarea.update_scroll();
-                                            
+
                                             clicked_textarea = true;
                                             needs_redraw = true;
                                             window.request_redraw();
@@ -762,7 +855,7 @@ pub fn run() -> Result<()> {
                                         }
                                     }
                                 }
-                                
+
                                 // If clicked outside all input boxes and text areas, unfocus all
                                 if !clicked_input && !clicked_textarea {
                                     for input_box in viewport_ir.input_boxes.iter_mut() {
@@ -780,42 +873,63 @@ pub fn run() -> Result<()> {
                                         }
                                     }
                                 }
-                                
+
                                 // Perform hit test using the stored hit index
                                 // Only if we didn't click on an input box or text area
                                 if !clicked_input && !clicked_textarea {
                                     if let Some(ref index) = hit_index {
-                                        if let Some(hit) = index.topmost_at([logical_x, logical_y]) {
-                                        if let Some(region_id) = hit.region_id {
-                                            if region_id == TOGGLE_BUTTON_REGION_ID {
-                                                let logical_width = (size.width as f32 / scale_factor) as u32;
-                                                let logical_height = (size.height as f32 / scale_factor) as u32;
-                                                zone_manager.toggle_sidebar(logical_width, logical_height);
-                                                *sidebar_visible.lock().unwrap() = zone_manager.is_sidebar_visible();
-                                                needs_redraw = true;
-                                                window.request_redraw();
-                                            } else if region_id == DEVTOOLS_BUTTON_REGION_ID {
-                                                zone_manager.toggle_devtools();
-                                                *devtools_visible.lock().unwrap() = zone_manager.is_devtools_visible();
-                                                needs_redraw = true;
-                                                window.request_redraw();
-                                            } else if region_id == DEVTOOLS_CLOSE_BUTTON_REGION_ID {
-                                                zone_manager.toggle_devtools();
-                                                *devtools_visible.lock().unwrap() = zone_manager.is_devtools_visible();
-                                                needs_redraw = true;
-                                                window.request_redraw();
-                                            } else if region_id == DEVTOOLS_ELEMENTS_TAB_REGION_ID {
-                                                zone_manager.devtools.set_active_tab(DevToolsTab::Elements);
-                                                *devtools_active_tab.lock().unwrap() = DevToolsTab::Elements;
-                                                needs_redraw = true;
-                                                window.request_redraw();
-                                            } else if region_id == DEVTOOLS_CONSOLE_TAB_REGION_ID {
-                                                zone_manager.devtools.set_active_tab(DevToolsTab::Console);
-                                                *devtools_active_tab.lock().unwrap() = DevToolsTab::Console;
-                                                needs_redraw = true;
-                                                window.request_redraw();
+                                        if let Some(hit) = index.topmost_at([logical_x, logical_y])
+                                        {
+                                            if let Some(region_id) = hit.region_id {
+                                                if region_id == TOGGLE_BUTTON_REGION_ID {
+                                                    let logical_width =
+                                                        (size.width as f32 / scale_factor) as u32;
+                                                    let logical_height =
+                                                        (size.height as f32 / scale_factor) as u32;
+                                                    zone_manager.toggle_sidebar(
+                                                        logical_width,
+                                                        logical_height,
+                                                    );
+                                                    *sidebar_visible.lock().unwrap() =
+                                                        zone_manager.is_sidebar_visible();
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                } else if region_id == DEVTOOLS_BUTTON_REGION_ID {
+                                                    zone_manager.toggle_devtools();
+                                                    *devtools_visible.lock().unwrap() =
+                                                        zone_manager.is_devtools_visible();
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                } else if region_id
+                                                    == DEVTOOLS_CLOSE_BUTTON_REGION_ID
+                                                {
+                                                    zone_manager.toggle_devtools();
+                                                    *devtools_visible.lock().unwrap() =
+                                                        zone_manager.is_devtools_visible();
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                } else if region_id
+                                                    == DEVTOOLS_ELEMENTS_TAB_REGION_ID
+                                                {
+                                                    zone_manager
+                                                        .devtools
+                                                        .set_active_tab(DevToolsTab::Elements);
+                                                    *devtools_active_tab.lock().unwrap() =
+                                                        DevToolsTab::Elements;
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                } else if region_id
+                                                    == DEVTOOLS_CONSOLE_TAB_REGION_ID
+                                                {
+                                                    zone_manager
+                                                        .devtools
+                                                        .set_active_tab(DevToolsTab::Console);
+                                                    *devtools_active_tab.lock().unwrap() =
+                                                        DevToolsTab::Console;
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                }
                                             }
-                                        }
                                         }
                                     }
                                 }
@@ -824,20 +938,22 @@ pub fn run() -> Result<()> {
                     }
                     WindowEvent::KeyboardInput { event, .. } => {
                         use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
-                        
+
                         // Baseline single-line InputBox editing path for viewport_ir:
                         // keyboard events are translated into InputBox editing methods
                         // (insert_char, delete_before_cursor, cursor movement, etc.).
                         // Phase 0 keeps this wiring as the source of truth while
                         // allowing InputBox to internally toggle its TextLayout backend.
                         // Find the focused input box
-                        if let Some(focused_input) = viewport_ir.input_boxes.iter_mut().find(|ib| ib.focused) {
+                        if let Some(focused_input) =
+                            viewport_ir.input_boxes.iter_mut().find(|ib| ib.focused)
+                        {
                             if event.state == winit::event::ElementState::Pressed {
                                 let has_cmd = modifiers_state.contains(ModifiersState::SUPER);
                                 let has_ctrl = modifiers_state.contains(ModifiersState::CONTROL);
                                 let has_alt = modifiers_state.contains(ModifiersState::ALT);
                                 let has_shift = modifiers_state.contains(ModifiersState::SHIFT);
-                                
+
                                 // On macOS: Cmd for line start/end, Option for word movement
                                 // On Windows/Linux: Ctrl for line start/end, Ctrl for word movement (same as Cmd on macOS)
                                 let line_modifier = has_cmd || has_ctrl;
@@ -848,21 +964,27 @@ pub fn run() -> Result<()> {
                                 // Cmd/Ctrl+Z: Undo, Cmd/Ctrl+Shift+Z or Ctrl+Y: Redo
                                 // Cmd/Ctrl+A: Select All
                                 match event.physical_key {
-                                    PhysicalKey::Code(KeyCode::KeyA) if line_modifier && !has_shift => {
+                                    PhysicalKey::Code(KeyCode::KeyA)
+                                        if line_modifier && !has_shift =>
+                                    {
                                         // Cmd/Ctrl+A: Select all text
                                         focused_input.select_all();
                                         focused_input.update_scroll();
                                         needs_redraw = true;
                                         window.request_redraw();
                                     }
-                                    PhysicalKey::Code(KeyCode::KeyC) if line_modifier && !has_shift => {
+                                    PhysicalKey::Code(KeyCode::KeyC)
+                                        if line_modifier && !has_shift =>
+                                    {
                                         // Cmd/Ctrl+C: Copy to clipboard
                                         if let Err(e) = focused_input.copy_to_clipboard() {
                                             eprintln!("Failed to copy: {}", e);
                                         }
                                         // No redraw needed for copy
                                     }
-                                    PhysicalKey::Code(KeyCode::KeyX) if line_modifier && !has_shift => {
+                                    PhysicalKey::Code(KeyCode::KeyX)
+                                        if line_modifier && !has_shift =>
+                                    {
                                         // Cmd/Ctrl+X: Cut to clipboard
                                         if let Err(e) = focused_input.cut_to_clipboard() {
                                             eprintln!("Failed to cut: {}", e);
@@ -872,7 +994,9 @@ pub fn run() -> Result<()> {
                                             window.request_redraw();
                                         }
                                     }
-                                    PhysicalKey::Code(KeyCode::KeyV) if line_modifier && !has_shift => {
+                                    PhysicalKey::Code(KeyCode::KeyV)
+                                        if line_modifier && !has_shift =>
+                                    {
                                         // Cmd/Ctrl+V: Paste from clipboard
                                         if let Err(e) = focused_input.paste_from_clipboard() {
                                             eprintln!("Failed to paste: {}", e);
@@ -882,7 +1006,9 @@ pub fn run() -> Result<()> {
                                             window.request_redraw();
                                         }
                                     }
-                                    PhysicalKey::Code(KeyCode::KeyZ) if line_modifier && has_shift => {
+                                    PhysicalKey::Code(KeyCode::KeyZ)
+                                        if line_modifier && has_shift =>
+                                    {
                                         // Cmd/Ctrl+Shift+Z: Redo
                                         if focused_input.redo() {
                                             focused_input.update_scroll();
@@ -890,7 +1016,9 @@ pub fn run() -> Result<()> {
                                             window.request_redraw();
                                         }
                                     }
-                                    PhysicalKey::Code(KeyCode::KeyZ) if line_modifier && !has_shift => {
+                                    PhysicalKey::Code(KeyCode::KeyZ)
+                                        if line_modifier && !has_shift =>
+                                    {
                                         // Cmd/Ctrl+Z: Undo
                                         if focused_input.undo() {
                                             focused_input.update_scroll();
@@ -1012,30 +1140,38 @@ pub fn run() -> Result<()> {
                                     }
                                 }
                             }
-                        } else if let Some(focused_textarea) = viewport_ir.text_areas.iter_mut().find(|ta| ta.focused) {
-                        // TextArea keyboard handling (multi-line editing)
+                        } else if let Some(focused_textarea) =
+                            viewport_ir.text_areas.iter_mut().find(|ta| ta.focused)
+                        {
+                            // TextArea keyboard handling (multi-line editing)
                             if event.state == winit::event::ElementState::Pressed {
                                 let has_cmd = modifiers_state.contains(ModifiersState::SUPER);
                                 let has_ctrl = modifiers_state.contains(ModifiersState::CONTROL);
                                 let has_alt = modifiers_state.contains(ModifiersState::ALT);
                                 let has_shift = modifiers_state.contains(ModifiersState::SHIFT);
-                                
+
                                 let line_modifier = has_cmd || has_ctrl;
                                 let word_modifier = has_alt;
 
                                 match event.physical_key {
-                                    PhysicalKey::Code(KeyCode::KeyA) if line_modifier && !has_shift => {
+                                    PhysicalKey::Code(KeyCode::KeyA)
+                                        if line_modifier && !has_shift =>
+                                    {
                                         focused_textarea.select_all();
                                         focused_textarea.update_scroll();
                                         needs_redraw = true;
                                         window.request_redraw();
                                     }
-                                    PhysicalKey::Code(KeyCode::KeyC) if line_modifier && !has_shift => {
+                                    PhysicalKey::Code(KeyCode::KeyC)
+                                        if line_modifier && !has_shift =>
+                                    {
                                         if let Err(e) = focused_textarea.copy_to_clipboard() {
                                             eprintln!("Failed to copy: {}", e);
                                         }
                                     }
-                                    PhysicalKey::Code(KeyCode::KeyX) if line_modifier && !has_shift => {
+                                    PhysicalKey::Code(KeyCode::KeyX)
+                                        if line_modifier && !has_shift =>
+                                    {
                                         if let Err(e) = focused_textarea.cut_to_clipboard() {
                                             eprintln!("Failed to cut: {}", e);
                                         } else {
@@ -1044,7 +1180,9 @@ pub fn run() -> Result<()> {
                                             window.request_redraw();
                                         }
                                     }
-                                    PhysicalKey::Code(KeyCode::KeyV) if line_modifier && !has_shift => {
+                                    PhysicalKey::Code(KeyCode::KeyV)
+                                        if line_modifier && !has_shift =>
+                                    {
                                         if let Err(e) = focused_textarea.paste_from_clipboard() {
                                             eprintln!("Failed to paste: {}", e);
                                         } else {
@@ -1053,14 +1191,18 @@ pub fn run() -> Result<()> {
                                             window.request_redraw();
                                         }
                                     }
-                                    PhysicalKey::Code(KeyCode::KeyZ) if line_modifier && has_shift => {
+                                    PhysicalKey::Code(KeyCode::KeyZ)
+                                        if line_modifier && has_shift =>
+                                    {
                                         if focused_textarea.redo() {
                                             focused_textarea.update_scroll();
                                             needs_redraw = true;
                                             window.request_redraw();
                                         }
                                     }
-                                    PhysicalKey::Code(KeyCode::KeyZ) if line_modifier && !has_shift => {
+                                    PhysicalKey::Code(KeyCode::KeyZ)
+                                        if line_modifier && !has_shift =>
+                                    {
                                         if focused_textarea.undo() {
                                             focused_textarea.update_scroll();
                                             needs_redraw = true;
@@ -1237,7 +1379,9 @@ pub fn run() -> Result<()> {
                         needs_background_redraw = true;
                         window.request_redraw();
                     }
-                    WindowEvent::ScaleFactorChanged { scale_factor: sf, .. } => {
+                    WindowEvent::ScaleFactorChanged {
+                        scale_factor: sf, ..
+                    } => {
                         let new_scale = sf as f32;
                         surf.set_dpi_scale(new_scale);
                         needs_redraw = true;
@@ -1246,46 +1390,55 @@ pub fn run() -> Result<()> {
                     WindowEvent::RedrawRequested => {
                         // Check debounce timing HERE (not in AboutToWait which may not fire frequently)
                         if let Some(last_time) = last_resize_time {
-                            let settled = last_time.elapsed() >= std::time::Duration::from_millis(200);
+                            let settled =
+                                last_time.elapsed() >= std::time::Duration::from_millis(200);
                             let max_exceeded = first_resize_time
                                 .map(|t| t.elapsed() >= std::time::Duration::from_millis(300))
                                 .unwrap_or(false);
-                            
+
                             if settled || max_exceeded {
                                 // Resize ended or max debounce exceeded - clear resize state
                                 last_resize_time = None;
                                 first_resize_time = None;
                             }
                         }
-                        
+
                         // Check if we should render: either full redraw or just backgrounds
                         let should_render_backgrounds = needs_background_redraw;
                         // Detect if size actually changed (not just a resize event)
-                        let size_changed = prev_size.width != size.width || prev_size.height != size.height;
+                        let size_changed =
+                            prev_size.width != size.width || prev_size.height != size.height;
                         // Force full redraw if: no resize in progress OR max debounce exceeded (300ms)
                         // Note: We no longer force full redraw on size change because intermediate texture
                         // is preserved during expansion (only reallocated when growing or shrinking >25%)
                         let max_debounce_exceeded = first_resize_time
                             .map(|t| t.elapsed() >= std::time::Duration::from_millis(300))
                             .unwrap_or(false);
-                        let should_render_full = needs_redraw && (last_resize_time.is_none() || max_debounce_exceeded);
-                        
-                        if (!should_render_backgrounds && !should_render_full) || size.width == 0 || size.height == 0 { 
-                            return; 
+                        let should_render_full =
+                            needs_redraw && (last_resize_time.is_none() || max_debounce_exceeded);
+
+                        if (!should_render_backgrounds && !should_render_full)
+                            || size.width == 0
+                            || size.height == 0
+                        {
+                            return;
                         }
-                        
+
                         // Preserve intermediate texture content during resize to avoid white edges
                         // The intermediate texture is kept across frames (only reallocated when needed)
                         // Backgrounds will render incrementally over preserved content
                         surf.set_preserve_surface(true);
-                        
+
                         if size_changed {
                             prev_size = size;
                         }
-                        
+
                         let frame = match surface.get_current_texture() {
                             Ok(f) => f,
-                            Err(_) => { window.request_redraw(); return; }
+                            Err(_) => {
+                                window.request_redraw();
+                                return;
+                            }
                         };
                         // Canvas uses physical pixels, but zones are in logical pixels
                         // So we pass physical size to canvas
@@ -1297,7 +1450,7 @@ pub fn run() -> Result<()> {
                         // Note: render_zones uses zone_manager which has logical coordinates,
                         // but the canvas will scale them to physical via logical_pixels mode
                         render_zones(&mut canvas, &zone_manager);
-                        
+
                         // Only render foreground content if not in debounce period
                         // This prevents expensive text layout during rapid resize
                         if should_render_full {
@@ -1305,28 +1458,32 @@ pub fn run() -> Result<()> {
                             let now = std::time::Instant::now();
                             let delta_time = (now - last_frame_time).as_secs_f32();
                             last_frame_time = now;
-                            
+
                             for input_box in viewport_ir.input_boxes.iter_mut() {
                                 input_box.update_blink(delta_time);
                             }
-                            
+
                             for textarea in viewport_ir.text_areas.iter_mut() {
                                 textarea.update_blink(delta_time);
                             }
-                            
+
                             // Request continuous redraw for cursor blinking while any input or textarea is focused.
-                            if viewport_ir.input_boxes.iter().any(|ib| ib.focused) 
-                                || viewport_ir.text_areas.iter().any(|ta| ta.focused) {
+                            if viewport_ir.input_boxes.iter().any(|ib| ib.focused)
+                                || viewport_ir.text_areas.iter().any(|ta| ta.focused)
+                            {
                                 needs_redraw = true;
                                 window.request_redraw();
                             }
-                            
+
                             // Render sample UI elements in viewport zone with local coordinates.
                             let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
-                            
+
                             // Apply transform first to position viewport content
-                            canvas.push_transform(Transform2D::translate(viewport_rect.x, viewport_rect.y));
-                            
+                            canvas.push_transform(Transform2D::translate(
+                                viewport_rect.x,
+                                viewport_rect.y,
+                            ));
+
                             // Push clip rect in viewport-local coordinates (0,0 origin)
                             let local_clip = Rect {
                                 x: 0.0,
@@ -1335,10 +1492,13 @@ pub fn run() -> Result<()> {
                                 h: viewport_rect.h,
                             };
                             canvas.push_clip_rect(local_clip);
-                            
+
                             // Apply scroll offset as a nested transform (negative to scroll down)
-                            canvas.push_transform(Transform2D::translate(0.0, -zone_manager.viewport.scroll_offset));
-                            
+                            canvas.push_transform(Transform2D::translate(
+                                0.0,
+                                -zone_manager.viewport.scroll_offset,
+                            ));
+
                             let content_height = viewport_ir.render(
                                 &mut canvas,
                                 scale_factor,
@@ -1346,29 +1506,37 @@ pub fn run() -> Result<()> {
                                 provider.as_ref(),
                                 text_cache.as_ref(),
                             );
-                            
+
                             canvas.pop_transform(); // Pop scroll transform
-                            canvas.pop_clip();      // Pop clip rect
+                            canvas.pop_clip(); // Pop clip rect
                             canvas.pop_transform(); // Pop viewport position transform
-                            
+
                             // Update viewport content height
-                            zone_manager.viewport.set_content_height(content_height, viewport_rect.h);
-                            
+                            zone_manager
+                                .viewport
+                                .set_content_height(content_height, viewport_rect.h);
+
                             // Render toolbar content with hit regions (above viewport)
                             let toolbar_rect = zone_manager.layout.get_zone(ZoneId::Toolbar);
-                            canvas.push_transform(Transform2D::translate(toolbar_rect.x, toolbar_rect.y));
+                            canvas.push_transform(Transform2D::translate(
+                                toolbar_rect.x,
+                                toolbar_rect.y,
+                            ));
                             zone_manager.toolbar.render(&mut canvas, toolbar_rect);
                             canvas.pop_transform();
                         }
-                        
+
                         // Register devtools hit regions (tabs and close button) if devtools is visible.
                         // Visual chrome is rendered in the RuneSurface overlay callback so it
                         // appears above all content, including raster images.
                         // Only register hit regions during full render (not background-only)
                         if should_render_full && zone_manager.is_devtools_visible() {
                             let devtools_rect = zone_manager.layout.get_zone(ZoneId::DevTools);
-                            canvas.push_transform(Transform2D::translate(devtools_rect.x, devtools_rect.y));
-                            
+                            canvas.push_transform(Transform2D::translate(
+                                devtools_rect.x,
+                                devtools_rect.y,
+                            ));
+
                             let button_size = 18.0;
                             let tab_height = 24.0;
                             let tab_padding = 10.0;
@@ -1378,32 +1546,42 @@ pub fn run() -> Result<()> {
                             let elements_x = tab_padding;
                             let elements_y = (tab_height - button_size) * 0.5;
                             // Calculate tab width based on text
-                            let elements_tab_width = button_size + icon_text_gap + 8.0 + 54.0 + tab_padding * 3.0;
-                            
+                            let elements_tab_width =
+                                button_size + icon_text_gap + 8.0 + 54.0 + tab_padding * 3.0;
+
                             let elements_rect = Rect {
                                 x: elements_x,
                                 y: elements_y,
                                 w: elements_tab_width,
                                 h: tab_height,
                             };
-                            
-                            canvas.hit_region_rect(DEVTOOLS_ELEMENTS_TAB_REGION_ID, elements_rect, 10300);
-                            
+
+                            canvas.hit_region_rect(
+                                DEVTOOLS_ELEMENTS_TAB_REGION_ID,
+                                elements_rect,
+                                10300,
+                            );
+
                             // Console tab
                             let console_x = elements_x + elements_tab_width + 8.0;
                             let console_y = (tab_height - button_size) * 0.5;
 
-                            let console_tab_width = button_size + icon_text_gap + 8.0 + 50.0 + tab_padding * 3.0;
-                            
+                            let console_tab_width =
+                                button_size + icon_text_gap + 8.0 + 50.0 + tab_padding * 3.0;
+
                             let console_rect = Rect {
                                 x: console_x,
                                 y: console_y,
                                 w: console_tab_width,
                                 h: tab_height,
                             };
-                            
-                            canvas.hit_region_rect(DEVTOOLS_CONSOLE_TAB_REGION_ID, console_rect, 10300);
-                            
+
+                            canvas.hit_region_rect(
+                                DEVTOOLS_CONSOLE_TAB_REGION_ID,
+                                console_rect,
+                                10300,
+                            );
+
                             // Close button in top-right corner
                             let close_size = 20.0;
                             let close_margin = 12.0;
@@ -1416,25 +1594,30 @@ pub fn run() -> Result<()> {
                                 w: close_size,
                                 h: close_size,
                             };
-                            
-                            canvas.hit_region_rect(DEVTOOLS_CLOSE_BUTTON_REGION_ID, close_rect, 10300);
-                            
+
+                            canvas.hit_region_rect(
+                                DEVTOOLS_CLOSE_BUTTON_REGION_ID,
+                                close_rect,
+                                10300,
+                            );
+
                             canvas.pop_transform();
                         }
-                        
+
                         // Build hit index from display list before ending frame
                         // Only rebuild hit index during full render
                         if should_render_full {
                             hit_index = Some(engine_core::HitIndex::build(canvas.display_list()));
                         }
-                        
+
                         surf.end_frame(frame, canvas).ok();
-                        
+
                         // Clear flags after rendering.
                         // Keep needs_redraw true while an input box is focused so
                         // cursor blinking continues to drive redraws.
                         if should_render_full {
-                            let any_focused_input = viewport_ir.input_boxes.iter().any(|ib| ib.focused);
+                            let any_focused_input =
+                                viewport_ir.input_boxes.iter().any(|ib| ib.focused);
                             if !any_focused_input {
                                 needs_redraw = false;
                             }
@@ -1451,7 +1634,7 @@ pub fn run() -> Result<()> {
                     let max_exceeded = first_resize_time
                         .map(|t| t.elapsed() >= std::time::Duration::from_millis(300))
                         .unwrap_or(false);
-                    
+
                     if settled || max_exceeded {
                         // Resize ended or max debounce exceeded - trigger full redraw
                         last_resize_time = None;

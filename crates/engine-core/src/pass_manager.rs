@@ -44,11 +44,7 @@ impl TextCache {
         self.map.get(key)
     }
 
-    fn insert(
-        &mut self,
-        key: TextCacheKey,
-        batch: crate::text::GlyphBatch,
-    ) {
+    fn insert(&mut self, key: TextCacheKey, batch: crate::text::GlyphBatch) {
         if self.map.len() >= self.max_entries && !self.map.contains_key(&key) {
             if let Some(old_key) = self.map.keys().next().cloned() {
                 self.map.remove(&old_key);
@@ -128,7 +124,7 @@ impl PassManager {
     // Fixed text vertex/index buffer sizes for batched glyph quads.
     // Kept in one place so capacity math stays in sync with buffer creation.
     const TEXT_VBUF_BYTES: u64 = 1024 * 1024; // 1MB vertex buffer
-    const TEXT_IBUF_BYTES: u64 = 256 * 1024;  // 256KB index buffer
+    const TEXT_IBUF_BYTES: u64 = 256 * 1024; // 256KB index buffer
 
     /// Choose the best offscreen format: Rgba16Float if supported, otherwise Rgba8Unorm
     fn choose_offscreen_format(device: &wgpu::Device) -> wgpu::TextureFormat {
@@ -459,7 +455,11 @@ impl PassManager {
         target_view: &wgpu::TextureView,
         width: u32,
         height: u32,
-        glyphs: &[(crate::text::SubpixelMask, [f32; 2], crate::scene::ColorLinPremul)],
+        glyphs: &[(
+            crate::text::SubpixelMask,
+            [f32; 2],
+            crate::scene::ColorLinPremul,
+        )],
         queue: &wgpu::Queue,
     ) {
         // Prepare viewport transform
@@ -592,11 +592,15 @@ impl PassManager {
         for i in 0..quad_count {
             let base = (i * 4) as u16;
             indices.extend_from_slice(&[
-                base + 0, base + 1, base + 2,
-                base + 0, base + 2, base + 3,
+                base + 0,
+                base + 1,
+                base + 2,
+                base + 0,
+                base + 2,
+                base + 3,
             ]);
         }
-        
+
         // Upload indices
         let ibytes = (indices.len() as u64) * idx_size;
         if ibytes > Self::TEXT_IBUF_BYTES {
@@ -678,7 +682,7 @@ impl PassManager {
 
     /// Allocate or reuse intermediate texture matching the surface size.
     /// This texture is used for Vello-style smooth resizing.
-    /// 
+    ///
     /// Strategy: Always ensure texture matches exact size for MSAA resolve compatibility.
     /// We preserve content by using LoadOp::Load when rendering, not by keeping oversized textures.
     pub fn ensure_intermediate_texture(
@@ -799,7 +803,14 @@ impl PassManager {
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
         for cmd in &list.commands {
-            if let crate::display_list::Command::DrawText { run, transform, id, dynamic, .. } = cmd {
+            if let crate::display_list::Command::DrawText {
+                run,
+                transform,
+                id,
+                dynamic,
+                ..
+            } = cmd
+            {
                 let [a, b, c, d, e, f] = transform.m;
                 // Apply full affine transform (scale + translate) to the run origin
                 let rx = a * run.pos[0] + c * run.pos[1] + e;
@@ -861,8 +872,7 @@ impl PassManager {
                 if *dynamic {
                     let mut glyph_batch = crate::text::GlyphBatch::new();
                     for rg in provider.rasterize_run(&run_for_provider) {
-                        let mut origin =
-                            [run_origin_x + rg.offset[0], baseline_y + rg.offset[1]];
+                        let mut origin = [run_origin_x + rg.offset[0], baseline_y + rg.offset[1]];
                         if scaled_size <= 15.0 {
                             origin[0] = snap(origin[0]);
                             origin[1] = snap(origin[1]);
@@ -2279,7 +2289,7 @@ impl PassManager {
 
     /// Render the scene to intermediate texture, then blit to surface.
     /// This is the Vello-style approach that enables smooth window resizing.
-    /// 
+    ///
     /// If `preserve_intermediate` is true, the existing intermediate texture content
     /// is preserved (LoadOp::Load), allowing incremental updates like background-only redraws.
     /// Note: When size changes, texture is reallocated so preservation doesn't apply.
@@ -2301,7 +2311,7 @@ impl PassManager {
             Some(tex) => tex.key.width != width || tex.key.height != height,
             None => true,
         };
-        
+
         // Ensure intermediate texture is allocated and matches surface size
         self.ensure_intermediate_texture(allocator, width, height);
 
@@ -2347,7 +2357,7 @@ impl PassManager {
     ) {
         // Ensure intermediate texture is allocated and matches surface size
         self.ensure_intermediate_texture(allocator, width, height);
-        
+
         // Get a raw pointer to the intermediate view to work around borrow checker.
         // This is safe because we know ensure_intermediate_texture() has just allocated it
         // and it won't be reallocated during this function.
@@ -2357,7 +2367,7 @@ impl PassManager {
             .expect("intermediate texture must be allocated before rendering text")
             .view;
         let intermediate_view = unsafe { &*intermediate_view_ptr };
-        
+
         // Render solids to intermediate
         self.render_frame_internal(
             encoder,
@@ -2371,10 +2381,10 @@ impl PassManager {
             queue,
             false,
         );
-        
+
         // Render text to intermediate
         self.render_text_for_list(encoder, intermediate_view, list, queue, provider);
-        
+
         // Blit to surface
         self.blit_to_surface(encoder, surface_view);
     }

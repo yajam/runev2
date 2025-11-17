@@ -5,17 +5,17 @@
 //! - 1.3: basic text shaping using harfbuzz_rs
 //! - 1.4: Unicode grapheme handling (clusters, combining marks, emoji/ZWJ)
 
+pub mod bidi;
 pub mod font;
+pub mod layout;
 pub mod shaping;
 pub mod unicode;
-pub mod layout;
-pub mod bidi;
 
 pub use font::{
+    FontError,
     face::FontFace,
     loader::{FontCache, FontKey},
     metrics::{FontMetrics, ScaledFontMetrics},
-    FontError,
 };
 
 pub use layout::{

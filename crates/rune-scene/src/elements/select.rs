@@ -1,6 +1,6 @@
-use engine_core::{Brush, Rect, Color, ColorLinPremul, RoundedRadii, RoundedRect};
-use rune_surface::shapes::{self};
+use engine_core::{Brush, Color, ColorLinPremul, Rect, RoundedRadii, RoundedRect};
 use rune_surface::Canvas;
+use rune_surface::shapes::{self};
 
 pub struct Select {
     pub rect: Rect,
@@ -16,13 +16,18 @@ impl Select {
         let radius = 6.0;
         let rrect = RoundedRect {
             rect: self.rect,
-            radii: RoundedRadii { tl: radius, tr: radius, br: radius, bl: radius },
+            radii: RoundedRadii {
+                tl: radius,
+                tr: radius,
+                br: radius,
+                bl: radius,
+            },
         };
-        
+
         // Background
         let bg = Color::rgba(45, 52, 71, 255);
         canvas.rounded_rect(rrect, Brush::Solid(bg), z);
-        
+
         // Border
         let border_color = if self.focused {
             Color::rgba(63, 130, 246, 255)
@@ -38,11 +43,20 @@ impl Select {
             Some(Brush::Solid(border_color)),
             z + 1,
         );
-        
+
         // Label
-        let tp = [self.rect.x + 12.0, self.rect.y + self.rect.h * 0.5 + self.label_size * 0.35];
-        canvas.draw_text_run(tp, self.label.clone(), self.label_size, self.label_color, z + 2);
-        
+        let tp = [
+            self.rect.x + 12.0,
+            self.rect.y + self.rect.h * 0.5 + self.label_size * 0.35,
+        ];
+        canvas.draw_text_run(
+            tp,
+            self.label.clone(),
+            self.label_size,
+            self.label_color,
+            z + 2,
+        );
+
         // Chevron icon (SVG)
         let icon_size = 16.0;
         let icon_x = self.rect.x + self.rect.w - icon_size - 12.0;
@@ -52,6 +66,11 @@ impl Select {
         } else {
             "images/chevron-down.svg"
         };
-        canvas.draw_svg(chevron_path, [icon_x, icon_y], [icon_size, icon_size], z + 3);
+        canvas.draw_svg(
+            chevron_path,
+            [icon_x, icon_y],
+            [icon_size, icon_size],
+            z + 3,
+        );
     }
 }

@@ -45,14 +45,14 @@ pub fn render_selection(
     }
 
     let selection_rects = layout.selection_rects(selection);
-    
+
     // Get baseline offset from layout for proper alignment
     let baseline_offset = if let Some(line) = layout.lines().first() {
         line.baseline_offset
     } else {
         return; // No lines, nothing to render
     };
-    
+
     // Precompute clipping bounds
     let clip_left = config.content_rect.x;
     let clip_right = config.content_rect.x + config.content_rect.w;
@@ -64,7 +64,8 @@ pub fn render_selection(
         // text_baseline_y is where the text baseline is drawn
         // We need to offset by -baseline_offset to get to the top of the line
         let mut highlight_x = config.content_rect.x - config.scroll_x + sel_rect.x;
-        let mut highlight_y = config.text_baseline_y - baseline_offset + sel_rect.y - config.scroll_y;
+        let mut highlight_y =
+            config.text_baseline_y - baseline_offset + sel_rect.y - config.scroll_y;
         let mut highlight_w = sel_rect.width;
         let mut highlight_h = sel_rect.height;
 

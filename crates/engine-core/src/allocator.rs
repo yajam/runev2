@@ -37,7 +37,11 @@ pub struct RenderAllocator {
 
 impl RenderAllocator {
     pub fn new(device: Arc<wgpu::Device>) -> Self {
-        Self { device, texture_pool: HashMap::new(), buffer_pool: HashMap::new() }
+        Self {
+            device,
+            texture_pool: HashMap::new(),
+            buffer_pool: HashMap::new(),
+        }
     }
 
     pub fn begin_frame(&mut self) {
@@ -53,7 +57,11 @@ impl RenderAllocator {
         let texture = entry.pop().unwrap_or_else(|| {
             self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("alloc:tex"),
-                size: wgpu::Extent3d { width: key.width, height: key.height, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: key.width,
+                    height: key.height,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
@@ -67,7 +75,10 @@ impl RenderAllocator {
     }
 
     pub fn release_texture(&mut self, tex: OwnedTexture) {
-        self.texture_pool.entry(tex.key).or_default().push(tex.texture);
+        self.texture_pool
+            .entry(tex.key)
+            .or_default()
+            .push(tex.texture);
     }
 
     pub fn allocate_buffer(&mut self, key: BufKey) -> OwnedBuffer {
@@ -84,6 +95,9 @@ impl RenderAllocator {
     }
 
     pub fn release_buffer(&mut self, buf: OwnedBuffer) {
-        self.buffer_pool.entry(buf.key).or_default().push(buf.buffer);
+        self.buffer_pool
+            .entry(buf.key)
+            .or_default()
+            .push(buf.buffer);
     }
 }

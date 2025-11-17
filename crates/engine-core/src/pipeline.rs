@@ -8,7 +8,11 @@ pub struct BasicSolidRenderer {
 }
 
 impl BasicSolidRenderer {
-    pub fn new(device: Arc<wgpu::Device>, target_format: wgpu::TextureFormat, sample_count: u32) -> Self {
+    pub fn new(
+        device: Arc<wgpu::Device>,
+        target_format: wgpu::TextureFormat,
+        sample_count: u32,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("solid-shader"),
             source: wgpu::ShaderSource::Wgsl(engine_shaders::SOLID_WGSL.into()),
@@ -16,18 +20,16 @@ impl BasicSolidRenderer {
 
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("solid-vp-bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: std::num::NonZeroU64::new(16),
-                    },
-                    count: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: std::num::NonZeroU64::new(16),
                 },
-            ],
+                count: None,
+            }],
         });
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -46,8 +48,16 @@ impl BasicSolidRenderer {
                     array_stride: std::mem::size_of::<crate::upload::Vertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
-                        wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x2 },
-                        wgpu::VertexAttribute { offset: 8, shader_location: 1, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 8,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
                     ],
                 }],
             },
@@ -62,14 +72,22 @@ impl BasicSolidRenderer {
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
-            multisample: wgpu::MultisampleState { count: sample_count, ..Default::default() },
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                ..Default::default()
+            },
             multiview: None,
         });
 
         Self { pipeline, bgl }
     }
 
-    pub fn record<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, vp_bg: &'a wgpu::BindGroup, scene: &'a GpuScene) {
+    pub fn record<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        vp_bg: &'a wgpu::BindGroup,
+        scene: &'a GpuScene,
+    ) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, vp_bg, &[]);
         pass.set_vertex_buffer(0, scene.vertex.buffer.slice(..));
@@ -77,7 +95,9 @@ impl BasicSolidRenderer {
         pass.draw_indexed(0..scene.indices, 0, 0..1);
     }
 
-    pub fn viewport_bgl(&self) -> &wgpu::BindGroupLayout { &self.bgl }
+    pub fn viewport_bgl(&self) -> &wgpu::BindGroupLayout {
+        &self.bgl
+    }
 }
 
 pub struct Compositor {
@@ -124,7 +144,11 @@ impl Compositor {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("compositor-pipeline"),
             layout: Some(&layout),
-            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[] },
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
@@ -151,16 +175,30 @@ impl Compositor {
             ..Default::default()
         });
 
-        Self { pipeline, bgl, sampler }
+        Self {
+            pipeline,
+            bgl,
+            sampler,
+        }
     }
 
-    pub fn bind_group(&self, device: &wgpu::Device, tex_view: &wgpu::TextureView) -> wgpu::BindGroup {
+    pub fn bind_group(
+        &self,
+        device: &wgpu::Device,
+        tex_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("compositor-bg"),
             layout: &self.bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(tex_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(tex_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
             ],
         })
     }
@@ -216,7 +254,11 @@ impl Blitter {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("blit-pipeline"),
             layout: Some(&layout),
-            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[] },
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
@@ -244,16 +286,30 @@ impl Blitter {
             ..Default::default()
         });
 
-        Self { pipeline, bgl, sampler }
+        Self {
+            pipeline,
+            bgl,
+            sampler,
+        }
     }
 
-    pub fn bind_group(&self, device: &wgpu::Device, tex_view: &wgpu::TextureView) -> wgpu::BindGroup {
+    pub fn bind_group(
+        &self,
+        device: &wgpu::Device,
+        tex_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("blit-bg"),
             layout: &self.bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(tex_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(tex_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
             ],
         })
     }
@@ -309,7 +365,11 @@ impl BackgroundRenderer {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("bg-pipeline"),
             layout: Some(&layout),
-            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[] },
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
@@ -333,7 +393,9 @@ impl BackgroundRenderer {
         pass.draw(0..3, 0..1);
     }
 
-    pub fn bgl(&self) -> &wgpu::BindGroupLayout { &self.bgl }
+    pub fn bgl(&self) -> &wgpu::BindGroupLayout {
+        &self.bgl
+    }
 }
 
 pub struct BlurRenderer {
@@ -388,7 +450,11 @@ impl BlurRenderer {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("shadow-blur-pipeline"),
             layout: Some(&layout),
-            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[] },
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
@@ -419,17 +485,35 @@ impl BlurRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self { pipeline, bgl, sampler, param_buffer }
+        Self {
+            pipeline,
+            bgl,
+            sampler,
+            param_buffer,
+        }
     }
 
-    pub fn bind_group(&self, device: &wgpu::Device, tex_view: &wgpu::TextureView) -> wgpu::BindGroup {
+    pub fn bind_group(
+        &self,
+        device: &wgpu::Device,
+        tex_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("shadow-blur-bg"),
             layout: &self.bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(tex_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
-                wgpu::BindGroupEntry { binding: 2, resource: self.param_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(tex_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.param_buffer.as_entire_binding(),
+                },
             ],
         })
     }
@@ -493,7 +577,11 @@ impl ShadowCompositeRenderer {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("shadow-composite-pipeline"),
             layout: Some(&layout),
-            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[] },
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
@@ -524,17 +612,35 @@ impl ShadowCompositeRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self { pipeline, bgl, sampler, color_buffer }
+        Self {
+            pipeline,
+            bgl,
+            sampler,
+            color_buffer,
+        }
     }
 
-    pub fn bind_group(&self, device: &wgpu::Device, tex_view: &wgpu::TextureView) -> wgpu::BindGroup {
+    pub fn bind_group(
+        &self,
+        device: &wgpu::Device,
+        tex_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("shadow-composite-bg"),
             layout: &self.bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(tex_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
-                wgpu::BindGroupEntry { binding: 2, resource: self.color_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(tex_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.color_buffer.as_entire_binding(),
+                },
             ],
         })
     }
@@ -615,9 +721,21 @@ impl TextRenderer {
                     array_stride: (std::mem::size_of::<f32>() * 8) as u64, // pos(2) + uv(2) + color(4)
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
-                        wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x2 },
-                        wgpu::VertexAttribute { offset: 8, shader_location: 1, format: wgpu::VertexFormat::Float32x2 },
-                        wgpu::VertexAttribute { offset: 16, shader_location: 2, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 8,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 16,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
                     ],
                 }],
             },
@@ -654,29 +772,60 @@ impl TextRenderer {
             mapped_at_creation: false,
         });
 
-        Self { pipeline, vp_bgl, tex_bgl, sampler, color_buffer }
+        Self {
+            pipeline,
+            vp_bgl,
+            tex_bgl,
+            sampler,
+            color_buffer,
+        }
     }
 
-    pub fn vp_bind_group(&self, device: &wgpu::Device, vp_buffer: &wgpu::Buffer) -> wgpu::BindGroup {
+    pub fn vp_bind_group(
+        &self,
+        device: &wgpu::Device,
+        vp_buffer: &wgpu::Buffer,
+    ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("text-vp-bg"),
             layout: &self.vp_bgl,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: vp_buffer.as_entire_binding() }],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: vp_buffer.as_entire_binding(),
+            }],
         })
     }
 
-    pub fn tex_bind_group(&self, device: &wgpu::Device, tex_view: &wgpu::TextureView) -> wgpu::BindGroup {
+    pub fn tex_bind_group(
+        &self,
+        device: &wgpu::Device,
+        tex_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("text-tex-bg"),
             layout: &self.tex_bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(tex_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(tex_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
             ],
         })
     }
 
-    pub fn record<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, vp_bg: &'a wgpu::BindGroup, tex_bg: &'a wgpu::BindGroup, vbuf: &'a wgpu::Buffer, ibuf: &'a wgpu::Buffer, icount: u32) {
+    pub fn record<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        vp_bg: &'a wgpu::BindGroup,
+        tex_bg: &'a wgpu::BindGroup,
+        vbuf: &'a wgpu::Buffer,
+        ibuf: &'a wgpu::Buffer,
+        icount: u32,
+    ) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, vp_bg, &[]);
         pass.set_bind_group(1, tex_bg, &[]);
@@ -754,8 +903,16 @@ impl ImageRenderer {
                     array_stride: (std::mem::size_of::<f32>() * 4) as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
-                        wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x2 },
-                        wgpu::VertexAttribute { offset: 8, shader_location: 1, format: wgpu::VertexFormat::Float32x2 },
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 8,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
                     ],
                 }],
             },
@@ -785,29 +942,59 @@ impl ImageRenderer {
             ..Default::default()
         });
 
-        Self { pipeline, vp_bgl, tex_bgl, sampler }
+        Self {
+            pipeline,
+            vp_bgl,
+            tex_bgl,
+            sampler,
+        }
     }
 
-    pub fn vp_bind_group(&self, device: &wgpu::Device, vp_buffer: &wgpu::Buffer) -> wgpu::BindGroup {
+    pub fn vp_bind_group(
+        &self,
+        device: &wgpu::Device,
+        vp_buffer: &wgpu::Buffer,
+    ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("image-vp-bg"),
             layout: &self.vp_bgl,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: vp_buffer.as_entire_binding() }],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: vp_buffer.as_entire_binding(),
+            }],
         })
     }
 
-    pub fn tex_bind_group(&self, device: &wgpu::Device, tex_view: &wgpu::TextureView) -> wgpu::BindGroup {
+    pub fn tex_bind_group(
+        &self,
+        device: &wgpu::Device,
+        tex_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("image-tex-bg"),
             layout: &self.tex_bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(tex_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(tex_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
             ],
         })
     }
 
-    pub fn record<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, vp_bg: &'a wgpu::BindGroup, tex_bg: &'a wgpu::BindGroup, vbuf: &'a wgpu::Buffer, ibuf: &'a wgpu::Buffer, icount: u32) {
+    pub fn record<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        vp_bg: &'a wgpu::BindGroup,
+        tex_bg: &'a wgpu::BindGroup,
+        vbuf: &'a wgpu::Buffer,
+        ibuf: &'a wgpu::Buffer,
+        icount: u32,
+    ) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, vp_bg, &[]);
         pass.set_bind_group(1, tex_bg, &[]);

@@ -41,4 +41,3 @@ impl LineBox {
         y >= self.y_offset && y < self.bottom_y() && x >= 0.0 && x < self.width
     }
 }
-

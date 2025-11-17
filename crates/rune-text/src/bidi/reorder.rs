@@ -1,5 +1,5 @@
-use std::borrow::Cow;
 use core::ops::Range;
+use std::borrow::Cow;
 
 use unicode_bidi::{BidiInfo, Level, LevelRun};
 
@@ -45,10 +45,7 @@ pub fn visual_runs(
         .into_iter()
         .map(|run: LevelRun| {
             let level = levels[run.start].number();
-            BidiRun {
-                range: run,
-                level,
-            }
+            BidiRun { range: run, level }
         })
         .collect();
     (levels, bidi_runs)
@@ -60,11 +57,7 @@ pub fn visual_runs(
 /// values (chars) in `text[line.clone()]`. For each visual index `v`,
 /// `map[v]` gives the corresponding logical character index within that
 /// line (0-based).
-pub fn visual_index_map(
-    text: &str,
-    base_dir: BaseDirection,
-    line: Range<usize>,
-) -> Vec<usize> {
+pub fn visual_index_map(text: &str, base_dir: BaseDirection, line: Range<usize>) -> Vec<usize> {
     let info = BidiInfo::new(text, base_dir.to_level());
     let para = find_paragraph(&info, &line);
 

@@ -34,8 +34,8 @@ use std::sync::Mutex;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct LayoutKey {
     text_hash: u64,
-    max_width_bits: u32,  // f32 as bits for hashing
-    size_bits: u32,       // f32 as bits for hashing
+    max_width_bits: u32, // f32 as bits for hashing
+    size_bits: u32,      // f32 as bits for hashing
 }
 
 impl LayoutKey {
@@ -44,7 +44,7 @@ impl LayoutKey {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         text.hash(&mut hasher);
         let text_hash = hasher.finish();
-        
+
         Self {
             text_hash,
             max_width_bits: max_width.to_bits(),
@@ -78,7 +78,7 @@ impl TextLayoutCache {
             max_entries,
         }
     }
-    
+
     /// Get or compute wrapped text layout.
     pub fn get_or_wrap(
         &self,
@@ -88,7 +88,7 @@ impl TextLayoutCache {
         line_height_factor: f32,
     ) -> WrappedText {
         let key = LayoutKey::new(text, max_width, size);
-        
+
         // Try to get from cache
         {
             let cache = self.cache.lock().unwrap();
@@ -96,10 +96,10 @@ impl TextLayoutCache {
                 return wrapped.clone();
             }
         }
-        
+
         // Compute the wrapped text
         let wrapped = wrap_text_fast(text, max_width, size, line_height_factor);
-        
+
         // Store in cache (with size limit)
         {
             let mut cache = self.cache.lock().unwrap();
@@ -107,7 +107,8 @@ impl TextLayoutCache {
             if cache.len() >= self.max_entries * 2 {
                 // Simple eviction: clear to half capacity
                 let target_size = self.max_entries;
-                let keys_to_remove: Vec<_> = cache.keys()
+                let keys_to_remove: Vec<_> = cache
+                    .keys()
                     .take(cache.len() - target_size)
                     .cloned()
                     .collect();
@@ -117,10 +118,10 @@ impl TextLayoutCache {
             }
             cache.insert(key, wrapped.clone());
         }
-        
+
         wrapped
     }
-    
+
     /// Clear the cache.
     pub fn clear(&self) {
         self.cache.lock().unwrap().clear();
@@ -144,11 +145,11 @@ pub fn wrap_text_fast(
     line_height_factor: f32,
 ) -> WrappedText {
     let line_height = size * line_height_factor;
-    
+
     // Fast character-count approximation
     let avg_char_width = size * 0.55;
     let max_chars = (max_width / avg_char_width).floor() as usize;
-    
+
     if max_chars == 0 {
         return WrappedText {
             lines: vec![],
@@ -156,19 +157,19 @@ pub fn wrap_text_fast(
             total_height: 0.0,
         };
     }
-    
+
     // Word-wrap using character count
     let words: Vec<&str> = text.split_whitespace().collect();
     let mut lines: Vec<String> = Vec::new();
     let mut current_line = String::new();
-    
+
     for word in words {
         let test = if current_line.is_empty() {
             word.to_string()
         } else {
             format!("{} {}", current_line, word)
         };
-        
+
         if test.len() <= max_chars {
             current_line = test;
         } else {
@@ -192,9 +193,9 @@ pub fn wrap_text_fast(
     if !current_line.is_empty() {
         lines.push(current_line);
     }
-    
+
     let total_height = lines.len() as f32 * line_height;
-    
+
     WrappedText {
         lines,
         line_height,
@@ -205,11 +206,8 @@ pub fn wrap_text_fast(
 /// Render wrapped text to a display list or canvas.
 ///
 /// This is a helper that takes pre-wrapped text and renders it line by line.
-pub fn render_wrapped_text<F>(
-    wrapped: &WrappedText,
-    pos: [f32; 2],
-    mut render_line: F,
-) where
+pub fn render_wrapped_text<F>(wrapped: &WrappedText, pos: [f32; 2], mut render_line: F)
+where
     F: FnMut(&str, [f32; 2]),
 {
     for (i, line) in wrapped.lines.iter().enumerate() {
@@ -221,7 +219,7 @@ pub fn render_wrapped_text<F>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_wrap_text_fast() {
         let text = "This is a test of the text wrapping system.";
@@ -229,15 +227,15 @@ mod tests {
         assert!(!wrapped.lines.is_empty());
         assert!(wrapped.total_height > 0.0);
     }
-    
+
     #[test]
     fn test_cache() {
         let cache = TextLayoutCache::new(10);
         let text = "Hello world";
-        
+
         let w1 = cache.get_or_wrap(text, 100.0, 16.0, 1.2);
         let w2 = cache.get_or_wrap(text, 100.0, 16.0, 1.2);
-        
+
         // Should be the same (from cache)
         assert_eq!(w1.lines.len(), w2.lines.len());
     }

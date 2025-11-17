@@ -1,14 +1,16 @@
-use engine_core::{Brush, Color, ColorLinPremul, FillRule, Path, PathCmd, Rect, RoundedRadii, RoundedRect};
+use crate::elements::caret::CaretBlink;
+use crate::elements::caret_renderer::{self, CaretRenderConfig};
+use crate::elements::selection_renderer::{self, SelectionRenderConfig};
+use engine_core::{
+    Brush, Color, ColorLinPremul, FillRule, Path, PathCmd, Rect, RoundedRadii, RoundedRect,
+};
 use rune_surface::Canvas;
 use rune_surface::shapes;
-use crate::elements::caret::CaretBlink;
-use crate::elements::selection_renderer::{self, SelectionRenderConfig};
-use crate::elements::caret_renderer::{self, CaretRenderConfig};
-use rune_text::layout::{
-    Selection as RtSelection, TextLayout as RtTextLayout, WrapMode as RtWrapMode,
-    Point as RtPoint, HitTestPolicy, CursorPosition,
-};
 use rune_text::font::load_system_default_font;
+use rune_text::layout::{
+    CursorPosition, HitTestPolicy, Point as RtPoint, Selection as RtSelection,
+    TextLayout as RtTextLayout, WrapMode as RtWrapMode,
+};
 
 /// Single-line text input widget with rich editing capabilities.
 ///
@@ -50,14 +52,13 @@ pub struct InputBox {
     // Shared caret blink state (visibility + blink phase)
     caret: CaretBlink,
     pub cursor_position: usize, // Byte offset in text
-    
+
     // Horizontal scrolling
     scroll_x: f32,
-    
+
     // Padding
     padding_x: f32,
     padding_y: f32,
-    
 
     // rune-text TextLayout backend for all editing operations.
     rt_layout: Option<RtTextLayout>,
@@ -85,15 +86,9 @@ impl InputBox {
 
         // Build a rune-text TextLayout using a system font.
         // Falls back to None if system font loading fails (shouldn't happen in normal use).
-        let rt_layout = load_system_default_font()
-            .ok()
-            .map(|font| RtTextLayout::with_wrap(
-                text.clone(),
-                &font,
-                text_size,
-                None,
-                RtWrapMode::NoWrap,
-            ));
+        let rt_layout = load_system_default_font().ok().map(|font| {
+            RtTextLayout::with_wrap(text.clone(), &font, text_size, None, RtWrapMode::NoWrap)
+        });
 
         Self {
             rect,
@@ -169,7 +164,6 @@ impl InputBox {
         self.reset_cursor_blink();
     }
 
-
     /// Compute cursor X (logical pixels) for current cursor position.
     fn cursor_x(&self) -> f32 {
         if let Some(layout) = self.rt_layout.as_ref() {
@@ -182,17 +176,17 @@ impl InputBox {
         // Return 0.0 if layout unavailable (shouldn't happen in normal use)
         0.0
     }
-    
+
     /// Update the cursor blink animation.
     pub fn update_blink(&mut self, delta_time: f32) {
         self.caret.update(delta_time, self.focused);
     }
-    
+
     /// Reset cursor blink (make visible).
     fn reset_cursor_blink(&mut self) {
         self.caret.reset_manual();
     }
-    
+
     /// Insert a character at the cursor position.
     pub fn insert_char(&mut self, ch: char) {
         self.with_layout_edit(|layout, font, selection, size| {
@@ -207,20 +201,13 @@ impl InputBox {
                     RtWrapMode::NoWrap,
                 )
             } else {
-                layout.replace_selection(
-                    selection,
-                    &text,
-                    font,
-                    size,
-                    None,
-                    RtWrapMode::NoWrap,
-                )
+                layout.replace_selection(selection, &text, font, size, None, RtWrapMode::NoWrap)
             };
             let new_selection = RtSelection::collapsed(new_cursor);
             (new_cursor, new_selection)
         });
     }
-    
+
     /// Delete the character before the cursor (backspace).
     pub fn delete_before_cursor(&mut self) {
         if self.text.is_empty() || self.cursor_position == 0 {
@@ -229,27 +216,15 @@ impl InputBox {
 
         self.with_layout_edit(|layout, font, selection, size| {
             let new_cursor = if selection.is_collapsed() {
-                layout.delete_backward(
-                    selection.active(),
-                    font,
-                    size,
-                    None,
-                    RtWrapMode::NoWrap,
-                )
+                layout.delete_backward(selection.active(), font, size, None, RtWrapMode::NoWrap)
             } else {
-                layout.delete_selection(
-                    selection,
-                    font,
-                    size,
-                    None,
-                    RtWrapMode::NoWrap,
-                )
+                layout.delete_selection(selection, font, size, None, RtWrapMode::NoWrap)
             };
             let new_selection = RtSelection::collapsed(new_cursor);
             (new_cursor, new_selection)
         });
     }
-    
+
     /// Delete the character after the cursor (delete key).
     pub fn delete_after_cursor(&mut self) {
         if self.text.is_empty() || self.cursor_position >= self.text.len() {
@@ -258,27 +233,15 @@ impl InputBox {
 
         self.with_layout_edit(|layout, font, selection, size| {
             let new_cursor = if selection.is_collapsed() {
-                layout.delete_forward(
-                    selection.active(),
-                    font,
-                    size,
-                    None,
-                    RtWrapMode::NoWrap,
-                )
+                layout.delete_forward(selection.active(), font, size, None, RtWrapMode::NoWrap)
             } else {
-                layout.delete_selection(
-                    selection,
-                    font,
-                    size,
-                    None,
-                    RtWrapMode::NoWrap,
-                )
+                layout.delete_selection(selection, font, size, None, RtWrapMode::NoWrap)
             };
             let new_selection = RtSelection::collapsed(new_cursor);
             (new_cursor, new_selection)
         });
     }
-    
+
     /// Move cursor left by one grapheme.
     /// If there's a selection, collapses it to the start instead of moving.
     pub fn move_cursor_left(&mut self) {
@@ -308,7 +271,7 @@ impl InputBox {
         self.rt_selection = RtSelection::collapsed(self.cursor_position);
         self.reset_cursor_blink();
     }
-    
+
     /// Move cursor right by one grapheme.
     /// If there's a selection, collapses it to the end instead of moving.
     pub fn move_cursor_right(&mut self) {
@@ -338,7 +301,7 @@ impl InputBox {
         self.rt_selection = RtSelection::collapsed(self.cursor_position);
         self.reset_cursor_blink();
     }
-    
+
     /// Move cursor to start of the current line (or text for single-line).
     pub fn move_cursor_line_start(&mut self) {
         if let Some(layout) = self.rt_layout.as_ref() {
@@ -408,7 +371,7 @@ impl InputBox {
         self.rt_selection = RtSelection::collapsed(self.cursor_position);
         self.reset_cursor_blink();
     }
-    
+
     /// Move cursor to end of text (document).
     pub fn move_cursor_to_end(&mut self) {
         self.cursor_position = self.text.len();
@@ -433,7 +396,7 @@ impl InputBox {
         if let Some(layout) = self.rt_layout.as_ref() {
             let active = self.rt_selection.active().min(layout.text().len());
             let new_active = layout.move_cursor_line_start(active);
-            
+
             let max = layout.text().len();
             let anchor = self.rt_selection.anchor().min(max);
             let active = new_active.min(max);
@@ -449,7 +412,7 @@ impl InputBox {
         if let Some(layout) = self.rt_layout.as_ref() {
             let active = self.rt_selection.active().min(layout.text().len());
             let new_active = layout.move_cursor_line_end(active);
-            
+
             let max = layout.text().len();
             let anchor = self.rt_selection.anchor().min(max);
             let active = new_active.min(max);
@@ -463,9 +426,8 @@ impl InputBox {
     /// Extend selection left by one grapheme (Shift+Left).
     pub fn extend_selection_left(&mut self) {
         if let Some(layout) = self.rt_layout.as_ref() {
-            let new_selection = layout.extend_selection(&self.rt_selection, |offset| {
-                layout.move_cursor_left(offset)
-            });
+            let new_selection = layout
+                .extend_selection(&self.rt_selection, |offset| layout.move_cursor_left(offset));
             let max = layout.text().len();
             let anchor = new_selection.anchor().min(max);
             let active = new_selection.active().min(max);
@@ -567,10 +529,11 @@ impl InputBox {
         if let Some(layout) = self.rt_layout.as_ref() {
             // Use TextLayout's hit testing to find the byte offset at this position
             let point = RtPoint::new(local_x, 0.0);
-            let byte_offset = layout.hit_test(point, HitTestPolicy::Clamp)
+            let byte_offset = layout
+                .hit_test(point, HitTestPolicy::Clamp)
                 .map(|hit| hit.byte_offset)
                 .unwrap_or(0);
-            
+
             self.rt_selection = RtSelection::collapsed(byte_offset);
             self.cursor_position = byte_offset;
             self.mouse_selecting = true;
@@ -598,10 +561,11 @@ impl InputBox {
         if let Some(layout) = self.rt_layout.as_ref() {
             // Use TextLayout's hit testing to find the byte offset at this position
             let point = RtPoint::new(local_x, 0.0);
-            let byte_offset = layout.hit_test(point, HitTestPolicy::Clamp)
+            let byte_offset = layout
+                .hit_test(point, HitTestPolicy::Clamp)
                 .map(|hit| hit.byte_offset)
                 .unwrap_or(0);
-            
+
             // Extend selection from anchor to new active position
             let anchor = self.rt_selection.anchor();
             self.rt_selection = RtSelection::new(anchor, byte_offset);
@@ -713,7 +677,13 @@ impl InputBox {
             };
 
             if selection.is_collapsed() {
-                layout.paste_from_clipboard(selection.active(), &font, size, None, RtWrapMode::NoWrap)
+                layout.paste_from_clipboard(
+                    selection.active(),
+                    &font,
+                    size,
+                    None,
+                    RtWrapMode::NoWrap,
+                )
             } else {
                 layout.paste_replace_selection(&selection, &font, size, None, RtWrapMode::NoWrap)
             }
@@ -917,7 +887,7 @@ impl InputBox {
             self.reset_cursor_blink();
         }
     }
-    
+
     /// Update scroll position based on cursor and text metrics.
     pub fn update_scroll(&mut self) {
         if self.text.is_empty() {
@@ -970,19 +940,29 @@ impl InputBox {
             self.scroll_x = 0.0;
         }
     }
-    
+
     /// Render the input box.
-    pub fn render(&mut self, canvas: &mut Canvas, z: i32, provider: &dyn engine_core::TextProvider) {
+    pub fn render(
+        &mut self,
+        canvas: &mut Canvas,
+        z: i32,
+        provider: &dyn engine_core::TextProvider,
+    ) {
         let radius = 6.0;
         let rrect = RoundedRect {
             rect: self.rect,
-            radii: RoundedRadii { tl: radius, tr: radius, br: radius, bl: radius },
+            radii: RoundedRadii {
+                tl: radius,
+                tr: radius,
+                br: radius,
+                bl: radius,
+            },
         };
-        
+
         // Background
         let bg = Color::rgba(45, 52, 71, 255);
         canvas.rounded_rect(rrect, Brush::Solid(bg), z);
-        
+
         // Border
         let border_color = if self.focused {
             Color::rgba(63, 130, 246, 255)
@@ -1001,13 +981,13 @@ impl InputBox {
 
         // Update scroll to keep cursor visible and handle shrinking text.
         self.update_scroll();
-        
+
         // Calculate content area
         let content_x = self.rect.x + self.padding_x;
         let content_y = self.rect.y + self.padding_y;
         let content_width = self.rect.w - self.padding_x * 2.0;
         let content_height = self.rect.h - self.padding_y * 2.0;
-        
+
         // Set up clipping for text area
         let content_rect = Rect {
             x: content_x,
@@ -1016,11 +996,11 @@ impl InputBox {
             h: content_height,
         };
         canvas.push_clip_rect(content_rect);
-        
+
         // Text position (with scroll offset)
         let text_x = content_x - self.scroll_x;
         let text_y = self.rect.y + self.rect.h * 0.5 + self.text_size * 0.35;
-        
+
         if !self.text.is_empty() {
             // Draw selection highlight before text using shared renderer
             if self.focused && !self.rt_selection.is_collapsed() {
@@ -1033,7 +1013,7 @@ impl InputBox {
                         color: Color::rgba(63, 130, 246, 80),
                         z: z + 2,
                     };
-                    
+
                     selection_renderer::render_selection(
                         canvas,
                         layout,
@@ -1051,7 +1031,7 @@ impl InputBox {
                 self.text_color,
                 provider,
             );
-            
+
             // Render cursor using shared caret renderer
             if self.focused {
                 if let Some(layout) = self.rt_layout.as_ref() {
@@ -1063,7 +1043,7 @@ impl InputBox {
                         width: 1.5,
                         z: z + 3,
                     };
-                    
+
                     caret_renderer::render_caret(
                         canvas,
                         layout,
@@ -1084,14 +1064,14 @@ impl InputBox {
                     provider,
                 );
             }
-            
+
             // Render cursor at start if focused, even without placeholder
             // For empty text, we need to manually render the caret since there's no layout
             if self.focused && self.caret.visible {
                 let cx = text_x;
                 let cy0 = self.rect.y + self.padding_y;
                 let cy1 = self.rect.y + self.rect.h - self.padding_y;
-                
+
                 let mut caret = Path {
                     cmds: Vec::new(),
                     fill_rule: FillRule::NonZero,
@@ -1101,7 +1081,7 @@ impl InputBox {
                 canvas.stroke_path(caret, 1.5, Color::rgba(63, 130, 246, 255), z + 3);
             }
         }
-        
+
         canvas.pop_clip();
     }
 }

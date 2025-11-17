@@ -28,7 +28,7 @@ impl HitTestResult {
 }
 
 /// Represents a 2D point in zone-local coordinates.
-/// 
+///
 /// Zone-local coordinates are relative to the top-left corner of the text layout,
 /// not absolute screen coordinates. This ensures the hit testing works correctly
 /// regardless of where the text is positioned on screen.
@@ -53,7 +53,7 @@ impl Point {
 }
 
 /// Represents a 2D position in zone-local coordinates.
-/// 
+///
 /// This is used for mapping character offsets to visual positions.
 /// All coordinates are relative to the text layout's origin.
 #[derive(Debug, Clone, Copy, PartialEq)]

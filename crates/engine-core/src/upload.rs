@@ -3,7 +3,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::allocator::{BufKey, OwnedBuffer, RenderAllocator};
 use crate::display_list::{Command, DisplayList};
-use crate::scene::{Brush, Rect, RoundedRect, Transform2D, Stroke, Path, PathCmd, FillRule};
+use crate::scene::{Brush, FillRule, Path, PathCmd, Rect, RoundedRect, Stroke, Transform2D};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
@@ -51,7 +51,9 @@ fn push_rect_linear_gradient(
     stops: &[(f32, [f32; 4])],
     t: Transform2D,
 ) {
-    if stops.len() < 2 { return; }
+    if stops.len() < 2 {
+        return;
+    }
     // ensure sorted
     let mut s = stops.to_vec();
     s.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -60,7 +62,9 @@ fn push_rect_linear_gradient(
     for pair in s.windows(2) {
         let (t0, c0) = (pair[0].0.clamp(0.0, 1.0), pair[0].1);
         let (t1, c1) = (pair[1].0.clamp(0.0, 1.0), pair[1].1);
-        if (t1 - t0).abs() < 1e-6 { continue; }
+        if (t1 - t0).abs() < 1e-6 {
+            continue;
+        }
         let x0 = rect.x + rect.w * t0;
         let x1 = rect.x + rect.w * t1;
         let p0 = apply_transform([x0, y0], t);
@@ -93,7 +97,10 @@ fn push_ellipse(
 
     for i in 0..segs {
         let theta = (i as f32) / (segs as f32) * std::f32::consts::TAU;
-        let p = [center[0] + radii[0] * theta.cos(), center[1] + radii[1] * theta.sin()];
+        let p = [
+            center[0] + radii[0] * theta.cos(),
+            center[1] + radii[1] * theta.sin(),
+        ];
         let p = apply_transform(p, t);
         vertices.push(Vertex { pos: p, color });
     }
@@ -113,14 +120,19 @@ fn push_ellipse_radial_gradient(
     stops: &[(f32, [f32; 4])],
     t: Transform2D,
 ) {
-    if stops.len() < 2 { return; }
+    if stops.len() < 2 {
+        return;
+    }
     let mut s = stops.to_vec();
     s.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     let segs = 64u32;
     let base_center = vertices.len() as u16;
     // Center vertex with first stop color
     let cpos = apply_transform(center, t);
-    vertices.push(Vertex { pos: cpos, color: s[0].1 });
+    vertices.push(Vertex {
+        pos: cpos,
+        color: s[0].1,
+    });
 
     // First ring
     let mut prev_ring_start = vertices.len() as u16;
@@ -129,9 +141,15 @@ fn push_ellipse_radial_gradient(
     let prev_t = if prev_t0 <= 0.0 { 0.0 } else { prev_t0 };
     for i in 0..segs {
         let theta = (i as f32) / (segs as f32) * std::f32::consts::TAU;
-        let p = [center[0] + radii[0] * prev_t * theta.cos(), center[1] + radii[1] * prev_t * theta.sin()];
+        let p = [
+            center[0] + radii[0] * prev_t * theta.cos(),
+            center[1] + radii[1] * prev_t * theta.sin(),
+        ];
         let p = apply_transform(p, t);
-        vertices.push(Vertex { pos: p, color: prev_color });
+        vertices.push(Vertex {
+            pos: p,
+            color: prev_color,
+        });
     }
     // Connect center to first ring if needed
     if prev_t == 0.0 {
@@ -148,9 +166,15 @@ fn push_ellipse_radial_gradient(
         let ring_start = vertices.len() as u16;
         for i in 0..segs {
             let theta = (i as f32) / (segs as f32) * std::f32::consts::TAU;
-            let p = [center[0] + radii[0] * tcur * theta.cos(), center[1] + radii[1] * tcur * theta.sin()];
+            let p = [
+                center[0] + radii[0] * tcur * theta.cos(),
+                center[1] + radii[1] * tcur * theta.sin(),
+            ];
             let p = apply_transform(p, t);
-            vertices.push(Vertex { pos: p, color: ccur });
+            vertices.push(Vertex {
+                pos: p,
+                color: ccur,
+            });
         }
         // stitch prev ring to current ring
         for i in 0..segs {
@@ -171,9 +195,11 @@ fn tessellate_path_fill(
     color: [f32; 4],
     t: Transform2D,
 ) {
-    use lyon_path::Path as LyonPath;
-    use lyon_tessellation::{BuffersBuilder, FillOptions, FillTessellator, FillVertex, VertexBuffers};
     use lyon_geom::point;
+    use lyon_path::Path as LyonPath;
+    use lyon_tessellation::{
+        BuffersBuilder, FillOptions, FillTessellator, FillVertex, VertexBuffers,
+    };
 
     // Build lyon path
     let mut builder = lyon_path::Path::builder();
@@ -181,14 +207,34 @@ fn tessellate_path_fill(
     for cmd in &path.cmds {
         match *cmd {
             PathCmd::MoveTo(p) => {
-                if started { builder.end(false); }
+                if started {
+                    builder.end(false);
+                }
                 builder.begin(point(p[0], p[1]));
                 started = true;
             }
-            PathCmd::LineTo(p) => { if !started { builder.begin(point(p[0], p[1])); started = true; } else { builder.line_to(point(p[0], p[1])); } }
-            PathCmd::QuadTo(c, p) => { builder.quadratic_bezier_to(point(c[0], c[1]), point(p[0], p[1])); }
-            PathCmd::CubicTo(c1, c2, p) => { builder.cubic_bezier_to(point(c1[0], c1[1]), point(c2[0], c2[1]), point(p[0], p[1])); }
-            PathCmd::Close => { builder.end(true); started = false; }
+            PathCmd::LineTo(p) => {
+                if !started {
+                    builder.begin(point(p[0], p[1]));
+                    started = true;
+                } else {
+                    builder.line_to(point(p[0], p[1]));
+                }
+            }
+            PathCmd::QuadTo(c, p) => {
+                builder.quadratic_bezier_to(point(c[0], c[1]), point(p[0], p[1]));
+            }
+            PathCmd::CubicTo(c1, c2, p) => {
+                builder.cubic_bezier_to(
+                    point(c1[0], c1[1]),
+                    point(c2[0], c2[1]),
+                    point(p[0], p[1]),
+                );
+            }
+            PathCmd::Close => {
+                builder.end(true);
+                started = false;
+            }
         }
     }
     // If the last sub-path wasn't explicitly closed, end it as open.
@@ -198,7 +244,10 @@ fn tessellate_path_fill(
     let lyon_path: LyonPath = builder.build();
     let mut tess = FillTessellator::new();
     // Configurable tessellation tolerance via LYON_TOLERANCE (default 0.1)
-    let tol = std::env::var("LYON_TOLERANCE").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.1);
+    let tol = std::env::var("LYON_TOLERANCE")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(0.1);
     let base_opts = FillOptions::default().with_tolerance(tol);
     let options = match path.fill_rule {
         FillRule::NonZero => base_opts.with_fill_rule(lyon_tessellation::FillRule::NonZero),
@@ -213,7 +262,9 @@ fn tessellate_path_fill(
             [p.x, p.y]
         }),
     );
-    if result.is_err() { return; }
+    if result.is_err() {
+        return;
+    }
     // Transform and append
     let base = vertices.len() as u16;
     for p in &geom.vertices {
@@ -230,10 +281,13 @@ fn tessellate_path_stroke(
     stroke: Stroke,
     color: [f32; 4],
     t: Transform2D,
-){
-    use lyon_path::Path as LyonPath;
-    use lyon_tessellation::{BuffersBuilder, StrokeOptions, StrokeTessellator, StrokeVertex, VertexBuffers, LineJoin, LineCap};
+) {
     use lyon_geom::point;
+    use lyon_path::Path as LyonPath;
+    use lyon_tessellation::{
+        BuffersBuilder, LineCap, LineJoin, StrokeOptions, StrokeTessellator, StrokeVertex,
+        VertexBuffers,
+    };
 
     // Build lyon path
     let mut builder = lyon_path::Path::builder();
@@ -241,14 +295,34 @@ fn tessellate_path_stroke(
     for cmd in &path.cmds {
         match *cmd {
             PathCmd::MoveTo(p) => {
-                if started { builder.end(false); }
+                if started {
+                    builder.end(false);
+                }
                 builder.begin(point(p[0], p[1]));
                 started = true;
             }
-            PathCmd::LineTo(p) => { if !started { builder.begin(point(p[0], p[1])); started = true; } else { builder.line_to(point(p[0], p[1])); } }
-            PathCmd::QuadTo(c, p) => { builder.quadratic_bezier_to(point(c[0], c[1]), point(p[0], p[1])); }
-            PathCmd::CubicTo(c1, c2, p) => { builder.cubic_bezier_to(point(c1[0], c1[1]), point(c2[0], c2[1]), point(p[0], p[1])); }
-            PathCmd::Close => { builder.end(true); started = false; }
+            PathCmd::LineTo(p) => {
+                if !started {
+                    builder.begin(point(p[0], p[1]));
+                    started = true;
+                } else {
+                    builder.line_to(point(p[0], p[1]));
+                }
+            }
+            PathCmd::QuadTo(c, p) => {
+                builder.quadratic_bezier_to(point(c[0], c[1]), point(p[0], p[1]));
+            }
+            PathCmd::CubicTo(c1, c2, p) => {
+                builder.cubic_bezier_to(
+                    point(c1[0], c1[1]),
+                    point(c2[0], c2[1]),
+                    point(p[0], p[1]),
+                );
+            }
+            PathCmd::Close => {
+                builder.end(true);
+                started = false;
+            }
         }
     }
     // End any open sub-path
@@ -258,7 +332,10 @@ fn tessellate_path_stroke(
     let lyon_path: LyonPath = builder.build();
 
     let mut tess = StrokeTessellator::new();
-    let tol = std::env::var("LYON_TOLERANCE").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.1);
+    let tol = std::env::var("LYON_TOLERANCE")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(0.1);
     let options = StrokeOptions::default()
         .with_line_width(stroke.width.max(0.0))
         .with_tolerance(tol)
@@ -274,7 +351,9 @@ fn tessellate_path_stroke(
             [p.x, p.y]
         }),
     );
-    if result.is_err() { return; }
+    if result.is_err() {
+        return;
+    }
     let base = vertices.len() as u16;
     for p in &geom.vertices {
         let tp = apply_transform(*p, t);
@@ -294,7 +373,9 @@ fn rounded_rect_to_path(rrect: RoundedRect) -> Path {
 
     // Clamp negative or NaN just in case
     for r in [&mut tl, &mut tr, &mut br, &mut bl] {
-        if !r.is_finite() || *r < 0.0 { *r = 0.0; }
+        if !r.is_finite() || *r < 0.0 {
+            *r = 0.0;
+        }
     }
 
     // If radii are effectively zero, fall back to a plain rect path
@@ -328,7 +409,7 @@ fn rounded_rect_to_path(rrect: RoundedRect) -> Path {
     if tr > 0.0 {
         let c1 = [x1 - tr + K * tr, y0];
         let c2 = [x1, y0 + tr - K * tr];
-        let p  = [x1, y0 + tr];
+        let p = [x1, y0 + tr];
         cmds.push(PathCmd::CubicTo(c1, c2, p));
     } else {
         cmds.push(PathCmd::LineTo([x1, y0]));
@@ -341,7 +422,7 @@ fn rounded_rect_to_path(rrect: RoundedRect) -> Path {
     if br > 0.0 {
         let c1 = [x1, y1 - br + K * br];
         let c2 = [x1 - br + K * br, y1];
-        let p  = [x1 - br, y1];
+        let p = [x1 - br, y1];
         cmds.push(PathCmd::CubicTo(c1, c2, p));
     } else {
         cmds.push(PathCmd::LineTo([x1, y1]));
@@ -354,7 +435,7 @@ fn rounded_rect_to_path(rrect: RoundedRect) -> Path {
     if bl > 0.0 {
         let c1 = [x0 + bl - K * bl, y1];
         let c2 = [x0, y1 - bl + K * bl];
-        let p  = [x0, y1 - bl];
+        let p = [x0, y1 - bl];
         cmds.push(PathCmd::CubicTo(c1, c2, p));
     } else {
         cmds.push(PathCmd::LineTo([x0, y1]));
@@ -367,7 +448,7 @@ fn rounded_rect_to_path(rrect: RoundedRect) -> Path {
     if tl > 0.0 {
         let c1 = [x0, y0 + tl - K * tl];
         let c2 = [x0 + tl - K * tl, y0];
-        let p  = [x0 + tl, y0];
+        let p = [x0 + tl, y0];
         cmds.push(PathCmd::CubicTo(c1, c2, p));
     } else {
         cmds.push(PathCmd::LineTo([x0, y0]));
@@ -375,7 +456,10 @@ fn rounded_rect_to_path(rrect: RoundedRect) -> Path {
     }
 
     cmds.push(PathCmd::Close);
-    Path { cmds, fill_rule: FillRule::NonZero }
+    Path {
+        cmds,
+        fill_rule: FillRule::NonZero,
+    }
 }
 
 fn push_rounded_rect(
@@ -399,7 +483,9 @@ fn push_rect_stroke(
     t: Transform2D,
 ) {
     let w = stroke.width.max(0.0);
-    if w <= 0.0001 { return; }
+    if w <= 0.0001 {
+        return;
+    }
     // Outer corners
     let o0 = apply_transform([rect.x, rect.y], t);
     let o1 = apply_transform([rect.x + rect.w, rect.y], t);
@@ -429,12 +515,9 @@ fn push_rect_stroke(
     // Build ring from quads on each edge
     let idx: [u16; 24] = [
         // top edge: o0-o1-i1-i0
-        0, 1, 5, 0, 5, 4,
-        // right edge: o1-o2-i2-i1
-        1, 2, 6, 1, 6, 5,
-        // bottom edge: o2-o3-i3-i2
-        2, 3, 7, 2, 7, 6,
-        // left edge: o3-o0-i0-i3
+        0, 1, 5, 0, 5, 4, // right edge: o1-o2-i2-i1
+        1, 2, 6, 1, 6, 5, // bottom edge: o2-o3-i3-i2
+        2, 3, 7, 2, 7, 6, // left edge: o3-o0-i0-i3
         3, 0, 4, 3, 4, 7,
     ];
     indices.extend(idx.iter().map(|i| base + i));
@@ -449,7 +532,9 @@ fn push_rounded_rect_stroke(
     t: Transform2D,
 ) {
     let w = stroke.width.max(0.0);
-    if w <= 0.0001 { return; }
+    if w <= 0.0001 {
+        return;
+    }
     let path = rounded_rect_to_path(rrect);
     tessellate_path_stroke(vertices, indices, &path, Stroke { width: w }, color, t);
 }
@@ -471,7 +556,12 @@ pub fn upload_display_list(
 
     for cmd in &list.commands {
         match cmd {
-            Command::DrawRect { rect, brush, transform, .. } => {
+            Command::DrawRect {
+                rect,
+                brush,
+                transform,
+                ..
+            } => {
                 match brush {
                     Brush::Solid(col) => {
                         let color = [col.r, col.g, col.b, col.a];
@@ -486,7 +576,9 @@ pub fn upload_display_list(
                             .iter()
                             .map(|(tpos, c)| (*tpos, [c.r, c.g, c.b, c.a]))
                             .collect();
-                        if packed.is_empty() { continue; }
+                        if packed.is_empty() {
+                            continue;
+                        }
                         // Clamp and ensure 0 and 1 exist
                         if packed.first().unwrap().0 > 0.0 {
                             let c = packed.first().unwrap().1;
@@ -496,56 +588,131 @@ pub fn upload_display_list(
                             let c = packed.last().unwrap().1;
                             packed.push((1.0, c));
                         }
-                        push_rect_linear_gradient(&mut vertices, &mut indices, *rect, &packed, *transform);
+                        push_rect_linear_gradient(
+                            &mut vertices,
+                            &mut indices,
+                            *rect,
+                            &packed,
+                            *transform,
+                        );
                     }
                     _ => {}
                 }
             }
-            Command::DrawRoundedRect { rrect, brush, transform, .. } => {
+            Command::DrawRoundedRect {
+                rrect,
+                brush,
+                transform,
+                ..
+            } => {
                 if let Brush::Solid(col) = brush {
                     let color = [col.r, col.g, col.b, col.a];
                     push_rounded_rect(&mut vertices, &mut indices, *rrect, color, *transform);
                 }
             }
-            Command::StrokeRect { rect, stroke, brush, transform, .. } => {
+            Command::StrokeRect {
+                rect,
+                stroke,
+                brush,
+                transform,
+                ..
+            } => {
                 if let Brush::Solid(col) = brush {
                     let color = [col.r, col.g, col.b, col.a];
-                    push_rect_stroke(&mut vertices, &mut indices, *rect, *stroke, color, *transform);
+                    push_rect_stroke(
+                        &mut vertices,
+                        &mut indices,
+                        *rect,
+                        *stroke,
+                        color,
+                        *transform,
+                    );
                 }
             }
-            Command::StrokeRoundedRect { rrect, stroke, brush, transform, .. } => {
+            Command::StrokeRoundedRect {
+                rrect,
+                stroke,
+                brush,
+                transform,
+                ..
+            } => {
                 if let Brush::Solid(col) = brush {
                     let color = [col.r, col.g, col.b, col.a];
-                    push_rounded_rect_stroke(&mut vertices, &mut indices, *rrect, *stroke, color, *transform);
+                    push_rounded_rect_stroke(
+                        &mut vertices,
+                        &mut indices,
+                        *rrect,
+                        *stroke,
+                        color,
+                        *transform,
+                    );
                 }
             }
-            Command::DrawEllipse { center, radii, brush, transform, .. } => {
-                match brush {
-                    Brush::Solid(col) => {
-                        let color = [col.r, col.g, col.b, col.a];
-                        push_ellipse(&mut vertices, &mut indices, *center, *radii, color, *transform);
-                    }
-                    Brush::RadialGradient { center: _gcenter, radius: _r, stops } => {
-                        let mut packed: Vec<(f32, [f32;4])> = stops.iter().map(|(t,c)| (*t, [c.r,c.g,c.b,c.a])).collect();
-                        if packed.is_empty() { continue; }
-                        if packed.first().unwrap().0 > 0.0 {
-                            let c = packed.first().unwrap().1;
-                            packed.insert(0, (0.0, c));
-                        }
-                        if packed.last().unwrap().0 < 1.0 {
-                            let c = packed.last().unwrap().1;
-                            packed.push((1.0, c));
-                        }
-                        push_ellipse_radial_gradient(&mut vertices, &mut indices, *center, *radii, &packed, *transform);
-                    }
-                    _ => {}
+            Command::DrawEllipse {
+                center,
+                radii,
+                brush,
+                transform,
+                ..
+            } => match brush {
+                Brush::Solid(col) => {
+                    let color = [col.r, col.g, col.b, col.a];
+                    push_ellipse(
+                        &mut vertices,
+                        &mut indices,
+                        *center,
+                        *radii,
+                        color,
+                        *transform,
+                    );
                 }
-            }
-            Command::FillPath { path, color, transform, .. } => {
+                Brush::RadialGradient {
+                    center: _gcenter,
+                    radius: _r,
+                    stops,
+                } => {
+                    let mut packed: Vec<(f32, [f32; 4])> = stops
+                        .iter()
+                        .map(|(t, c)| (*t, [c.r, c.g, c.b, c.a]))
+                        .collect();
+                    if packed.is_empty() {
+                        continue;
+                    }
+                    if packed.first().unwrap().0 > 0.0 {
+                        let c = packed.first().unwrap().1;
+                        packed.insert(0, (0.0, c));
+                    }
+                    if packed.last().unwrap().0 < 1.0 {
+                        let c = packed.last().unwrap().1;
+                        packed.push((1.0, c));
+                    }
+                    push_ellipse_radial_gradient(
+                        &mut vertices,
+                        &mut indices,
+                        *center,
+                        *radii,
+                        &packed,
+                        *transform,
+                    );
+                }
+                _ => {}
+            },
+            Command::FillPath {
+                path,
+                color,
+                transform,
+                ..
+            } => {
                 let col = [color.r, color.g, color.b, color.a];
                 tessellate_path_fill(&mut vertices, &mut indices, path, col, *transform);
             }
-            Command::StrokePath { path, stroke, color, transform, .. } => {
+            Command::StrokePath {
+                path,
+                stroke,
+                color,
+                transform,
+                ..
+            } => {
                 let col = [color.r, color.g, color.b, color.a];
                 tessellate_path_stroke(&mut vertices, &mut indices, path, *stroke, col, *transform);
             }
@@ -574,10 +741,25 @@ pub fn upload_display_list(
     // Allocate GPU buffers and upload
     let vsize = (vertices.len() * std::mem::size_of::<Vertex>()) as u64;
     let isize = (indices.len() * std::mem::size_of::<u16>()) as u64;
-    let vbuf = allocator.allocate_buffer(BufKey { size: vsize.max(4), usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST });
-    let ibuf = allocator.allocate_buffer(BufKey { size: isize.max(4), usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST });
-    if vsize > 0 { queue.write_buffer(&vbuf.buffer, 0, bytemuck::cast_slice(&vertices)); }
-    if isize > 0 { queue.write_buffer(&ibuf.buffer, 0, bytemuck::cast_slice(&indices)); }
+    let vbuf = allocator.allocate_buffer(BufKey {
+        size: vsize.max(4),
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+    });
+    let ibuf = allocator.allocate_buffer(BufKey {
+        size: isize.max(4),
+        usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+    });
+    if vsize > 0 {
+        queue.write_buffer(&vbuf.buffer, 0, bytemuck::cast_slice(&vertices));
+    }
+    if isize > 0 {
+        queue.write_buffer(&ibuf.buffer, 0, bytemuck::cast_slice(&indices));
+    }
 
-    Ok(GpuScene { vertex: vbuf, index: ibuf, vertices: vertices.len() as u32, indices: indices.len() as u32 })
+    Ok(GpuScene {
+        vertex: vbuf,
+        index: ibuf,
+        vertices: vertices.len() as u32,
+        indices: indices.len() as u32,
+    })
 }

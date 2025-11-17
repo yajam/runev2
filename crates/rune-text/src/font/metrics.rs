@@ -55,4 +55,3 @@ pub struct ScaledFontMetrics {
     pub line_gap: f32,
     pub font_size: f32,
 }
-

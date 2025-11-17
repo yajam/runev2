@@ -1,7 +1,5 @@
 use anyhow::Result;
-use engine_core::{
-    GraphicsEngine, PassManager, Viewport, make_surface_config,
-};
+use engine_core::{GraphicsEngine, PassManager, Viewport, make_surface_config};
 use pollster::FutureExt;
 use winit::event::{ElementState, Event, MouseButton, WindowEvent};
 use winit::event_loop::EventLoop;
@@ -85,7 +83,8 @@ fn main() -> Result<()> {
     {
         Box::new(scenes::zones::ZonesScene::default())
     } else if scene_env.as_deref() == Some("text")
-        || std::env::args().any(|a| a == "--scene=text" || a == "--text" || a == "--scene=text-demo")
+        || std::env::args()
+            .any(|a| a == "--scene=text" || a == "--text" || a == "--scene=text-demo")
     {
         Box::new(scenes::text_demo::TextDemoScene::default())
     } else if scene_env.as_deref() == Some("harfrust-text")
@@ -105,12 +104,11 @@ fn main() -> Result<()> {
     {
         Box::new(scenes::svg_geom::SvgGeomScene::default())
     } else if scene_env.as_deref() == Some("path")
-        || std::env::args().any(|a| a == "--scene=path" || a == "--path" || a == "--scene=path-demo")
+        || std::env::args()
+            .any(|a| a == "--scene=path" || a == "--path" || a == "--scene=path-demo")
     {
         Box::new(scenes::path_demo::PathDemoScene::default())
-    } else if scene_env.as_deref() == Some("ui")
-        || std::env::args().any(|a| a == "--scene=ui")
-    {
+    } else if scene_env.as_deref() == Some("ui") || std::env::args().any(|a| a == "--scene=ui") {
         Box::new(scenes::ui::UiElementsScene::default())
     } else {
         Box::new(scenes::default::DefaultScene::default())
@@ -118,12 +116,20 @@ fn main() -> Result<()> {
 
     // Pass initial DPI scale to scenes that care
     scene.set_scale_factor(scale_factor);
-    let mut dlist_opt = scene.init_display_list(Viewport { width: size.width, height: size.height });
+    let mut dlist_opt = scene.init_display_list(Viewport {
+        width: size.width,
+        height: size.height,
+    });
     let queue = engine.queue();
     let mut gpu_scene_opt = match scene.kind() {
         SceneKind::Geometry => {
-            let dl = dlist_opt.as_ref().expect("geometry scene should provide DisplayList");
-            Some(engine_core::upload_display_list(engine.allocator_mut(), &queue, dl).expect("upload failed"))
+            let dl = dlist_opt
+                .as_ref()
+                .expect("geometry scene should provide DisplayList");
+            Some(
+                engine_core::upload_display_list(engine.allocator_mut(), &queue, dl)
+                    .expect("upload failed"),
+            )
         }
         SceneKind::FullscreenBackground => None,
     };
@@ -146,12 +152,12 @@ fn main() -> Result<()> {
         .ok()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(true); // Default to true for smooth resizing
-    
+
     // Initialize intermediate texture for fullscreen backgrounds
     if use_intermediate && matches!(scene.kind(), SceneKind::FullscreenBackground) {
         passes.ensure_intermediate_texture(engine.allocator_mut(), size.width, size.height);
     }
-    
+
     let mut needs_reupload = false;
     let mut hovered_id: Option<usize> = None;
     let mut pressed_id: Option<usize> = None;
@@ -168,31 +174,51 @@ fn main() -> Result<()> {
         #[cfg(feature = "cosmic_text_shaper")]
         {
             #[cfg(feature = "freetype_ffi")]
-            let use_freetype = std::env::var("DEMO_FREETYPE").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+            let use_freetype = std::env::var("DEMO_FREETYPE")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
             if let Ok(path) = std::env::var("DEMO_FONT") {
                 if let Ok(bytes) = std::fs::read(path) {
                     #[cfg(feature = "freetype_ffi")]
                     let (rgb_res, bgr_res) = if use_freetype {
                         (
-                            engine_core::FreeTypeProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::RGB)
-                                .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
-                            engine_core::FreeTypeProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::BGR)
-                                .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
+                            engine_core::FreeTypeProvider::from_bytes(
+                                &bytes,
+                                engine_core::SubpixelOrientation::RGB,
+                            )
+                            .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
+                            engine_core::FreeTypeProvider::from_bytes(
+                                &bytes,
+                                engine_core::SubpixelOrientation::BGR,
+                            )
+                            .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
                         )
                     } else {
                         (
-                            engine_core::CosmicTextProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::RGB)
-                                .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
-                            engine_core::CosmicTextProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::BGR)
-                                .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
+                            engine_core::CosmicTextProvider::from_bytes(
+                                &bytes,
+                                engine_core::SubpixelOrientation::RGB,
+                            )
+                            .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
+                            engine_core::CosmicTextProvider::from_bytes(
+                                &bytes,
+                                engine_core::SubpixelOrientation::BGR,
+                            )
+                            .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
                         )
                     };
                     #[cfg(not(feature = "freetype_ffi"))]
                     let (rgb_res, bgr_res) = (
-                        engine_core::CosmicTextProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::RGB)
-                            .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
-                        engine_core::CosmicTextProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::BGR)
-                            .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
+                        engine_core::CosmicTextProvider::from_bytes(
+                            &bytes,
+                            engine_core::SubpixelOrientation::RGB,
+                        )
+                        .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
+                        engine_core::CosmicTextProvider::from_bytes(
+                            &bytes,
+                            engine_core::SubpixelOrientation::BGR,
+                        )
+                        .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) }),
                     );
                     let gray_res = engine_core::GrayscaleFontdueProvider::from_bytes(&bytes)
                         .map(|p| -> Box<dyn engine_core::TextProvider> { Box::new(p) });
@@ -201,13 +227,25 @@ fn main() -> Result<()> {
                     } else {
                         None
                     }
-                } else { None }
+                } else {
+                    None
+                }
             } else {
                 // Use system fonts for cosmic provider when DEMO_FONT is not set
-                let rgb = engine_core::CosmicTextProvider::from_system_fonts(engine_core::SubpixelOrientation::RGB);
-                let bgr = engine_core::CosmicTextProvider::from_system_fonts(engine_core::SubpixelOrientation::BGR);
+                let rgb = engine_core::CosmicTextProvider::from_system_fonts(
+                    engine_core::SubpixelOrientation::RGB,
+                );
+                let bgr = engine_core::CosmicTextProvider::from_system_fonts(
+                    engine_core::SubpixelOrientation::BGR,
+                );
                 // For grayscale comparison, reuse RGB provider (subpixel), if no DEMO_FONT available
-                Some((Box::new(rgb), Box::new(bgr), Box::new(engine_core::CosmicTextProvider::from_system_fonts(engine_core::SubpixelOrientation::RGB))))
+                Some((
+                    Box::new(rgb),
+                    Box::new(bgr),
+                    Box::new(engine_core::CosmicTextProvider::from_system_fonts(
+                        engine_core::SubpixelOrientation::RGB,
+                    )),
+                ))
             }
         }
         #[cfg(not(feature = "cosmic_text_shaper"))]
@@ -216,11 +254,21 @@ fn main() -> Result<()> {
                 .ok()
                 .and_then(|path| std::fs::read(path).ok())
                 .and_then(|bytes| {
-                    let rgb = engine_core::SimpleFontdueProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::RGB).ok();
-                    let bgr = engine_core::SimpleFontdueProvider::from_bytes(&bytes, engine_core::SubpixelOrientation::BGR).ok();
+                    let rgb = engine_core::SimpleFontdueProvider::from_bytes(
+                        &bytes,
+                        engine_core::SubpixelOrientation::RGB,
+                    )
+                    .ok();
+                    let bgr = engine_core::SimpleFontdueProvider::from_bytes(
+                        &bytes,
+                        engine_core::SubpixelOrientation::BGR,
+                    )
+                    .ok();
                     let gray = engine_core::GrayscaleFontdueProvider::from_bytes(&bytes).ok();
                     match (rgb, bgr, gray) {
-                        (Some(rgb), Some(bgr), Some(gray)) => Some((Box::new(rgb), Box::new(bgr), Box::new(gray))),
+                        (Some(rgb), Some(bgr), Some(gray)) => {
+                            Some((Box::new(rgb), Box::new(bgr), Box::new(gray)))
+                        }
                         _ => None,
                     }
                 })
@@ -244,7 +292,10 @@ fn main() -> Result<()> {
                 let new_config = make_surface_config(&adapter, &surface, size.width, size.height);
                 surface.configure(&engine.device(), &new_config);
                 // Update or rebuild scene geometry on resize
-                let vp = Viewport { width: size.width, height: size.height };
+                let vp = Viewport {
+                    width: size.width,
+                    height: size.height,
+                };
                 match scene.kind() {
                     SceneKind::Geometry => {
                         if let Some(new_dl) = scene.on_resize(vp) {
@@ -254,7 +305,9 @@ fn main() -> Result<()> {
                         }
                         // Rebuild hit-test index for updated display list
                         hit_index_opt = match (&scene.kind(), &dlist_opt) {
-                            (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
+                            (SceneKind::Geometry, Some(dl)) => {
+                                Some(engine_core::HitIndex::build(dl))
+                            }
                             _ => None,
                         };
                     }
@@ -266,7 +319,10 @@ fn main() -> Result<()> {
             }
         }
         // Map mouse moves to hit-test queries
-        Event::WindowEvent { event: WindowEvent::CursorMoved { position, .. }, window_id } if window_id == window.id() => {
+        Event::WindowEvent {
+            event: WindowEvent::CursorMoved { position, .. },
+            window_id,
+        } if window_id == window.id() => {
             if let Some(index) = hit_index_opt.as_ref() {
                 let pos = [position.x as f32, position.y as f32];
                 last_cursor_pos = pos;
@@ -275,7 +331,10 @@ fn main() -> Result<()> {
                 if new_hover != hovered_id {
                     hovered_id = new_hover;
                     if let Some(ref r) = res {
-                        let title = format!("Rune Draw Demo — Hover: {:?} (id={}, z={})", r.kind, r.id, r.z);
+                        let title = format!(
+                            "Rune Draw Demo — Hover: {:?} (id={}, z={})",
+                            r.kind, r.id, r.z
+                        );
                         window.set_title(&title);
                     } else {
                         window.set_title("Rune Draw Demo");
@@ -286,7 +345,9 @@ fn main() -> Result<()> {
                     if let Some(new_dl) = scene.on_pointer_move(pos, res.as_ref()) {
                         dlist_opt = Some(new_dl);
                         hit_index_opt = match (&scene.kind(), &dlist_opt) {
-                            (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
+                            (SceneKind::Geometry, Some(dl)) => {
+                                Some(engine_core::HitIndex::build(dl))
+                            }
                             _ => None,
                         };
                         needs_reupload = true;
@@ -299,7 +360,9 @@ fn main() -> Result<()> {
                         if let Some(new_dl) = scene.on_drag(pos, res.as_ref()) {
                             dlist_opt = Some(new_dl);
                             hit_index_opt = match (&scene.kind(), &dlist_opt) {
-                                (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
+                                (SceneKind::Geometry, Some(dl)) => {
+                                    Some(engine_core::HitIndex::build(dl))
+                                }
                                 _ => None,
                             };
                             needs_reupload = true;
@@ -310,7 +373,10 @@ fn main() -> Result<()> {
             }
         }
         // Mouse press/release -> click/drag bookkeeping
-        Event::WindowEvent { event: WindowEvent::MouseInput { state, button, .. }, window_id } if window_id == window.id() => {
+        Event::WindowEvent {
+            event: WindowEvent::MouseInput { state, button, .. },
+            window_id,
+        } if window_id == window.id() => {
             if let (Some(index), MouseButton::Left) = (hit_index_opt.as_ref(), button) {
                 if state == ElementState::Pressed {
                     let res = index.topmost_at(last_cursor_pos);
@@ -320,7 +386,9 @@ fn main() -> Result<()> {
                         if let Some(new_dl) = scene.on_pointer_down(last_cursor_pos, res.as_ref()) {
                             dlist_opt = Some(new_dl);
                             hit_index_opt = match (&scene.kind(), &dlist_opt) {
-                                (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
+                                (SceneKind::Geometry, Some(dl)) => {
+                                    Some(engine_core::HitIndex::build(dl))
+                                }
                                 _ => None,
                             };
                             needs_reupload = true;
@@ -333,10 +401,13 @@ fn main() -> Result<()> {
                         if pid == r.id {
                             // Scene click
                             if let SceneKind::Geometry = scene.kind() {
-                                if let Some(new_dl) = scene.on_click(last_cursor_pos, res.as_ref()) {
+                                if let Some(new_dl) = scene.on_click(last_cursor_pos, res.as_ref())
+                                {
                                     dlist_opt = Some(new_dl);
                                     hit_index_opt = match (&scene.kind(), &dlist_opt) {
-                                        (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
+                                        (SceneKind::Geometry, Some(dl)) => {
+                                            Some(engine_core::HitIndex::build(dl))
+                                        }
                                         _ => None,
                                     };
                                     needs_reupload = true;
@@ -353,7 +424,9 @@ fn main() -> Result<()> {
                         if let Some(new_dl) = scene.on_pointer_up(last_cursor_pos, res.as_ref()) {
                             dlist_opt = Some(new_dl);
                             hit_index_opt = match (&scene.kind(), &dlist_opt) {
-                                (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
+                                (SceneKind::Geometry, Some(dl)) => {
+                                    Some(engine_core::HitIndex::build(dl))
+                                }
                                 _ => None,
                             };
                             needs_reupload = true;
@@ -371,14 +444,20 @@ fn main() -> Result<()> {
                 let view = frame
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
-                let mut encoder = engine
-                    .device()
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("clear-encoder"), });
+                let mut encoder =
+                    engine
+                        .device()
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("clear-encoder"),
+                        });
                 // Background will be rendered as clear color in offscreen buffer
                 if needs_reupload {
                     if let (SceneKind::Geometry, Some(dl)) = (scene.kind(), dlist_opt.as_ref()) {
                         let q2 = engine.queue();
-                        gpu_scene_opt = Some(engine_core::upload_display_list(engine.allocator_mut(), &q2, dl).expect("upload failed on resize"));
+                        gpu_scene_opt = Some(
+                            engine_core::upload_display_list(engine.allocator_mut(), &q2, dl)
+                                .expect("upload failed on resize"),
+                        );
                     }
                     needs_reupload = false;
                 }
@@ -387,7 +466,10 @@ fn main() -> Result<()> {
                         if let Some(gpu_scene) = gpu_scene_opt.as_ref() {
                             let queue = engine.queue();
                             if use_intermediate {
-                                if let (Some(dl), Some(provider)) = (dlist_opt.as_ref(), text_providers.as_ref().map(|(rgb, _, _)| &**rgb)) {
+                                if let (Some(dl), Some(provider)) = (
+                                    dlist_opt.as_ref(),
+                                    text_providers.as_ref().map(|(rgb, _, _)| &**rgb),
+                                ) {
                                     passes.render_frame_with_intermediate_and_text(
                                         &mut encoder,
                                         engine.allocator_mut(),
@@ -395,7 +477,12 @@ fn main() -> Result<()> {
                                         size.width,
                                         size.height,
                                         gpu_scene,
-                                        wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
+                                        wgpu::Color {
+                                            r: 0x0b as f64 / 255.0,
+                                            g: 0x12 as f64 / 255.0,
+                                            b: 0x20 as f64 / 255.0,
+                                            a: 1.0,
+                                        },
                                         &queue,
                                         dl,
                                         provider as &dyn engine_core::TextProvider,
@@ -408,14 +495,22 @@ fn main() -> Result<()> {
                                         size.width,
                                         size.height,
                                         gpu_scene,
-                                        wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
+                                        wgpu::Color {
+                                            r: 0x0b as f64 / 255.0,
+                                            g: 0x12 as f64 / 255.0,
+                                            b: 0x20 as f64 / 255.0,
+                                            a: 1.0,
+                                        },
                                         bypass,
                                         &queue,
                                         false, // preserve_intermediate - false for demo-app (no resize optimization needed)
                                     );
                                 }
                             } else {
-                                if let (Some(dl), Some(provider)) = (dlist_opt.as_ref(), text_providers.as_ref().map(|(rgb, _, _)| &**rgb)) {
+                                if let (Some(dl), Some(provider)) = (
+                                    dlist_opt.as_ref(),
+                                    text_providers.as_ref().map(|(rgb, _, _)| &**rgb),
+                                ) {
                                     passes.render_frame_and_text(
                                         &mut encoder,
                                         engine.allocator_mut(),
@@ -423,7 +518,12 @@ fn main() -> Result<()> {
                                         size.width,
                                         size.height,
                                         gpu_scene,
-                                        wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
+                                        wgpu::Color {
+                                            r: 0x0b as f64 / 255.0,
+                                            g: 0x12 as f64 / 255.0,
+                                            b: 0x20 as f64 / 255.0,
+                                            a: 1.0,
+                                        },
                                         bypass,
                                         &queue,
                                         true,
@@ -438,7 +538,12 @@ fn main() -> Result<()> {
                                         size.width,
                                         size.height,
                                         gpu_scene,
-                                        wgpu::Color { r: 0x0b as f64 / 255.0, g: 0x12 as f64 / 255.0, b: 0x20 as f64 / 255.0, a: 1.0 },
+                                        wgpu::Color {
+                                            r: 0x0b as f64 / 255.0,
+                                            g: 0x12 as f64 / 255.0,
+                                            b: 0x20 as f64 / 255.0,
+                                            a: 1.0,
+                                        },
                                         bypass,
                                         &queue,
                                         true,
@@ -478,17 +583,38 @@ fn main() -> Result<()> {
                         let queue = engine.queue();
                         if use_intermediate {
                             // Ensure intermediate texture exists and matches current size
-                            passes.ensure_intermediate_texture(engine.allocator_mut(), size.width, size.height);
+                            passes.ensure_intermediate_texture(
+                                engine.allocator_mut(),
+                                size.width,
+                                size.height,
+                            );
                             // Clear intermediate texture before rendering
-                            passes.clear_intermediate_texture(&mut encoder, wgpu::Color::TRANSPARENT);
+                            passes
+                                .clear_intermediate_texture(&mut encoder, wgpu::Color::TRANSPARENT);
                             // Create a temporary texture view to avoid borrow issues
                             let intermediate_tex = passes.intermediate_texture.as_ref().unwrap();
-                            let intermediate_view = intermediate_tex.texture.create_view(&wgpu::TextureViewDescriptor::default());
-                            scene.paint_root_background(&mut passes, &mut encoder, &intermediate_view, &queue, size.width, size.height);
+                            let intermediate_view = intermediate_tex
+                                .texture
+                                .create_view(&wgpu::TextureViewDescriptor::default());
+                            scene.paint_root_background(
+                                &mut passes,
+                                &mut encoder,
+                                &intermediate_view,
+                                &queue,
+                                size.width,
+                                size.height,
+                            );
                             passes.blit_to_surface(&mut encoder, &view);
                         } else {
                             // Direct rendering to surface
-                            scene.paint_root_background(&mut passes, &mut encoder, &view, &queue, size.width, size.height);
+                            scene.paint_root_background(
+                                &mut passes,
+                                &mut encoder,
+                                &view,
+                                &queue,
+                                size.width,
+                                size.height,
+                            );
                         }
                     }
                 }
@@ -502,7 +628,14 @@ fn main() -> Result<()> {
                 // No need to rebuild passes; surface format usually unchanged.
             }
         },
-        Event::WindowEvent { event: WindowEvent::ScaleFactorChanged { scale_factor: new_sf, .. }, window_id } if window_id == window.id() => {
+        Event::WindowEvent {
+            event:
+                WindowEvent::ScaleFactorChanged {
+                    scale_factor: new_sf,
+                    ..
+                },
+            window_id,
+        } if window_id == window.id() => {
             // Update scale factor dynamically and notify engine-core
             scale_factor = new_sf as f32;
             passes.set_scale_factor(scale_factor);

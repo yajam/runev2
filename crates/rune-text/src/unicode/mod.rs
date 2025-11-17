@@ -8,10 +8,6 @@ pub mod graphemes;
 pub mod properties;
 
 pub use graphemes::{
-    grapheme_clusters,
-    is_grapheme_boundary,
-    next_grapheme_boundary,
+    GraphemeCluster, grapheme_clusters, is_grapheme_boundary, next_grapheme_boundary,
     prev_grapheme_boundary,
-    GraphemeCluster,
 };
-

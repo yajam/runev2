@@ -1,5 +1,8 @@
-use engine_core::{Brush, ColorLinPremul, DisplayList, HitResult, Painter, Rect, RoundedRadii, RoundedRect, Stroke, Viewport};
 use super::{Scene, SceneKind};
+use engine_core::{
+    Brush, ColorLinPremul, DisplayList, HitResult, Painter, Rect, RoundedRadii, RoundedRect,
+    Stroke, Viewport,
+};
 
 pub struct ZonesScene {
     viewport: Viewport,
@@ -10,7 +13,14 @@ pub struct ZonesScene {
 
 impl Default for ZonesScene {
     fn default() -> Self {
-        Self { viewport: Viewport { width: 1280, height: 720 }, last_region: None, last_local: None }
+        Self {
+            viewport: Viewport {
+                width: 1280,
+                height: 720,
+            },
+            last_region: None,
+            last_local: None,
+        }
     }
 }
 
@@ -24,8 +34,18 @@ impl ZonesScene {
     fn layout(&self) -> (Rect, Rect) {
         // two columns: sidebar fixed, main fills
         let sidebar_w = 280.0f32;
-        let sidebar = Rect { x: 0.0, y: 0.0, w: sidebar_w, h: self.viewport.height as f32 };
-        let main = Rect { x: sidebar_w, y: 0.0, w: (self.viewport.width as f32 - sidebar_w).max(0.0), h: self.viewport.height as f32 };
+        let sidebar = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: sidebar_w,
+            h: self.viewport.height as f32,
+        };
+        let main = Rect {
+            x: sidebar_w,
+            y: 0.0,
+            w: (self.viewport.width as f32 - sidebar_w).max(0.0),
+            h: self.viewport.height as f32,
+        };
         (sidebar, main)
     }
 
@@ -35,15 +55,35 @@ impl ZonesScene {
         let margin = 20.0f32;
         let zone_w = (sidebar.w - margin * 2.0).max(20.0);
         let zone_h = 120.0f32;
-        let sb_red = Rect { x: sidebar.x + margin, y: sidebar.y + margin, w: zone_w, h: zone_h };
-        let sb_blue = Rect { x: sidebar.x + margin, y: sidebar.y + margin * 2.0 + zone_h, w: zone_w, h: zone_h };
+        let sb_red = Rect {
+            x: sidebar.x + margin,
+            y: sidebar.y + margin,
+            w: zone_w,
+            h: zone_h,
+        };
+        let sb_blue = Rect {
+            x: sidebar.x + margin,
+            y: sidebar.y + margin * 2.0 + zone_h,
+            w: zone_w,
+            h: zone_h,
+        };
 
         // Main panel zones
         let main_margin = 40.0f32;
         let main_zone_w = (main.w - main_margin * 2.0).max(40.0);
         let main_zone_h = 160.0f32;
-        let main_red = Rect { x: main.x + main_margin, y: main.y + main_margin, w: main_zone_w, h: main_zone_h };
-        let main_blue = Rect { x: main.x + main_margin, y: main.y + main_margin * 2.0 + main_zone_h, w: main_zone_w, h: main_zone_h };
+        let main_red = Rect {
+            x: main.x + main_margin,
+            y: main.y + main_margin,
+            w: main_zone_w,
+            h: main_zone_h,
+        };
+        let main_blue = Rect {
+            x: main.x + main_margin,
+            y: main.y + main_margin * 2.0 + main_zone_h,
+            w: main_zone_w,
+            h: main_zone_h,
+        };
 
         [
             (Self::SIDEBAR_RED, sb_red),
@@ -59,7 +99,12 @@ impl ZonesScene {
         // Base background white
         let white = ColorLinPremul::from_srgba_u8([0xff, 0xff, 0xff, 0xff]);
         p.rect(
-            Rect { x: 0.0, y: 0.0, w: self.viewport.width as f32, h: self.viewport.height as f32 },
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: self.viewport.width as f32,
+                h: self.viewport.height as f32,
+            },
             Brush::Solid(white),
             0,
         );
@@ -69,15 +114,34 @@ impl ZonesScene {
         let sidebar_bg = ColorLinPremul::from_srgba_u8([0xf5, 0xf6, 0xf7, 0xff]);
         p.rect(sidebar, Brush::Solid(sidebar_bg), 1);
         // Optional separation line (stroke as thin rect)
-        p.rect(Rect { x: sidebar.x + sidebar.w - 1.0, y: 0.0, w: 1.0, h: sidebar.h }, Brush::Solid(ColorLinPremul::from_srgba_u8([0xdd, 0xdd, 0xdd, 0xff])), 2);
+        p.rect(
+            Rect {
+                x: sidebar.x + sidebar.w - 1.0,
+                y: 0.0,
+                w: 1.0,
+                h: sidebar.h,
+            },
+            Brush::Solid(ColorLinPremul::from_srgba_u8([0xdd, 0xdd, 0xdd, 0xff])),
+            2,
+        );
 
         // Zones (red/blue) and their hit regions
         for (id, rect) in self.zone_rects() {
             let fill = match id {
-                Self::SIDEBAR_RED | Self::MAIN_RED => ColorLinPremul::from_srgba_u8([0xf9, 0x2f, 0x26, 0xff]),
+                Self::SIDEBAR_RED | Self::MAIN_RED => {
+                    ColorLinPremul::from_srgba_u8([0xf9, 0x2f, 0x26, 0xff])
+                }
                 _ => ColorLinPremul::from_srgba_u8([0x3b, 0x82, 0xf6, 0xff]),
             };
-            let rr = RoundedRect { rect, radii: RoundedRadii { tl: 10.0, tr: 10.0, br: 10.0, bl: 10.0 } };
+            let rr = RoundedRect {
+                rect,
+                radii: RoundedRadii {
+                    tl: 10.0,
+                    tr: 10.0,
+                    br: 10.0,
+                    bl: 10.0,
+                },
+            };
             p.rounded_rect(rr, Brush::Solid(fill), 3);
             p.stroke_rounded_rect(
                 rr,
@@ -91,10 +155,19 @@ impl ZonesScene {
         // Click feedback: draw a small marker inside the clicked zone using local coordinates
         if let (Some(region), Some(local)) = (self.last_region, self.last_local) {
             // Resolve region rect to world
-            if let Some((_, r)) = self.zone_rects().into_iter().find(|(rid, _)| *rid == region) {
+            if let Some((_, r)) = self
+                .zone_rects()
+                .into_iter()
+                .find(|(rid, _)| *rid == region)
+            {
                 let world = [r.x + local[0], r.y + local[1]];
                 let radius = 6.0f32;
-                p.ellipse(world, [radius, radius], Brush::Solid(ColorLinPremul::from_srgba_u8([0x00, 0x00, 0x00, 0xff])), 20);
+                p.ellipse(
+                    world,
+                    [radius, radius],
+                    Brush::Solid(ColorLinPremul::from_srgba_u8([0x00, 0x00, 0x00, 0xff])),
+                    20,
+                );
             }
         }
 
@@ -103,7 +176,9 @@ impl ZonesScene {
 }
 
 impl Scene for ZonesScene {
-    fn kind(&self) -> SceneKind { SceneKind::Geometry }
+    fn kind(&self) -> SceneKind {
+        SceneKind::Geometry
+    }
 
     fn init_display_list(&mut self, viewport: Viewport) -> Option<DisplayList> {
         self.viewport = viewport;
@@ -123,7 +198,8 @@ impl Scene for ZonesScene {
         _queue: &wgpu::Queue,
         _width: u32,
         _height: u32,
-    ) {}
+    ) {
+    }
 
     fn on_click(&mut self, _pos: [f32; 2], hit: Option<&HitResult>) -> Option<DisplayList> {
         if let Some(h) = hit {

@@ -1,18 +1,18 @@
-use std::sync::Arc;
-use std::sync::mpsc::{channel, Sender, Receiver};
-use std::thread;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender, channel};
+use std::thread;
 
 use anyhow::Result;
 
 use engine_core::{
-    Viewport,
-    PassManager,
-    Painter,
     ColorLinPremul,
-    Transform2D,
-    upload_display_list,
+    Painter,
+    PassManager,
     RenderAllocator,
+    Transform2D,
+    Viewport,
+    upload_display_list,
     wgpu, // import wgpu from engine-core to keep type identity
 };
 
@@ -34,7 +34,16 @@ struct LoadedImageData {
 
 /// Overlay callback signature: called after main rendering with full PassManager access.
 /// Allows scenes to draw overlays (like SVG ticks) directly to the surface.
-pub type OverlayCallback = Box<dyn FnMut(&mut PassManager, &mut wgpu::CommandEncoder, &wgpu::TextureView, &wgpu::Queue, u32, u32)>;
+pub type OverlayCallback = Box<
+    dyn FnMut(
+        &mut PassManager,
+        &mut wgpu::CommandEncoder,
+        &wgpu::TextureView,
+        &wgpu::Queue,
+        u32,
+        u32,
+    ),
+>;
 
 /// Calculate the actual render origin and size for an image based on fit mode.
 /// Returns (origin, size) where the image should be drawn.
@@ -54,7 +63,7 @@ fn calculate_image_fit(
             // Fit inside maintaining aspect ratio
             let bounds_aspect = bounds[0] / bounds[1];
             let img_aspect = img_w / img_h;
-            
+
             let (render_w, render_h) = if img_aspect > bounds_aspect {
                 // Image is wider - fit to width
                 (bounds[0], bounds[0] / img_aspect)
@@ -62,18 +71,21 @@ fn calculate_image_fit(
                 // Image is taller - fit to height
                 (bounds[1] * img_aspect, bounds[1])
             };
-            
+
             // Center within bounds
             let offset_x = (bounds[0] - render_w) * 0.5;
             let offset_y = (bounds[1] - render_h) * 0.5;
-            
-            ([origin[0] + offset_x, origin[1] + offset_y], [render_w, render_h])
+
+            (
+                [origin[0] + offset_x, origin[1] + offset_y],
+                [render_w, render_h],
+            )
         }
         ImageFitMode::Cover => {
             // Fill maintaining aspect ratio (may crop)
             let bounds_aspect = bounds[0] / bounds[1];
             let img_aspect = img_w / img_h;
-            
+
             let (render_w, render_h) = if img_aspect > bounds_aspect {
                 // Image is wider - fit to height
                 (bounds[1] * img_aspect, bounds[1])
@@ -81,12 +93,15 @@ fn calculate_image_fit(
                 // Image is taller - fit to width
                 (bounds[0], bounds[0] / img_aspect)
             };
-            
+
             // Center within bounds (will be clipped)
             let offset_x = (bounds[0] - render_w) * 0.5;
             let offset_y = (bounds[1] - render_h) * 0.5;
-            
-            ([origin[0] + offset_x, origin[1] + offset_y], [render_w, render_h])
+
+            (
+                [origin[0] + offset_x, origin[1] + offset_y],
+                [render_w, render_h],
+            )
         }
     }
 }
@@ -125,30 +140,31 @@ pub struct RuneSurface {
 
 impl RuneSurface {
     /// Create a new surface wrapper using an existing device/queue and the chosen surface format.
-    pub fn new(device: Arc<wgpu::Device>, queue: Arc<wgpu::Queue>, surface_format: wgpu::TextureFormat) -> Self {
+    pub fn new(
+        device: Arc<wgpu::Device>,
+        queue: Arc<wgpu::Queue>,
+        surface_format: wgpu::TextureFormat,
+    ) -> Self {
         let pass = PassManager::new(device.clone(), surface_format);
         let allocator = RenderAllocator::new(device.clone());
-        
+
         // Create channels for async image loading
         let (load_tx, load_rx) = channel();
         let (result_tx, result_rx) = channel();
-        
+
         // Spawn background thread for image loading
         thread::spawn(move || {
             while let Ok(path) = load_rx.recv() {
                 match image::open(&path) {
                     Ok(img) => {
                         let rgba = img.to_rgba8();
-                        let _ = result_tx.send(LoadedImageData {
-                            path,
-                            data: rgba,
-                        });
+                        let _ = result_tx.send(LoadedImageData { path, data: rgba });
                     }
-                    Err(_e) => { }
+                    Err(_e) => {}
                 }
             }
         });
-        
+
         Self {
             device,
             queue,
@@ -167,43 +183,76 @@ impl RuneSurface {
     }
 
     /// Convenience: construct from shared device/queue handles.
-    pub fn from_device_queue(device: Arc<wgpu::Device>, queue: Arc<wgpu::Queue>, surface_format: wgpu::TextureFormat) -> Self {
+    pub fn from_device_queue(
+        device: Arc<wgpu::Device>,
+        queue: Arc<wgpu::Queue>,
+        surface_format: wgpu::TextureFormat,
+    ) -> Self {
         Self::new(device, queue, surface_format)
     }
 
-    pub fn device(&self) -> Arc<wgpu::Device> { self.device.clone() }
-    pub fn queue(&self) -> Arc<wgpu::Queue> { self.queue.clone() }
-    pub fn pass_manager(&mut self) -> &mut PassManager { &mut self.pass }
-    pub fn allocator_mut(&mut self) -> &mut RenderAllocator { &mut self.allocator }
+    pub fn device(&self) -> Arc<wgpu::Device> {
+        self.device.clone()
+    }
+    pub fn queue(&self) -> Arc<wgpu::Queue> {
+        self.queue.clone()
+    }
+    pub fn pass_manager(&mut self) -> &mut PassManager {
+        &mut self.pass
+    }
+    pub fn allocator_mut(&mut self) -> &mut RenderAllocator {
+        &mut self.allocator
+    }
 
     /// Choose whether to render directly to the surface (bypass compositor).
-    pub fn set_direct(&mut self, direct: bool) { self.direct = direct; }
+    pub fn set_direct(&mut self, direct: bool) {
+        self.direct = direct;
+    }
     /// Control whether to preserve existing contents on the surface.
-    pub fn set_preserve_surface(&mut self, preserve: bool) { self.preserve_surface = preserve; }
+    pub fn set_preserve_surface(&mut self, preserve: bool) {
+        self.preserve_surface = preserve;
+    }
     /// Choose whether to use an intermediate texture and blit to the surface.
-    pub fn set_use_intermediate(&mut self, use_it: bool) { self.use_intermediate = use_it; }
+    pub fn set_use_intermediate(&mut self, use_it: bool) {
+        self.use_intermediate = use_it;
+    }
     /// Enable or disable logical pixel interpretation.
-    pub fn set_logical_pixels(&mut self, on: bool) { self.logical_pixels = on; }
+    pub fn set_logical_pixels(&mut self, on: bool) {
+        self.logical_pixels = on;
+    }
     /// Set current DPI scale and propagate to passes before rendering.
-    pub fn set_dpi_scale(&mut self, scale: f32) { self.dpi_scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 }; }
+    pub fn set_dpi_scale(&mut self, scale: f32) {
+        self.dpi_scale = if scale.is_finite() && scale > 0.0 {
+            scale
+        } else {
+            1.0
+        };
+    }
     /// Set a global UI scale multiplier
-    pub fn set_ui_scale(&mut self, s: f32) { self.ui_scale = if s.is_finite() { s } else { 1.0 }; }
+    pub fn set_ui_scale(&mut self, s: f32) {
+        self.ui_scale = if s.is_finite() { s } else { 1.0 };
+    }
     /// Set an overlay callback for post-render passes
-    pub fn set_overlay(&mut self, callback: OverlayCallback) { self.overlay = Some(callback); }
+    pub fn set_overlay(&mut self, callback: OverlayCallback) {
+        self.overlay = Some(callback);
+    }
     /// Clear the overlay callback
-    pub fn clear_overlay(&mut self) { self.overlay = None; }
+    pub fn clear_overlay(&mut self) {
+        self.overlay = None;
+    }
 
     /// Pre-allocate intermediate texture at the given size.
     /// This should be called after surface reconfiguration to avoid jitter.
     pub fn prepare_for_resize(&mut self, width: u32, height: u32) {
-        self.pass.ensure_intermediate_texture(&mut self.allocator, width, height);
+        self.pass
+            .ensure_intermediate_texture(&mut self.allocator, width, height);
     }
 
     /// Upload a loaded image from background thread to GPU
     fn upload_loaded_image(&mut self, loaded: LoadedImageData) {
         let (width, height) = loaded.data.dimensions();
         let device = self.pass.device();
-        
+
         let tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(&format!("async-image:{}", loaded.path.display())),
             size: wgpu::Extent3d {
@@ -218,7 +267,7 @@ impl RuneSurface {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        
+
         self.queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &tex,
@@ -238,9 +287,10 @@ impl RuneSurface {
                 depth_or_array_layers: 1,
             },
         );
-        
+
         // Store in cache
-        self.pass.store_loaded_image(&loaded.path, Arc::new(tex), width, height);
+        self.pass
+            .store_loaded_image(&loaded.path, Arc::new(tex), width, height);
     }
 
     /// Begin a canvas frame of the given size (in pixels).
@@ -265,7 +315,7 @@ impl RuneSurface {
         while let Ok(loaded) = self.image_loader_rx.try_recv() {
             self.upload_loaded_image(loaded);
         }
-        
+
         // Keep passes in sync with DPI/logical settings
         self.pass.set_scale_factor(self.dpi_scale);
         self.pass.set_logical_pixels(self.logical_pixels);
@@ -290,13 +340,23 @@ impl RuneSurface {
         // Command encoder
         let mut encoder = self
             .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("rune-surface-encoder") });
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("rune-surface-encoder"),
+            });
 
         // Clear color or transparent
-        let clear = canvas
-            .clear_color
-            .unwrap_or(ColorLinPremul { r: 0.0, g: 0.0, b: 0.0, a: 0.0 });
-        let clear_wgpu = wgpu::Color { r: clear.r as f64, g: clear.g as f64, b: clear.b as f64, a: clear.a as f64 };
+        let clear = canvas.clear_color.unwrap_or(ColorLinPremul {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
+        });
+        let clear_wgpu = wgpu::Color {
+            r: clear.r as f64,
+            g: clear.g as f64,
+            b: clear.b as f64,
+            a: clear.a as f64,
+        };
 
         // Render solids (text is now handled separately via glyph_draws for simplicity)
         if self.use_intermediate {
@@ -329,19 +389,17 @@ impl RuneSurface {
 
         // Draw all glyph masks in a single batched call (critical for performance!)
         if !canvas.glyph_draws.is_empty() {
-            let batch: Vec<_> = canvas.glyph_draws.iter().map(|(origin, glyph, color)| {
-                // origin already includes glyph.offset from when it was added to glyph_draws
-                (glyph.mask.clone(), *origin, *color)
-            }).collect();
-            
-            self.pass.draw_text_mask(
-                &mut encoder,
-                &view,
-                width,
-                height,
-                &batch,
-                &self.queue,
-            );
+            let batch: Vec<_> = canvas
+                .glyph_draws
+                .iter()
+                .map(|(origin, glyph, color)| {
+                    // origin already includes glyph.offset from when it was added to glyph_draws
+                    (glyph.mask.clone(), *origin, *color)
+                })
+                .collect();
+
+            self.pass
+                .draw_text_mask(&mut encoder, &view, width, height, &batch, &self.queue);
         }
 
         // Sort SVG draws by z-index to respect layering
@@ -352,13 +410,21 @@ impl RuneSurface {
         for (path, origin, max_size, style, _z, transform) in svg_draws.iter() {
             // Apply transform to origin
             let transformed_origin = apply_transform_to_point(*origin, *transform);
-            
+
             // First get 1x size
-            if let Some((_view1x, w1, h1)) = self.pass.rasterize_svg_to_view(std::path::Path::new(path), 1.0, *style, &self.queue) {
+            if let Some((_view1x, w1, h1)) = self.pass.rasterize_svg_to_view(
+                std::path::Path::new(path),
+                1.0,
+                *style,
+                &self.queue,
+            ) {
                 let base_w = w1.max(1) as f32;
                 let base_h = h1.max(1) as f32;
                 let scale = (max_size[0] / base_w).min(max_size[1] / base_h).max(0.0);
-                let (view_scaled, sw, sh) = if let Some((v, w, h)) = self.pass.rasterize_svg_to_view(std::path::Path::new(path), scale, *style, &self.queue) {
+                let (view_scaled, sw, sh) = if let Some((v, w, h)) = self
+                    .pass
+                    .rasterize_svg_to_view(std::path::Path::new(path), scale, *style, &self.queue)
+                {
                     (v, w as f32, h as f32)
                 } else {
                     continue;
@@ -384,10 +450,12 @@ impl RuneSurface {
         // Draw any queued raster images
         for (path, origin, size, fit, _z, transform) in image_draws.iter() {
             // Try to get the image from cache (non-blocking)
-            if let Some((tex_view, img_w, img_h)) = self.pass.try_get_image_view(std::path::Path::new(path)) {
+            if let Some((tex_view, img_w, img_h)) =
+                self.pass.try_get_image_view(std::path::Path::new(path))
+            {
                 // Apply transform to origin
                 let transformed_origin = apply_transform_to_point(*origin, *transform);
-                
+
                 // Image is ready - calculate actual render size and position based on fit mode
                 let (render_origin, render_size) = calculate_image_fit(
                     transformed_origin,
@@ -396,7 +464,7 @@ impl RuneSurface {
                     img_h as f32,
                     *fit,
                 );
-                
+
                 self.pass.draw_image_quad(
                     &mut encoder,
                     &view,
@@ -420,7 +488,14 @@ impl RuneSurface {
         // Call overlay callback last so overlays (e.g., devtools, debug UI)
         // are guaranteed to draw above SVGs and raster images.
         if let Some(ref mut overlay_fn) = self.overlay {
-            overlay_fn(&mut self.pass, &mut encoder, &view, &self.queue, width, height);
+            overlay_fn(
+                &mut self.pass,
+                &mut encoder,
+                &view,
+                &self.queue,
+                width,
+                height,
+            );
         }
 
         // Submit and present

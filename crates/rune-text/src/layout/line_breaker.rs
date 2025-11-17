@@ -1,6 +1,6 @@
 use core::ops::Range;
 
-use unicode_linebreak::{linebreaks, BreakOpportunity};
+use unicode_linebreak::{BreakOpportunity, linebreaks};
 use unicode_segmentation::UnicodeSegmentation;
 
 /// Kind of line break at a given position.

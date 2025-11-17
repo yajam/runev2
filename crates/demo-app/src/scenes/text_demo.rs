@@ -26,7 +26,9 @@ pub struct TextDemoScene {
 impl Default for TextDemoScene {
     fn default() -> Self {
         // Optional env override for initial size
-        let size_env = std::env::var("DEMO_TEXT_SIZE").ok().and_then(|s| s.parse::<f32>().ok());
+        let size_env = std::env::var("DEMO_TEXT_SIZE")
+            .ok()
+            .and_then(|s| s.parse::<f32>().ok());
         Self {
             orientation: engine_core::SubpixelOrientation::RGB,
             text_color: ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
@@ -359,9 +361,18 @@ impl Scene for TextDemoScene {
         p.rounded_rect(
             RoundedRect {
                 rect: sz_xl,
-                radii: RoundedRadii { tl: 6.0, tr: 6.0, br: 6.0, bl: 6.0 },
+                radii: RoundedRadii {
+                    tl: 6.0,
+                    tr: 6.0,
+                    br: 6.0,
+                    bl: 6.0,
+                },
             },
-            Brush::Solid(if active_size == ToggleId::SizeXLarge { on2 } else { off2 }),
+            Brush::Solid(if active_size == ToggleId::SizeXLarge {
+                on2
+            } else {
+                off2
+            }),
             1,
         );
         p.hit_region_rect(ToggleId::SizeSmall as u32, sz_small, 2);
@@ -451,11 +462,15 @@ impl Scene for TextDemoScene {
                 }
                 Some(id) if id == ToggleId::SizeLarge as u32 => {
                     self.text_size = 28.0;
-                    if let Some(vp) = self.last_viewport { return self.init_display_list(vp); }
+                    if let Some(vp) = self.last_viewport {
+                        return self.init_display_list(vp);
+                    }
                 }
                 Some(id) if id == ToggleId::SizeXLarge as u32 => {
                     self.text_size = 48.0;
-                    if let Some(vp) = self.last_viewport { return self.init_display_list(vp); }
+                    if let Some(vp) = self.last_viewport {
+                        return self.init_display_list(vp);
+                    }
                 }
                 _ => {}
             }
@@ -477,7 +492,10 @@ impl Scene for TextDemoScene {
     ) {
         let vp = Viewport { width, height };
         // Helper to measure actual run extents (relative to baseline)
-        let measure_extents = |provider: &dyn engine_core::TextProvider, text: &str, size: f32| -> Option<(f32, f32)> {
+        let measure_extents = |provider: &dyn engine_core::TextProvider,
+                               text: &str,
+                               size: f32|
+         -> Option<(f32, f32)> {
             let run = engine_core::TextRun {
                 text: text.to_string(),
                 pos: [0.0, 0.0], // baseline at 0
@@ -485,7 +503,9 @@ impl Scene for TextDemoScene {
                 color: ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
             };
             let glyphs = provider.rasterize_run(&run);
-            if glyphs.is_empty() { return None; }
+            if glyphs.is_empty() {
+                return None;
+            }
             let mut top = f32::INFINITY;
             let mut bottom = f32::NEG_INFINITY;
             for g in glyphs.iter() {
@@ -504,7 +524,10 @@ impl Scene for TextDemoScene {
             let (top2, _bottom2) = measure_extents(pgray, SAMPLE_TEXT2, small_sz)
                 .unwrap_or((-small_sz * 0.8, small_sz * 0.2));
             let baseline1 = 160.0;
-            let pad = std::env::var("DEMO_LINE_PAD").ok().and_then(|s| s.parse::<f32>().ok()).unwrap_or(self.text_size * 0.25);
+            let pad = std::env::var("DEMO_LINE_PAD")
+                .ok()
+                .and_then(|s| s.parse::<f32>().ok())
+                .unwrap_or(self.text_size * 0.25);
             let baseline2 = baseline1 + bottom1 + (-top2) + pad;
             p.text_with_id(
                 engine_core::TextRun {
@@ -582,7 +605,10 @@ impl Scene for TextDemoScene {
             let (top2, _bottom2) = measure_extents(psub, SAMPLE_TEXT2, small_sz)
                 .unwrap_or((-small_sz * 0.8, small_sz * 0.2));
             let baseline1 = 160.0;
-            let pad = std::env::var("DEMO_LINE_PAD").ok().and_then(|s| s.parse::<f32>().ok()).unwrap_or(self.text_size * 0.25);
+            let pad = std::env::var("DEMO_LINE_PAD")
+                .ok()
+                .and_then(|s| s.parse::<f32>().ok())
+                .unwrap_or(self.text_size * 0.25);
             let baseline2 = baseline1 + bottom1 + (-top2) + pad;
             p.text_with_id(
                 engine_core::TextRun {

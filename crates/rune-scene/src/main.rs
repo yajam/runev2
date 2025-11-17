@@ -1,1 +1,3 @@
-fn main() -> anyhow::Result<()> { rune_scene::run() }
+fn main() -> anyhow::Result<()> {
+    rune_scene::run()
+}

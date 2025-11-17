@@ -1,9 +1,9 @@
 use anyhow::Result;
 use winit::event::{Event, WindowEvent};
-use winit::window::WindowBuilder;
 use winit::event_loop::EventLoop;
+use winit::window::WindowBuilder;
 
-use engine_core::{make_surface_config, SubpixelOrientation, Color, ColorLinPremul};
+use engine_core::{Color, ColorLinPremul, SubpixelOrientation, make_surface_config};
 
 // Canvas-backed UI runner so we can verify using Canvas within demo-app
 pub fn run() -> Result<()> {
@@ -21,7 +21,8 @@ pub fn run() -> Result<()> {
         compatible_surface: Some(&surface),
     }))
     .expect("No suitable GPU adapters found");
-    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None))?;
+    let (device, queue) =
+        pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None))?;
 
     let mut size = window.inner_size();
     let mut scale_factor = window.scale_factor() as f32;
@@ -57,16 +58,23 @@ pub fn run() -> Result<()> {
                         }
                         window.request_redraw();
                     }
-                    WindowEvent::ScaleFactorChanged { scale_factor: sf, .. } => {
+                    WindowEvent::ScaleFactorChanged {
+                        scale_factor: sf, ..
+                    } => {
                         scale_factor = sf as f32;
                         surf.set_dpi_scale(scale_factor);
                         window.request_redraw();
                     }
                     WindowEvent::RedrawRequested => {
-                        if size.width == 0 || size.height == 0 { return; }
+                        if size.width == 0 || size.height == 0 {
+                            return;
+                        }
                         let frame = match surface.get_current_texture() {
                             Ok(f) => f,
-                            Err(_) => { window.request_redraw(); return; }
+                            Err(_) => {
+                                window.request_redraw();
+                                return;
+                            }
                         };
                         let mut canvas = surf.begin_frame(size.width, size.height);
                         // Background
@@ -75,27 +83,83 @@ pub fn run() -> Result<()> {
                         canvas.set_text_provider(provider.clone());
 
                         // Render the same UI as rune-scene using its elements on Canvas
-                        use engine_core::{Brush, Rect, Color};
+                        use engine_core::{Brush, Color, Rect};
                         let col1_x = 40.0f32;
                         let w = size.width as f32;
                         let mut y = 40.0f32;
                         let row_h = 44.0f32;
                         canvas.fill_rect(0.0, 0.0, w, size.height as f32, Brush::Solid(bg), 0);
                         // Use pure white for crisp text on dark background
-                        canvas.draw_text_run([col1_x, y], "Rune Scene — UI Elements".to_string(), 22.0, Color::rgba(255,255,255,255), 10);
+                        canvas.draw_text_run(
+                            [col1_x, y],
+                            "Rune Scene — UI Elements".to_string(),
+                            22.0,
+                            Color::rgba(255, 255, 255, 255),
+                            10,
+                        );
                         y += 36.0;
                         // Buttons
                         {
-                            let btn1 = rune_scene::elements::button::Button { rect: Rect { x: col1_x, y, w: 160.0, h: 36.0 }, radius: 8.0, bg: Color::rgba(63,130,246,255), fg: Color::rgba(255,255,255,255), label: "Primary".to_string(), label_size: 16.0, focused: false };
-                            let btn2 = rune_scene::elements::button::Button { rect: Rect { x: col1_x + 176.0, y, w: 180.0, h: 36.0 }, radius: 8.0, bg: Color::rgba(99,104,118,255), fg: Color::rgba(255,255,255,255), label: "Secondary (focused)".to_string(), label_size: 16.0, focused: true };
+                            let btn1 = rune_scene::elements::button::Button {
+                                rect: Rect {
+                                    x: col1_x,
+                                    y,
+                                    w: 160.0,
+                                    h: 36.0,
+                                },
+                                radius: 8.0,
+                                bg: Color::rgba(63, 130, 246, 255),
+                                fg: Color::rgba(255, 255, 255, 255),
+                                label: "Primary".to_string(),
+                                label_size: 16.0,
+                                focused: false,
+                            };
+                            let btn2 = rune_scene::elements::button::Button {
+                                rect: Rect {
+                                    x: col1_x + 176.0,
+                                    y,
+                                    w: 180.0,
+                                    h: 36.0,
+                                },
+                                radius: 8.0,
+                                bg: Color::rgba(99, 104, 118, 255),
+                                fg: Color::rgba(255, 255, 255, 255),
+                                label: "Secondary (focused)".to_string(),
+                                label_size: 16.0,
+                                focused: true,
+                            };
                             btn1.render(&mut canvas, 5);
                             btn2.render(&mut canvas, 5);
                             y += row_h;
                         }
                         // Checkbox examples
                         {
-                            let cb1 = rune_scene::elements::checkbox::Checkbox { rect: Rect { x: col1_x, y, w: 18.0, h: 18.0 }, checked: false, focused: false, label: Some("Checkbox".to_string()), label_size: 16.0, color: Color::rgba(240,240,240,255) };
-                            let cb2 = rune_scene::elements::checkbox::Checkbox { rect: Rect { x: col1_x + 160.0, y, w: 18.0, h: 18.0 }, checked: true, focused: true, label: Some("Checked + Focus".to_string()), label_size: 16.0, color: Color::rgba(240,240,240,255) };
+                            let cb1 = rune_scene::elements::checkbox::Checkbox {
+                                rect: Rect {
+                                    x: col1_x,
+                                    y,
+                                    w: 18.0,
+                                    h: 18.0,
+                                },
+                                checked: false,
+                                focused: false,
+                                label: Some("Checkbox".to_string()),
+                                label_size: 16.0,
+                                color: Color::rgba(240, 240, 240, 255),
+                            };
+                            let cb2 = rune_scene::elements::checkbox::Checkbox {
+                                rect: Rect {
+                                    x: col1_x + 160.0,
+                                    y,
+                                    w: 18.0,
+                                    h: 18.0,
+                                },
+                                checked: true,
+                                focused: true,
+                                label: Some("Checked + Focus".to_string()),
+                                label_size: 16.0,
+                                color: Color::rgba(240, 240, 240, 255),
+                            };
                             cb1.render(&mut canvas, 5);
                             cb2.render(&mut canvas, 5);
                             y += row_h;
@@ -103,7 +167,12 @@ pub fn run() -> Result<()> {
                         // Input box
                         {
                             let mut ib = rune_scene::elements::input_box::InputBox::new(
-                                Rect { x: col1_x, y, w: 300.0, h: 34.0 },
+                                Rect {
+                                    x: col1_x,
+                                    y,
+                                    w: 300.0,
+                                    h: 34.0,
+                                },
                                 "Type here...".to_string(),
                                 16.0,
                                 ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
@@ -118,7 +187,9 @@ pub fn run() -> Result<()> {
                     _ => {}
                 }
             }
-            Event::AboutToWait => { window.request_redraw(); }
+            Event::AboutToWait => {
+                window.request_redraw();
+            }
             _ => {}
         }
     })?)

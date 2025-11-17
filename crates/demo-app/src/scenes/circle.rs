@@ -1,14 +1,20 @@
-use engine_core::{DisplayList, Painter, PassManager, Viewport};
 use engine_core::{Brush, ColorLinPremul};
+use engine_core::{DisplayList, Painter, PassManager, Viewport};
 
 use super::{Scene, SceneKind};
 
 pub struct CircleScene;
 
-impl Default for CircleScene { fn default() -> Self { Self } }
+impl Default for CircleScene {
+    fn default() -> Self {
+        Self
+    }
+}
 
 impl Scene for CircleScene {
-    fn kind(&self) -> SceneKind { SceneKind::Geometry }
+    fn kind(&self) -> SceneKind {
+        SceneKind::Geometry
+    }
 
     fn init_display_list(&mut self, viewport: Viewport) -> Option<DisplayList> {
         Some(build_circle_dl(viewport))
@@ -34,9 +40,18 @@ impl Scene for CircleScene {
             [0.0, 0.0],
             [1.0, 1.0],
             &[
-                (0.0, engine_core::ColorLinPremul::from_srgba_u8([72, 76, 88, 255])),
-                (0.5, engine_core::ColorLinPremul::from_srgba_u8([80, 85, 97, 255])),
-                (1.0, engine_core::ColorLinPremul::from_srgba_u8([60, 64, 74, 255])),
+                (
+                    0.0,
+                    engine_core::ColorLinPremul::from_srgba_u8([72, 76, 88, 255]),
+                ),
+                (
+                    0.5,
+                    engine_core::ColorLinPremul::from_srgba_u8([80, 85, 97, 255]),
+                ),
+                (
+                    1.0,
+                    engine_core::ColorLinPremul::from_srgba_u8([60, 64, 74, 255]),
+                ),
             ],
             queue,
         );
@@ -46,8 +61,14 @@ impl Scene for CircleScene {
             [0.75, 0.3],
             0.5,
             &[
-                (0.0, engine_core::ColorLinPremul::from_srgba_u8([40, 40, 40, 0])),
-                (1.0, engine_core::ColorLinPremul::from_srgba_u8([40, 40, 40, 64])),
+                (
+                    0.0,
+                    engine_core::ColorLinPremul::from_srgba_u8([40, 40, 40, 0]),
+                ),
+                (
+                    1.0,
+                    engine_core::ColorLinPremul::from_srgba_u8([40, 40, 40, 64]),
+                ),
             ],
             queue,
             width,
@@ -69,7 +90,10 @@ fn build_circle_dl(viewport: Viewport) -> DisplayList {
             stops: vec![
                 (0.0, ColorLinPremul::from_srgba_u8([0x3b, 0x82, 0xf6, 0xff])),
                 (0.5, ColorLinPremul::from_srgba_u8([0x1e, 0x3a, 0x8a, 0xff])),
-                (0.75, ColorLinPremul::from_srgba_u8([0x10, 0xb9, 0x81, 0xff])),
+                (
+                    0.75,
+                    ColorLinPremul::from_srgba_u8([0x10, 0xb9, 0x81, 0xff]),
+                ),
                 (1.0, ColorLinPremul::from_srgba_u8([0x10, 0xb9, 0x81, 0xff])),
             ],
         },

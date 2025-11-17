@@ -1,12 +1,18 @@
 use super::{Scene, SceneKind};
-use engine_core::{DisplayList, Painter, Viewport, ColorLinPremul, Path, PathCmd, FillRule};
+use engine_core::{ColorLinPremul, DisplayList, FillRule, Painter, Path, PathCmd, Viewport};
 
 pub struct PathDemoScene;
 
-impl Default for PathDemoScene { fn default() -> Self { Self } }
+impl Default for PathDemoScene {
+    fn default() -> Self {
+        Self
+    }
+}
 
 impl Scene for PathDemoScene {
-    fn kind(&self) -> SceneKind { SceneKind::Geometry }
+    fn kind(&self) -> SceneKind {
+        SceneKind::Geometry
+    }
 
     fn init_display_list(&mut self, viewport: Viewport) -> Option<DisplayList> {
         // Build a simple star path as a proof of geometry path support via lyon
@@ -22,11 +28,17 @@ impl Scene for PathDemoScene {
             let r = if i % 2 == 0 { r0 } else { r1 };
             let x = cx + r * ang.sin();
             let y = cy - r * ang.cos();
-            if i == 0 { cmds.push(PathCmd::MoveTo([x, y])); }
-            else { cmds.push(PathCmd::LineTo([x, y])); }
+            if i == 0 {
+                cmds.push(PathCmd::MoveTo([x, y]));
+            } else {
+                cmds.push(PathCmd::LineTo([x, y]));
+            }
         }
         cmds.push(PathCmd::Close);
-        let path = Path { cmds, fill_rule: FillRule::NonZero };
+        let path = Path {
+            cmds,
+            fill_rule: FillRule::NonZero,
+        };
         let yellow = ColorLinPremul::from_srgba(255, 220, 30, 1.0);
         p.fill_path(path, yellow, 0);
         Some(p.finish())
@@ -40,6 +52,6 @@ impl Scene for PathDemoScene {
         _queue: &wgpu::Queue,
         _width: u32,
         _height: u32,
-    ) { }
+    ) {
+    }
 }
-

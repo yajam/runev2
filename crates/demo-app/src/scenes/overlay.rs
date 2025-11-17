@@ -1,5 +1,8 @@
-use engine_core::{Brush, ColorLinPremul, Rect, RoundedRadii, RoundedRect, Viewport, Painter, DisplayList, HitResult, HitKind};
 use super::{Scene, SceneKind};
+use engine_core::{
+    Brush, ColorLinPremul, DisplayList, HitKind, HitResult, Painter, Rect, RoundedRadii,
+    RoundedRect, Viewport,
+};
 
 pub struct OverlayScene {
     viewport: Viewport,
@@ -9,7 +12,10 @@ pub struct OverlayScene {
 impl Default for OverlayScene {
     fn default() -> Self {
         Self {
-            viewport: Viewport { width: 1280, height: 720 },
+            viewport: Viewport {
+                width: 1280,
+                height: 720,
+            },
             is_open: false,
         }
     }
@@ -25,7 +31,12 @@ impl OverlayScene {
         // Base background color: white
         let bg = ColorLinPremul::from_srgba_u8([0xff, 0xff, 0xff, 0xff]);
         p.rect(
-            Rect { x: 0.0, y: 0.0, w: self.viewport.width as f32, h: self.viewport.height as f32 },
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: self.viewport.width as f32,
+                h: self.viewport.height as f32,
+            },
             Brush::Solid(bg),
             0,
         );
@@ -34,7 +45,12 @@ impl OverlayScene {
             // Dim scrim over the scene
             let scrim = ColorLinPremul::from_srgba(0, 0, 0, 0.45);
             p.rect(
-                Rect { x: 0.0, y: 0.0, w: self.viewport.width as f32, h: self.viewport.height as f32 },
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: self.viewport.width as f32,
+                    h: self.viewport.height as f32,
+                },
                 Brush::Solid(scrim),
                 10,
             );
@@ -45,12 +61,31 @@ impl OverlayScene {
             let x = (self.viewport.width as f32 - panel_w) * 0.5;
             let y = (self.viewport.height as f32 - panel_h) * 0.5;
             let panel = RoundedRect {
-                rect: Rect { x, y, w: panel_w, h: panel_h },
-                radii: RoundedRadii { tl: 14.0, tr: 14.0, br: 14.0, bl: 14.0 },
+                rect: Rect {
+                    x,
+                    y,
+                    w: panel_w,
+                    h: panel_h,
+                },
+                radii: RoundedRadii {
+                    tl: 14.0,
+                    tr: 14.0,
+                    br: 14.0,
+                    bl: 14.0,
+                },
             };
             let panel_fill = ColorLinPremul::from_srgba_u8([0xff, 0xff, 0xff, 0xff]);
             // A close-zone hit region above scrim and below panel
-            p.hit_region_rect(Self::CLOSE_REGION, Rect { x: 0.0, y: 0.0, w: self.viewport.width as f32, h: self.viewport.height as f32 }, 15);
+            p.hit_region_rect(
+                Self::CLOSE_REGION,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: self.viewport.width as f32,
+                    h: self.viewport.height as f32,
+                },
+                15,
+            );
             // Panel on top
             p.rounded_rect(panel, Brush::Solid(panel_fill), 20);
         }
@@ -62,8 +97,18 @@ impl OverlayScene {
             let bx = (self.viewport.width as f32 - bw) * 0.5;
             let by = (self.viewport.height as f32 - bh) * 0.5;
             let r = RoundedRect {
-                rect: Rect { x: bx, y: by, w: bw, h: bh },
-                radii: RoundedRadii { tl: 10.0, tr: 10.0, br: 10.0, bl: 10.0 },
+                rect: Rect {
+                    x: bx,
+                    y: by,
+                    w: bw,
+                    h: bh,
+                },
+                radii: RoundedRadii {
+                    tl: 10.0,
+                    tr: 10.0,
+                    br: 10.0,
+                    bl: 10.0,
+                },
             };
             let fill = ColorLinPremul::from_srgba_u8([0xee, 0xee, 0xee, 0xff]);
             p.rounded_rect(r, Brush::Solid(fill), 2);
@@ -76,7 +121,9 @@ impl OverlayScene {
 }
 
 impl Scene for OverlayScene {
-    fn kind(&self) -> SceneKind { SceneKind::Geometry }
+    fn kind(&self) -> SceneKind {
+        SceneKind::Geometry
+    }
 
     fn init_display_list(&mut self, viewport: Viewport) -> Option<DisplayList> {
         self.viewport = viewport;

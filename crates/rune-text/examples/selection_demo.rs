@@ -29,12 +29,20 @@ fn main() {
     let sel_backward = Selection::new(5, 0);
 
     println!("Forward selection (0 -> 5):");
-    println!("  Anchor: {}, Active: {}", sel_forward.anchor(), sel_forward.active());
+    println!(
+        "  Anchor: {}, Active: {}",
+        sel_forward.anchor(),
+        sel_forward.active()
+    );
     println!("  Range: {:?}", sel_forward.range());
     println!("  Is forward: {}", sel_forward.is_forward());
 
     println!("\nBackward selection (5 -> 0):");
-    println!("  Anchor: {}, Active: {}", sel_backward.anchor(), sel_backward.active());
+    println!(
+        "  Anchor: {}, Active: {}",
+        sel_backward.anchor(),
+        sel_backward.active()
+    );
     println!("  Range: {:?}", sel_backward.range());
     println!("  Is backward: {}\n", sel_backward.is_backward());
 
@@ -42,14 +50,26 @@ fn main() {
     println!("Test 3: Selection Extension");
     println!("---------------------------");
     let mut sel = Selection::new(5, 5); // Collapsed at position 5
-    println!("Initial (collapsed): anchor={}, active={}", sel.anchor(), sel.active());
+    println!(
+        "Initial (collapsed): anchor={}, active={}",
+        sel.anchor(),
+        sel.active()
+    );
 
     sel.extend_to(12);
-    println!("After extend_to(12): anchor={}, active={}", sel.anchor(), sel.active());
+    println!(
+        "After extend_to(12): anchor={}, active={}",
+        sel.anchor(),
+        sel.active()
+    );
     println!("Selected text: \"{}\"", sel.text(text));
 
     sel.extend_to(3);
-    println!("After extend_to(3): anchor={}, active={}", sel.anchor(), sel.active());
+    println!(
+        "After extend_to(3): anchor={}, active={}",
+        sel.anchor(),
+        sel.active()
+    );
     println!("Selected text: \"{}\"", sel.text(text));
     println!("Is backward: {}\n", sel.is_backward());
 
@@ -67,7 +87,12 @@ fn main() {
     for &pos in &positions {
         let sel = layout.select_word_at(pos);
         let word = sel.text(text);
-        println!("  Position {}: \"{}\" (range: {:?})", pos, word, sel.range());
+        println!(
+            "  Position {}: \"{}\" (range: {:?})",
+            pos,
+            word,
+            sel.range()
+        );
     }
 
     // Test 5: Line Selection
@@ -87,7 +112,12 @@ fn main() {
     for &pos in &positions {
         let sel = layout.select_line_at(pos);
         let line_text = sel.text(text);
-        println!("  Position {}: \"{}\" (range: {:?})", pos, line_text, sel.range());
+        println!(
+            "  Position {}: \"{}\" (range: {:?})",
+            pos,
+            line_text,
+            sel.range()
+        );
     }
 
     // Test 6: Paragraph Selection
@@ -103,7 +133,12 @@ fn main() {
     for &pos in &positions {
         let sel = layout.select_paragraph_at(pos);
         let para = sel.text(text);
-        println!("  Position {}: \"{}\" (range: {:?})", pos, para, sel.range());
+        println!(
+            "  Position {}: \"{}\" (range: {:?})",
+            pos,
+            para,
+            sel.range()
+        );
     }
 
     // Test 7: Selection Rectangles (Multi-line)
@@ -111,7 +146,8 @@ fn main() {
     println!("-----------------------------");
     let text = "This is a long line of text that will wrap across multiple lines.";
     let max_width = 200.0;
-    let layout = TextLayout::with_wrap(text, &font, font_size, Some(max_width), WrapMode::BreakWord);
+    let layout =
+        TextLayout::with_wrap(text, &font, font_size, Some(max_width), WrapMode::BreakWord);
 
     println!("Text: \"{}\"", text);
     println!("Max width: {}", max_width);
@@ -126,8 +162,10 @@ fn main() {
     println!("Number of selection rectangles: {}", rects.len());
 
     for (i, rect) in rects.iter().enumerate() {
-        println!("  Rect {}: x={:.2}, y={:.2}, width={:.2}, height={:.2}",
-                 i, rect.x, rect.y, rect.width, rect.height);
+        println!(
+            "  Rect {}: x={:.2}, y={:.2}, width={:.2}, height={:.2}",
+            i, rect.x, rect.y, rect.width, rect.height
+        );
     }
 
     // Test 8: Selection Extension with Movement
@@ -144,15 +182,27 @@ fn main() {
 
     // Extend right by character
     sel = layout.extend_selection(&sel, |offset| layout.move_cursor_right(offset));
-    println!("After Shift+Right: \"{}\" (range: {:?})", sel.text(text), sel.range());
+    println!(
+        "After Shift+Right: \"{}\" (range: {:?})",
+        sel.text(text),
+        sel.range()
+    );
 
     // Extend right by word
     sel = layout.extend_selection(&sel, |offset| layout.move_cursor_right_word(offset));
-    println!("After Shift+Ctrl+Right: \"{}\" (range: {:?})", sel.text(text), sel.range());
+    println!(
+        "After Shift+Ctrl+Right: \"{}\" (range: {:?})",
+        sel.text(text),
+        sel.range()
+    );
 
     // Extend to end of line
     sel = layout.extend_selection(&sel, |offset| layout.move_cursor_line_end(offset));
-    println!("After Shift+End: \"{}\" (range: {:?})", sel.text(text), sel.range());
+    println!(
+        "After Shift+End: \"{}\" (range: {:?})",
+        sel.text(text),
+        sel.range()
+    );
 
     // Test 9: Selection Collapse
     println!("\n\nTest 9: Selection Collapse");
@@ -162,11 +212,19 @@ fn main() {
 
     let mut sel_copy = sel;
     sel_copy.collapse_to_start();
-    println!("Collapse to start: anchor={}, active={}", sel_copy.anchor(), sel_copy.active());
+    println!(
+        "Collapse to start: anchor={}, active={}",
+        sel_copy.anchor(),
+        sel_copy.active()
+    );
 
     let mut sel_copy = sel;
     sel_copy.collapse_to_end();
-    println!("Collapse to end: anchor={}, active={}", sel_copy.anchor(), sel_copy.active());
+    println!(
+        "Collapse to end: anchor={}, active={}",
+        sel_copy.anchor(),
+        sel_copy.active()
+    );
 
     // Test 10: Multi-line Selection Extension
     println!("\n\nTest 10: Multi-line Selection Extension");
@@ -191,7 +249,10 @@ fn main() {
         None,
     );
     sel = new_sel;
-    println!("After Shift+Down: \"{}\"", sel.text(text).replace('\n', "\\n"));
+    println!(
+        "After Shift+Down: \"{}\"",
+        sel.text(text).replace('\n', "\\n")
+    );
 
     // Extend down again
     let (new_sel, _) = layout.extend_selection_vertical(
@@ -200,7 +261,10 @@ fn main() {
         Some(x),
     );
     sel = new_sel;
-    println!("After Shift+Down again: \"{}\"", sel.text(text).replace('\n', "\\n"));
+    println!(
+        "After Shift+Down again: \"{}\"",
+        sel.text(text).replace('\n', "\\n")
+    );
 
     // Test 11: BiDi Selection
     println!("\n\nTest 11: BiDi Text Selection");

@@ -54,4 +54,3 @@ impl CaretBlink {
         self.blink_time = 0.0;
     }
 }
-

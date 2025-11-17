@@ -39,7 +39,10 @@ pub enum SubpixelOrientation {
 
 /// Storage format for a subpixel coverage mask.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MaskFormat { Rgba8, Rgba16 }
+pub enum MaskFormat {
+    Rgba8,
+    Rgba16,
+}
 
 /// Subpixel mask in RGB coverage format stored in RGBA (A is unused).
 /// Supports 8-bit or 16-bit per-channel storage.
@@ -53,7 +56,12 @@ pub struct SubpixelMask {
 }
 
 impl SubpixelMask {
-    pub fn bytes_per_pixel(&self) -> usize { match self.format { MaskFormat::Rgba8 => 4, MaskFormat::Rgba16 => 8 } }
+    pub fn bytes_per_pixel(&self) -> usize {
+        match self.format {
+            MaskFormat::Rgba8 => 4,
+            MaskFormat::Rgba16 => 8,
+        }
+    }
 }
 
 /// GPU-ready batch of glyph masks with positions and color.
@@ -69,7 +77,9 @@ impl GlyphBatch {
     }
 
     pub fn with_capacity(cap: usize) -> Self {
-        Self { glyphs: Vec::with_capacity(cap) }
+        Self {
+            glyphs: Vec::with_capacity(cap),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -92,7 +102,9 @@ struct GlyphRunKey {
 }
 
 struct GlyphRunCache {
-    map: std::sync::Mutex<std::collections::HashMap<GlyphRunKey, std::sync::Arc<Vec<RasterizedGlyph>>>>,
+    map: std::sync::Mutex<
+        std::collections::HashMap<GlyphRunKey, std::sync::Arc<Vec<RasterizedGlyph>>>,
+    >,
     max_entries: usize,
 }
 
@@ -142,7 +154,12 @@ fn global_glyph_run_cache() -> &'static GlyphRunCache {
 /// A very lightweight 3-tap kernel is used to distribute coverage among subpixels.
 /// - For RGB orientation, left/center/right contributions map to R/G/B respectively.
 /// - For BGR orientation, mapping is mirrored.
-pub fn grayscale_to_subpixel_rgb(width: u32, height: u32, gray: &[u8], orientation: SubpixelOrientation) -> SubpixelMask {
+pub fn grayscale_to_subpixel_rgb(
+    width: u32,
+    height: u32,
+    gray: &[u8],
+    orientation: SubpixelOrientation,
+) -> SubpixelMask {
     let w = width as usize;
     let h = height as usize;
     assert_eq!(gray.len(), w * h);
@@ -152,11 +169,19 @@ pub fn grayscale_to_subpixel_rgb(width: u32, height: u32, gray: &[u8], orientati
     for y in 0..h {
         for x in 0..w {
             let c0 = gray[y * w + x] as f32 / 255.0;
-            let cl = if x > 0 { gray[y * w + (x - 1)] as f32 / 255.0 } else { c0 };
-            let cr = if x + 1 < w { gray[y * w + (x + 1)] as f32 / 255.0 } else { c0 };
-            let sample_left = (2.0/3.0) * c0 + (1.0/3.0) * cl;
+            let cl = if x > 0 {
+                gray[y * w + (x - 1)] as f32 / 255.0
+            } else {
+                c0
+            };
+            let cr = if x + 1 < w {
+                gray[y * w + (x + 1)] as f32 / 255.0
+            } else {
+                c0
+            };
+            let sample_left = (2.0 / 3.0) * c0 + (1.0 / 3.0) * cl;
             let sample_center = c0;
-            let sample_right = (2.0/3.0) * c0 + (1.0/3.0) * cr;
+            let sample_right = (2.0 / 3.0) * c0 + (1.0 / 3.0) * cr;
             let (r_cov, g_cov, b_cov) = match orientation {
                 SubpixelOrientation::RGB => (sample_left, sample_center, sample_right),
                 SubpixelOrientation::BGR => (sample_right, sample_center, sample_left),
@@ -172,7 +197,12 @@ pub fn grayscale_to_subpixel_rgb(width: u32, height: u32, gray: &[u8], orientati
             out[i + 3] = 0u8; // alpha unused; output premul alpha computed in shader
         }
     }
-    SubpixelMask { width, height, format: MaskFormat::Rgba8, data: out }
+    SubpixelMask {
+        width,
+        height,
+        format: MaskFormat::Rgba8,
+        data: out,
+    }
 }
 
 /// Convert an 8-bit grayscale coverage mask to an RGB mask with equal channels (grayscale AA).
@@ -191,12 +221,22 @@ pub fn grayscale_to_rgb_equal(width: u32, height: u32, gray: &[u8]) -> SubpixelM
             out[i + 3] = 0u8;
         }
     }
-    SubpixelMask { width, height, format: MaskFormat::Rgba8, data: out }
+    SubpixelMask {
+        width,
+        height,
+        format: MaskFormat::Rgba8,
+        data: out,
+    }
 }
 
 /// 16-bit variants for higher precision masks. Channels are u16 in [0..65535],
 /// packed little-endian into the data buffer. Alpha is unused.
-pub fn grayscale_to_subpixel_rgb16(width: u32, height: u32, gray: &[u8], orientation: SubpixelOrientation) -> SubpixelMask {
+pub fn grayscale_to_subpixel_rgb16(
+    width: u32,
+    height: u32,
+    gray: &[u8],
+    orientation: SubpixelOrientation,
+) -> SubpixelMask {
     let w = width as usize;
     let h = height as usize;
     assert_eq!(gray.len(), w * h);
@@ -204,11 +244,19 @@ pub fn grayscale_to_subpixel_rgb16(width: u32, height: u32, gray: &[u8], orienta
     for y in 0..h {
         for x in 0..w {
             let c0 = gray[y * w + x] as f32 / 255.0;
-            let cl = if x > 0 { gray[y * w + (x - 1)] as f32 / 255.0 } else { c0 };
-            let cr = if x + 1 < w { gray[y * w + (x + 1)] as f32 / 255.0 } else { c0 };
-            let sample_left = (2.0/3.0) * c0 + (1.0/3.0) * cl;
+            let cl = if x > 0 {
+                gray[y * w + (x - 1)] as f32 / 255.0
+            } else {
+                c0
+            };
+            let cr = if x + 1 < w {
+                gray[y * w + (x + 1)] as f32 / 255.0
+            } else {
+                c0
+            };
+            let sample_left = (2.0 / 3.0) * c0 + (1.0 / 3.0) * cl;
             let sample_center = c0;
-            let sample_right = (2.0/3.0) * c0 + (1.0/3.0) * cr;
+            let sample_right = (2.0 / 3.0) * c0 + (1.0 / 3.0) * cr;
             let (r_cov, g_cov, b_cov) = match orientation {
                 SubpixelOrientation::RGB => (sample_left, sample_center, sample_right),
                 SubpixelOrientation::BGR => (sample_right, sample_center, sample_left),
@@ -229,7 +277,12 @@ pub fn grayscale_to_subpixel_rgb16(width: u32, height: u32, gray: &[u8], orienta
             write_u16(&mut out, i + 6, 0u16);
         }
     }
-    SubpixelMask { width, height, format: MaskFormat::Rgba16, data: out }
+    SubpixelMask {
+        width,
+        height,
+        format: MaskFormat::Rgba16,
+        data: out,
+    }
 }
 
 pub fn grayscale_to_rgb_equal16(width: u32, height: u32, gray: &[u8]) -> SubpixelMask {
@@ -242,13 +295,22 @@ pub fn grayscale_to_rgb_equal16(width: u32, height: u32, gray: &[u8]) -> Subpixe
             let g = (gray[y * w + x] as u16) * 257; // 255->65535 scale
             let i = (y * w + x) * 8;
             let b = g.to_le_bytes();
-            out[i + 0] = b[0]; out[i + 1] = b[1];
-            out[i + 2] = b[0]; out[i + 3] = b[1];
-            out[i + 4] = b[0]; out[i + 5] = b[1];
-            out[i + 6] = 0;   out[i + 7] = 0;
+            out[i + 0] = b[0];
+            out[i + 1] = b[1];
+            out[i + 2] = b[0];
+            out[i + 3] = b[1];
+            out[i + 4] = b[0];
+            out[i + 5] = b[1];
+            out[i + 6] = 0;
+            out[i + 7] = 0;
         }
     }
-    SubpixelMask { width, height, format: MaskFormat::Rgba16, data: out }
+    SubpixelMask {
+        width,
+        height,
+        format: MaskFormat::Rgba16,
+        data: out,
+    }
 }
 
 // Optional provider that consumes a patched fontdue fork emitting RGB masks directly.
@@ -271,18 +333,43 @@ impl TextProvider for PatchedFontdueProvider {
     fn rasterize_run(&self, run: &crate::scene::TextRun) -> Vec<RasterizedGlyph> {
         use fontdue_rgb::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
         let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
-        layout.reset(&LayoutSettings { x: 0.0, y: 0.0, ..LayoutSettings::default() });
-        layout.append(&[&self.font], &TextStyle::new(&run.text, run.size.max(1.0), 0));
+        layout.reset(&LayoutSettings {
+            x: 0.0,
+            y: 0.0,
+            ..LayoutSettings::default()
+        });
+        layout.append(
+            &[&self.font],
+            &TextStyle::new(&run.text, run.size.max(1.0), 0),
+        );
         let mut out = Vec::new();
         for g in layout.glyphs() {
             // Patched fontdue returns RGB masks directly (u8 or u16). Prefer 16-bit when available.
-            let mask = if let Some((w, h, data16)) = self.font.rasterize_rgb16_indexed(g.key.glyph_index, g.key.px) {
-                SubpixelMask { width: w as u32, height: h as u32, format: MaskFormat::Rgba16, data: data16 }
+            let mask = if let Some((w, h, data16)) = self
+                .font
+                .rasterize_rgb16_indexed(g.key.glyph_index, g.key.px)
+            {
+                SubpixelMask {
+                    width: w as u32,
+                    height: h as u32,
+                    format: MaskFormat::Rgba16,
+                    data: data16,
+                }
             } else {
-                let (w, h, data8) = self.font.rasterize_rgb8_indexed(g.key.glyph_index, g.key.px);
-                SubpixelMask { width: w as u32, height: h as u32, format: MaskFormat::Rgba8, data: data8 }
+                let (w, h, data8) = self
+                    .font
+                    .rasterize_rgb8_indexed(g.key.glyph_index, g.key.px);
+                SubpixelMask {
+                    width: w as u32,
+                    height: h as u32,
+                    format: MaskFormat::Rgba8,
+                    data: data8,
+                }
             };
-            out.push(RasterizedGlyph { offset: [g.x, g.y], mask });
+            out.push(RasterizedGlyph {
+                offset: [g.x, g.y],
+                mask,
+            });
         }
         out
     }
@@ -330,7 +417,10 @@ pub trait TextProvider: Send + Sync {
         0
     }
 
-    fn line_metrics(&self, px: f32) -> Option<LineMetrics> { let _ = px; None }
+    fn line_metrics(&self, px: f32) -> Option<LineMetrics> {
+        let _ = px;
+        None
+    }
 }
 
 /// Rasterize a text run using a global glyph-run cache.
@@ -354,7 +444,11 @@ pub fn rasterize_run_cached(
     let size_bits = run.size.to_bits();
     // Use the concrete provider data pointer as a stable identifier for this run.
     let provider_id = (provider as *const dyn TextProvider as *const ()) as usize;
-    let key = GlyphRunKey { text_hash, size_bits, provider_id };
+    let key = GlyphRunKey {
+        text_hash,
+        size_bits,
+        provider_id,
+    };
 
     let cache = global_glyph_run_cache();
     if let Some(hit) = cache.get(&key) {
@@ -405,7 +499,9 @@ impl TextProvider for SimpleFontdueProvider {
         for g in layout.glyphs() {
             // Rasterize individual glyph to grayscale
             let (metrics, bitmap) = self.font.rasterize_indexed(g.key.glyph_index, g.key.px);
-            if metrics.width == 0 || metrics.height == 0 { continue; }
+            if metrics.width == 0 || metrics.height == 0 {
+                continue;
+            }
             // Convert to subpixel mask
             let mask = grayscale_to_subpixel_rgb(
                 metrics.width as u32,
@@ -420,7 +516,10 @@ impl TextProvider for SimpleFontdueProvider {
             // snaps the run once using line metrics.
             let ox = g.x;
             let oy = g.y;
-            out.push(RasterizedGlyph { offset: [ox, oy], mask });
+            out.push(RasterizedGlyph {
+                offset: [ox, oy],
+                mask,
+            });
         }
         out
     }
@@ -430,7 +529,11 @@ impl TextProvider for SimpleFontdueProvider {
             // Fontdue typically reports descent as a negative number; normalize to positive magnitude.
             let descent = lm.descent.abs();
             let line_gap = lm.line_gap.max(0.0);
-            LineMetrics { ascent, descent, line_gap }
+            LineMetrics {
+                ascent,
+                descent,
+                line_gap,
+            }
         })
     }
 }
@@ -457,17 +560,29 @@ impl TextProvider for GrayscaleFontdueProvider {
     fn rasterize_run(&self, run: &crate::scene::TextRun) -> Vec<RasterizedGlyph> {
         use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
         let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
-        layout.reset(&LayoutSettings { x: 0.0, y: 0.0, ..LayoutSettings::default() });
-        layout.append(&[&self.font], &TextStyle::new(&run.text, run.size.max(1.0), 0));
+        layout.reset(&LayoutSettings {
+            x: 0.0,
+            y: 0.0,
+            ..LayoutSettings::default()
+        });
+        layout.append(
+            &[&self.font],
+            &TextStyle::new(&run.text, run.size.max(1.0), 0),
+        );
         let mut out = Vec::new();
         for g in layout.glyphs() {
             let (metrics, bitmap) = self.font.rasterize_indexed(g.key.glyph_index, g.key.px);
-            if metrics.width == 0 || metrics.height == 0 { continue; }
+            if metrics.width == 0 || metrics.height == 0 {
+                continue;
+            }
             let mask = grayscale_to_rgb_equal(metrics.width as u32, metrics.height as u32, &bitmap);
             // See note above: use layout-provided top-left directly.
             let ox = g.x;
             let oy = g.y;
-            out.push(RasterizedGlyph { offset: [ox, oy], mask });
+            out.push(RasterizedGlyph {
+                offset: [ox, oy],
+                mask,
+            });
         }
         out
     }
@@ -476,14 +591,22 @@ impl TextProvider for GrayscaleFontdueProvider {
             let ascent = lm.ascent;
             let descent = lm.descent.abs();
             let line_gap = lm.line_gap.max(0.0);
-            LineMetrics { ascent, descent, line_gap }
+            LineMetrics {
+                ascent,
+                descent,
+                line_gap,
+            }
         })
     }
 }
 
 /// Simplified line metrics
 #[derive(Clone, Copy, Debug, Default)]
-pub struct LineMetrics { pub ascent: f32, pub descent: f32, pub line_gap: f32 }
+pub struct LineMetrics {
+    pub ascent: f32,
+    pub descent: f32,
+    pub line_gap: f32,
+}
 
 /// Text provider backed by rune-text (HarfBuzz) for shaping and swash for rasterization.
 ///
@@ -502,7 +625,7 @@ impl RuneTextProvider {
 
     /// Construct from a reasonable system sans-serif font using `fontdb`.
     pub fn from_system_fonts(orientation: SubpixelOrientation) -> anyhow::Result<Self> {
-        use fontdb::{Database, Family, Query, Source, Style, Stretch, Weight};
+        use fontdb::{Database, Family, Query, Source, Stretch, Style, Weight};
 
         let mut db = Database::new();
         db.load_system_fonts();
@@ -565,21 +688,15 @@ impl RuneTextProvider {
     }
 }
 
-    impl TextProvider for RuneTextProvider {
-        fn rasterize_run(&self, run: &crate::scene::TextRun) -> Vec<RasterizedGlyph> {
+impl TextProvider for RuneTextProvider {
+    fn rasterize_run(&self, run: &crate::scene::TextRun) -> Vec<RasterizedGlyph> {
         use rune_text::shaping::TextShaper;
-        use swash::{FontRef, GlyphId};
-        use swash::scale::{ScaleContext, Render, Source, StrikeWith};
         use swash::scale::image::Content;
+        use swash::scale::{Render, ScaleContext, Source, StrikeWith};
+        use swash::{FontRef, GlyphId};
 
         let size = run.size.max(1.0);
-        let shaped = TextShaper::shape_ltr(
-            &run.text,
-            0..run.text.len(),
-            &self.font,
-            0,
-            size,
-        );
+        let shaped = TextShaper::shape_ltr(&run.text, 0..run.text.len(), &self.font, 0, size);
 
         // Build a swash scaler + renderer for this font/size that can rasterize
         // outlines into coverage masks. This mirrors the docs/rune-text
@@ -589,11 +706,7 @@ impl RuneTextProvider {
         let font_ref = FontRef::from_index(&font_bytes, 0)
             .expect("rune-text FontFace bytes should be a valid swash FontRef");
         let mut ctx = ScaleContext::new();
-        let mut scaler = ctx
-            .builder(font_ref)
-            .size(size)
-            .hint(true)
-            .build();
+        let mut scaler = ctx.builder(font_ref).size(size).hint(true).build();
         let renderer = Render::new(&[
             // Prefer scalable outlines; fall back to bitmaps when available.
             Source::Outline,
@@ -615,9 +728,7 @@ impl RuneTextProvider {
                 }
 
                 let mask = match img.content {
-                    Content::Mask => {
-                        grayscale_to_subpixel_rgb(w, h, &img.data, self.orientation)
-                    }
+                    Content::Mask => grayscale_to_subpixel_rgb(w, h, &img.data, self.orientation),
                     Content::SubpixelMask => SubpixelMask {
                         width: w,
                         height: h,
@@ -638,7 +749,10 @@ impl RuneTextProvider {
 
                 let ox = pos.x_offset + img.placement.left as f32;
                 let oy = pos.y_offset - img.placement.top as f32;
-                out.push(RasterizedGlyph { offset: [ox, oy], mask });
+                out.push(RasterizedGlyph {
+                    offset: [ox, oy],
+                    mask,
+                });
             }
         }
 
@@ -717,10 +831,13 @@ mod cosmic_provider {
             let mut out = Vec::new();
             let mut fs = self.font_system.lock().unwrap();
             // Shape into a temporary buffer first; drop borrow before rasterization
-            let mut buffer = Buffer::new(&mut fs, Metrics::new(run.size.max(1.0), (run.size * 1.2).max(run.size + 2.0)));
+            let mut buffer = Buffer::new(
+                &mut fs,
+                Metrics::new(run.size.max(1.0), (run.size * 1.2).max(run.size + 2.0)),
+            );
             Self::shape_once(&mut fs, &mut buffer, &run.text, run.size.max(1.0));
             drop(fs);
-            
+
             // Iterate runs and rasterize glyphs
             let runs = buffer.layout_runs().collect::<Vec<_>>();
             let mut fs = self.font_system.lock().unwrap();
@@ -734,14 +851,20 @@ mod cosmic_provider {
                     if let Some(img) = cache.get_image(&mut fs, pg.cache_key) {
                         let w = img.placement.width as u32;
                         let h = img.placement.height as u32;
-                        if w == 0 || h == 0 { continue; }
+                        if w == 0 || h == 0 {
+                            continue;
+                        }
                         match img.content {
                             cosmic_text::SwashContent::Mask => {
-                                let mask = grayscale_to_subpixel_rgb(w, h, &img.data, self.orientation);
+                                let mask =
+                                    grayscale_to_subpixel_rgb(w, h, &img.data, self.orientation);
                                 // Placement to top-left relative to baseline-origin
                                 let ox = pg.x as f32 + img.placement.left as f32;
                                 let oy = pg.y as f32 - img.placement.top as f32;
-                                out.push(RasterizedGlyph { offset: [ox, oy], mask });
+                                out.push(RasterizedGlyph {
+                                    offset: [ox, oy],
+                                    mask,
+                                });
                             }
                             cosmic_text::SwashContent::Color => {
                                 // Derive coverage from alpha channel
@@ -754,14 +877,21 @@ mod cosmic_provider {
                                 let mask = grayscale_to_subpixel_rgb(w, h, &gray, self.orientation);
                                 let ox = pg.x as f32 + img.placement.left as f32;
                                 let oy = pg.y as f32 - img.placement.top as f32;
-                                out.push(RasterizedGlyph { offset: [ox, oy], mask });
+                                out.push(RasterizedGlyph {
+                                    offset: [ox, oy],
+                                    mask,
+                                });
                             }
                             cosmic_text::SwashContent::SubpixelMask => {
                                 // Fallback: treat as grayscale for now (rare)
-                                let mask = grayscale_to_subpixel_rgb(w, h, &img.data, self.orientation);
+                                let mask =
+                                    grayscale_to_subpixel_rgb(w, h, &img.data, self.orientation);
                                 let ox = pg.x as f32 + img.placement.left as f32;
                                 let oy = pg.y as f32 - img.placement.top as f32;
-                                out.push(RasterizedGlyph { offset: [ox, oy], mask });
+                                out.push(RasterizedGlyph {
+                                    offset: [ox, oy],
+                                    mask,
+                                });
                             }
                         }
                     }
@@ -778,11 +908,16 @@ mod cosmic_provider {
             }
             let mut fs = self.font_system.lock().unwrap();
             // Shape a representative string and read layout line ascent/descent
-            let mut buffer = Buffer::new(&mut fs, Metrics::new(px.max(1.0), (px * 1.2).max(px + 2.0)));
+            let mut buffer =
+                Buffer::new(&mut fs, Metrics::new(px.max(1.0), (px * 1.2).max(px + 2.0)));
             // Borrow with fs to access line_layout API
             {
                 let mut b = buffer.borrow_with(&mut fs);
-                b.set_metrics_and_size(Metrics::new(px.max(1.0), (px * 1.2).max(px + 2.0)), None, None);
+                b.set_metrics_and_size(
+                    Metrics::new(px.max(1.0), (px * 1.2).max(px + 2.0)),
+                    None,
+                    None,
+                );
                 b.set_text("Ag", &Attrs::new(), Shaping::Advanced, None);
                 b.shape_until_scroll(true);
                 if let Some(lines) = b.line_layout(0) {
@@ -790,7 +925,11 @@ mod cosmic_provider {
                         let ascent = ll.max_ascent;
                         let descent = ll.max_descent;
                         let line_gap = (px * 1.2 - (ascent + descent)).max(0.0);
-                        let lm = LineMetrics { ascent, descent, line_gap };
+                        let lm = LineMetrics {
+                            ascent,
+                            descent,
+                            line_gap,
+                        };
                         self.metrics_cache.lock().unwrap().insert(key, lm);
                         return Some(lm);
                     }
@@ -800,7 +939,11 @@ mod cosmic_provider {
             let ascent = px * 0.8;
             let descent = px * 0.2;
             let line_gap = (px * 1.2 - (ascent + descent)).max(0.0);
-            let lm = LineMetrics { ascent, descent, line_gap };
+            let lm = LineMetrics {
+                ascent,
+                descent,
+                line_gap,
+            };
             self.metrics_cache.lock().unwrap().insert(key, lm);
             Some(lm)
         }
@@ -859,7 +1002,10 @@ mod freetype_provider {
             let mut out = Vec::new();
             // Shape with cosmic-text
             let mut fs = self.font_system.lock().unwrap();
-            let mut buffer = Buffer::new(&mut fs, Metrics::new(run.size.max(1.0), (run.size * 1.2).max(run.size + 2.0)));
+            let mut buffer = Buffer::new(
+                &mut fs,
+                Metrics::new(run.size.max(1.0), (run.size * 1.2).max(run.size + 2.0)),
+            );
             Self::shape_once(&mut fs, &mut buffer, &run.text, run.size.max(1.0));
             drop(fs);
 
@@ -905,26 +1051,46 @@ mod freetype_provider {
                                     for row in 0..height as usize {
                                         let row_start = row * pitch;
                                         let row_end = row_start + (width as usize * 3);
-                                        let src_row = &src[row_start .. row_end];
+                                        let src_row = &src[row_start..row_end];
                                         for x in 0..width as usize {
-                                            let r = src_row[3*x + 0];
-                                            let g = src_row[3*x + 1];
-                                            let b = src_row[3*x + 2];
+                                            let r = src_row[3 * x + 0];
+                                            let g = src_row[3 * x + 1];
+                                            let b = src_row[3 * x + 2];
                                             let i = (row * (width as usize) + x) * 4;
                                             match self.orientation {
-                                                SubpixelOrientation::RGB => { rgba[i+0] = r; rgba[i+1] = g; rgba[i+2] = b; }
-                                                SubpixelOrientation::BGR => { rgba[i+0] = b; rgba[i+1] = g; rgba[i+2] = r; }
+                                                SubpixelOrientation::RGB => {
+                                                    rgba[i + 0] = r;
+                                                    rgba[i + 1] = g;
+                                                    rgba[i + 2] = b;
+                                                }
+                                                SubpixelOrientation::BGR => {
+                                                    rgba[i + 0] = b;
+                                                    rgba[i + 1] = g;
+                                                    rgba[i + 2] = r;
+                                                }
                                             }
-                                            rgba[i+3] = 0;
+                                            rgba[i + 3] = 0;
                                         }
                                     }
                                     (width, height, ox, oy, rgba)
                                 }
-                            } else { (0, 0, 0.0, 0.0, Vec::new()) }
-                        } else { (0, 0, 0.0, 0.0, Vec::new()) }
+                            } else {
+                                (0, 0, 0.0, 0.0, Vec::new())
+                            }
+                        } else {
+                            (0, 0, 0.0, 0.0, Vec::new())
+                        }
                     };
                     if w > 0 && h > 0 {
-                        out.push(RasterizedGlyph { offset: [ox, oy], mask: SubpixelMask { width: w, height: h, format: MaskFormat::Rgba8, data } });
+                        out.push(RasterizedGlyph {
+                            offset: [ox, oy],
+                            mask: SubpixelMask {
+                                width: w,
+                                height: h,
+                                format: MaskFormat::Rgba8,
+                                data,
+                            },
+                        });
                     }
                 }
             }
@@ -933,7 +1099,9 @@ mod freetype_provider {
 
         fn line_metrics(&self, px: f32) -> Option<LineMetrics> {
             let key = px.max(1.0).round() as u32;
-            if let Some(m) = self.metrics_cache.lock().unwrap().get(&key).copied() { return Some(m); }
+            if let Some(m) = self.metrics_cache.lock().unwrap().get(&key).copied() {
+                return Some(m);
+            }
             // Use FreeType size metrics if available
             if let Ok(lib) = freetype::Library::init() {
                 if let Ok(face) = lib.new_memory_face(self.ft_bytes.clone(), 0) {
@@ -945,7 +1113,11 @@ mod freetype_provider {
                         let desc = ((-sm.descender) >> 6) as f32;
                         let height = (sm.height >> 6) as f32;
                         let line_gap = (height - (asc + desc)).max(0.0);
-                        let lm = LineMetrics { ascent: asc, descent: desc, line_gap };
+                        let lm = LineMetrics {
+                            ascent: asc,
+                            descent: desc,
+                            line_gap,
+                        };
                         self.metrics_cache.lock().unwrap().insert(key, lm);
                         return Some(lm);
                     }
@@ -955,7 +1127,11 @@ mod freetype_provider {
             let ascent = px * 0.8;
             let descent = px * 0.2;
             let line_gap = (px * 1.2 - (ascent + descent)).max(0.0);
-            let lm = LineMetrics { ascent, descent, line_gap };
+            let lm = LineMetrics {
+                ascent,
+                descent,
+                line_gap,
+            };
             self.metrics_cache.lock().unwrap().insert(key, lm);
             Some(lm)
         }

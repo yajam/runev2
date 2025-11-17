@@ -44,31 +44,78 @@ pub struct WindowCtx<'a> {
 }
 
 impl<'a> WindowCtx<'a> {
-    pub fn window(&self) -> &Window { self.window }
-    pub fn device(&self) -> &wgpu::Device { &*self.device }
-    pub fn queue(&self) -> &wgpu::Queue { &*self.queue }
-    pub fn device_arc(&self) -> std::sync::Arc<wgpu::Device> { self.device.clone() }
-    pub fn queue_arc(&self) -> std::sync::Arc<wgpu::Queue> { self.queue.clone() }
-    pub fn surface(&self) -> &wgpu::Surface<'static> { self.surface }
-    pub fn surface_config(&self) -> &wgpu::SurfaceConfiguration { self.config }
-    pub fn surface_config_mut(&mut self) -> &mut wgpu::SurfaceConfiguration { self.config }
-    pub fn size(&self) -> PhysicalSize<u32> { self.size }
-    pub fn scale_factor(&self) -> f64 { self.scale_factor }
-    pub fn mouse_pos(&self) -> [f32; 2] { self.last_cursor_pos }
-    pub fn request_redraw(&self) { self.window.request_redraw(); }
+    pub fn window(&self) -> &Window {
+        self.window
+    }
+    pub fn device(&self) -> &wgpu::Device {
+        &*self.device
+    }
+    pub fn queue(&self) -> &wgpu::Queue {
+        &*self.queue
+    }
+    pub fn device_arc(&self) -> std::sync::Arc<wgpu::Device> {
+        self.device.clone()
+    }
+    pub fn queue_arc(&self) -> std::sync::Arc<wgpu::Queue> {
+        self.queue.clone()
+    }
+    pub fn surface(&self) -> &wgpu::Surface<'static> {
+        self.surface
+    }
+    pub fn surface_config(&self) -> &wgpu::SurfaceConfiguration {
+        self.config
+    }
+    pub fn surface_config_mut(&mut self) -> &mut wgpu::SurfaceConfiguration {
+        self.config
+    }
+    pub fn size(&self) -> PhysicalSize<u32> {
+        self.size
+    }
+    pub fn scale_factor(&self) -> f64 {
+        self.scale_factor
+    }
+    pub fn mouse_pos(&self) -> [f32; 2] {
+        self.last_cursor_pos
+    }
+    pub fn request_redraw(&self) {
+        self.window.request_redraw();
+    }
     pub fn acquire_current_frame(&self) -> Result<wgpu::SurfaceTexture> {
         Ok(self.surface.get_current_texture()?)
     }
-    pub fn event_loop_target(&self) -> &EventLoopWindowTarget<()> { self.elwt }
+    pub fn event_loop_target(&self) -> &EventLoopWindowTarget<()> {
+        self.elwt
+    }
 }
 
 pub trait EventHandler {
-    fn init(&mut self, _ctx: &mut WindowCtx) -> Result<()> { Ok(()) }
-    fn on_resize(&mut self, _ctx: &mut WindowCtx, _size: PhysicalSize<u32>) -> Result<()> { Ok(()) }
-    fn on_mouse_move(&mut self, _ctx: &mut WindowCtx, _pos: [f32; 2]) -> Result<()> { Ok(()) }
-    fn on_mouse_input(&mut self, _ctx: &mut WindowCtx, _state: ElementState, _button: MouseButton) -> Result<()> { Ok(()) }
-    fn on_redraw(&mut self, _ctx: &mut WindowCtx) -> Result<()> { Ok(()) }
-    fn on_event(&mut self, _ctx: &mut WindowCtx, _event: crate::events::RuneWindowEvent) -> Result<()> { Ok(()) }
+    fn init(&mut self, _ctx: &mut WindowCtx) -> Result<()> {
+        Ok(())
+    }
+    fn on_resize(&mut self, _ctx: &mut WindowCtx, _size: PhysicalSize<u32>) -> Result<()> {
+        Ok(())
+    }
+    fn on_mouse_move(&mut self, _ctx: &mut WindowCtx, _pos: [f32; 2]) -> Result<()> {
+        Ok(())
+    }
+    fn on_mouse_input(
+        &mut self,
+        _ctx: &mut WindowCtx,
+        _state: ElementState,
+        _button: MouseButton,
+    ) -> Result<()> {
+        Ok(())
+    }
+    fn on_redraw(&mut self, _ctx: &mut WindowCtx) -> Result<()> {
+        Ok(())
+    }
+    fn on_event(
+        &mut self,
+        _ctx: &mut WindowCtx,
+        _event: crate::events::RuneWindowEvent,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 impl RuneWindow {
@@ -89,7 +136,8 @@ impl RuneWindow {
             compatible_surface: Some(&surface),
         }))
         .expect("No suitable GPU adapters found");
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None))?;
+        let (device, queue) =
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None))?;
 
         // Configure surface
         let size = window.inner_size();
@@ -97,7 +145,18 @@ impl RuneWindow {
         let config = make_surface_config(&adapter, &surface, size.width, size.height);
         surface.configure(&device, &config);
 
-        Ok(Self { event_loop, window, _instance: instance, surface, _adapter: adapter, device: std::sync::Arc::new(device), queue: std::sync::Arc::new(queue), config, size, scale_factor })
+        Ok(Self {
+            event_loop,
+            window,
+            _instance: instance,
+            surface,
+            _adapter: adapter,
+            device: std::sync::Arc::new(device),
+            queue: std::sync::Arc::new(queue),
+            config,
+            size,
+            scale_factor,
+        })
     }
 
     pub fn run(mut self, mut handler: impl EventHandler + 'static) -> Result<()> {
@@ -134,8 +193,21 @@ impl RuneWindow {
                                 self.surface.configure(&self.device, &self.config);
                             }
                             // synthesized event
-                            let mut ctx_for_event = WindowCtx { window: self.window, device: &self.device, queue: &self.queue, surface: &self.surface, config: &mut self.config, size: self.size, scale_factor: self.scale_factor, last_cursor_pos, elwt };
-                            let _ = handler.on_event(&mut ctx_for_event, crate::events::RuneWindowEvent::Resized(new_size));
+                            let mut ctx_for_event = WindowCtx {
+                                window: self.window,
+                                device: &self.device,
+                                queue: &self.queue,
+                                surface: &self.surface,
+                                config: &mut self.config,
+                                size: self.size,
+                                scale_factor: self.scale_factor,
+                                last_cursor_pos,
+                                elwt,
+                            };
+                            let _ = handler.on_event(
+                                &mut ctx_for_event,
+                                crate::events::RuneWindowEvent::Resized(new_size),
+                            );
                             let mut ctx = WindowCtx {
                                 window: self.window,
                                 device: &self.device,
@@ -152,14 +224,42 @@ impl RuneWindow {
                         WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                             self.scale_factor = scale_factor;
                             // synthesized event
-                            let mut ctx = WindowCtx { window: self.window, device: &self.device, queue: &self.queue, surface: &self.surface, config: &mut self.config, size: self.size, scale_factor: self.scale_factor, last_cursor_pos, elwt };
-                            let _ = handler.on_event(&mut ctx, crate::events::RuneWindowEvent::ScaleFactorChanged(scale_factor));
+                            let mut ctx = WindowCtx {
+                                window: self.window,
+                                device: &self.device,
+                                queue: &self.queue,
+                                surface: &self.surface,
+                                config: &mut self.config,
+                                size: self.size,
+                                scale_factor: self.scale_factor,
+                                last_cursor_pos,
+                                elwt,
+                            };
+                            let _ = handler.on_event(
+                                &mut ctx,
+                                crate::events::RuneWindowEvent::ScaleFactorChanged(scale_factor),
+                            );
                         }
                         WindowEvent::CursorMoved { position, .. } => {
                             last_cursor_pos = [position.x as f32, position.y as f32];
                             // synthesized event
-                            let mut ctx_for_event = WindowCtx { window: self.window, device: &self.device, queue: &self.queue, surface: &self.surface, config: &mut self.config, size: self.size, scale_factor: self.scale_factor, last_cursor_pos, elwt };
-                            let _ = handler.on_event(&mut ctx_for_event, crate::events::RuneWindowEvent::CursorMoved { position: last_cursor_pos });
+                            let mut ctx_for_event = WindowCtx {
+                                window: self.window,
+                                device: &self.device,
+                                queue: &self.queue,
+                                surface: &self.surface,
+                                config: &mut self.config,
+                                size: self.size,
+                                scale_factor: self.scale_factor,
+                                last_cursor_pos,
+                                elwt,
+                            };
+                            let _ = handler.on_event(
+                                &mut ctx_for_event,
+                                crate::events::RuneWindowEvent::CursorMoved {
+                                    position: last_cursor_pos,
+                                },
+                            );
                             let mut ctx = WindowCtx {
                                 window: self.window,
                                 device: &self.device,
@@ -175,9 +275,27 @@ impl RuneWindow {
                         }
                         WindowEvent::MouseInput { state, button, .. } => {
                             // synthesized event
-                            let mut ctx_for_event = WindowCtx { window: self.window, device: &self.device, queue: &self.queue, surface: &self.surface, config: &mut self.config, size: self.size, scale_factor: self.scale_factor, last_cursor_pos, elwt };
-                            let _ = handler.on_event(&mut ctx_for_event,
-                                match state { ElementState::Pressed => crate::events::RuneWindowEvent::MousePressed(button), ElementState::Released => crate::events::RuneWindowEvent::MouseReleased(button) }
+                            let mut ctx_for_event = WindowCtx {
+                                window: self.window,
+                                device: &self.device,
+                                queue: &self.queue,
+                                surface: &self.surface,
+                                config: &mut self.config,
+                                size: self.size,
+                                scale_factor: self.scale_factor,
+                                last_cursor_pos,
+                                elwt,
+                            };
+                            let _ = handler.on_event(
+                                &mut ctx_for_event,
+                                match state {
+                                    ElementState::Pressed => {
+                                        crate::events::RuneWindowEvent::MousePressed(button)
+                                    }
+                                    ElementState::Released => {
+                                        crate::events::RuneWindowEvent::MouseReleased(button)
+                                    }
+                                },
                             );
                             let mut ctx = WindowCtx {
                                 window: self.window,
@@ -200,10 +318,26 @@ impl RuneWindow {
                     // request_redraw during init may be deferred.
                     self.window.request_redraw();
                 }
-                Event::WindowEvent { window_id, event: WindowEvent::RedrawRequested } if window_id == self.window.id() => {
+                Event::WindowEvent {
+                    window_id,
+                    event: WindowEvent::RedrawRequested,
+                } if window_id == self.window.id() => {
                     // synthesized event
-                    let mut ctx_for_event = WindowCtx { window: self.window, device: &self.device, queue: &self.queue, surface: &self.surface, config: &mut self.config, size: self.size, scale_factor: self.scale_factor, last_cursor_pos, elwt };
-                    let _ = handler.on_event(&mut ctx_for_event, crate::events::RuneWindowEvent::RedrawRequested);
+                    let mut ctx_for_event = WindowCtx {
+                        window: self.window,
+                        device: &self.device,
+                        queue: &self.queue,
+                        surface: &self.surface,
+                        config: &mut self.config,
+                        size: self.size,
+                        scale_factor: self.scale_factor,
+                        last_cursor_pos,
+                        elwt,
+                    };
+                    let _ = handler.on_event(
+                        &mut ctx_for_event,
+                        crate::events::RuneWindowEvent::RedrawRequested,
+                    );
                     let mut ctx = WindowCtx {
                         window: self.window,
                         device: &self.device,
@@ -228,5 +362,7 @@ impl RuneWindow {
         })?)
     }
 
-    pub fn window(&self) -> &Window { self.window }
+    pub fn window(&self) -> &Window {
+        self.window
+    }
 }

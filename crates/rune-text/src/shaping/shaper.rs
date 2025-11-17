@@ -1,13 +1,8 @@
 use core::ops::Range;
 
 use harfrust::{
-    Direction as HbDirection,
-    FontRef as HbFontRef,
-    Script as HbScript,
-    ShaperData,
-    ShaperInstance,
-    Tag as HbTag,
-    UnicodeBuffer as HbUnicodeBuffer,
+    Direction as HbDirection, FontRef as HbFontRef, Script as HbScript, ShaperData, ShaperInstance,
+    Tag as HbTag, UnicodeBuffer as HbUnicodeBuffer,
 };
 use swash::GlyphId;
 
@@ -35,12 +30,12 @@ impl TextShaper {
     ) -> ShapedRun {
         // Build a harfrust FontRef from the font bytes.
         let font_data = font.as_bytes();
-        let font_ref = HbFontRef::from_index(&font_data, 0)
-            .expect("valid font data for harfrust");
+        let font_ref = HbFontRef::from_index(&font_data, 0).expect("valid font data for harfrust");
 
         // Shaper configuration with default (no variations) instance.
         let data = ShaperData::new(&font_ref);
-        let instance = ShaperInstance::from_variations(&font_ref, core::iter::empty::<harfrust::Variation>());
+        let instance =
+            ShaperInstance::from_variations(&font_ref, core::iter::empty::<harfrust::Variation>());
         let shaper = data
             .shaper(&font_ref)
             .instance(Some(&instance))

@@ -1,14 +1,20 @@
-use engine_core::{DisplayList, Painter, PassManager, Viewport};
 use engine_core::{Brush, ColorLinPremul, Rect};
+use engine_core::{DisplayList, Painter, PassManager, Viewport};
 
 use super::{Scene, SceneKind};
 
 pub struct DefaultScene;
 
-impl Default for DefaultScene { fn default() -> Self { Self } }
+impl Default for DefaultScene {
+    fn default() -> Self {
+        Self
+    }
+}
 
 impl Scene for DefaultScene {
-    fn kind(&self) -> SceneKind { SceneKind::Geometry }
+    fn kind(&self) -> SceneKind {
+        SceneKind::Geometry
+    }
 
     fn init_display_list(&mut self, viewport: Viewport) -> Option<DisplayList> {
         let mut painter = Painter::begin_frame(viewport);
@@ -24,13 +30,23 @@ impl Scene for DefaultScene {
         );
         // Solid rect
         painter.rect(
-            Rect { x: 60.0, y: 60.0, w: 300.0, h: 200.0 },
+            Rect {
+                x: 60.0,
+                y: 60.0,
+                w: 300.0,
+                h: 200.0,
+            },
             Brush::Solid(ColorLinPremul::from_srgba_u8([82, 167, 232, 255])),
             0,
         );
         // Linear gradient rect (left→right), positioned lower to avoid overlaps
         painter.rect(
-            Rect { x: 380.0, y: 600.0, w: 380.0, h: 180.0 },
+            Rect {
+                x: 380.0,
+                y: 600.0,
+                w: 380.0,
+                h: 180.0,
+            },
             Brush::LinearGradient {
                 start: [0.0, 0.0],
                 end: [1.0, 0.0],
@@ -45,8 +61,18 @@ impl Scene for DefaultScene {
         // Rounded rect
         painter.rounded_rect(
             engine_core::RoundedRect {
-                rect: Rect { x: 420.0, y: 80.0, w: 300.0, h: 180.0 },
-                radii: engine_core::RoundedRadii { tl: 24.0, tr: 32.0, br: 24.0, bl: 24.0 },
+                rect: Rect {
+                    x: 420.0,
+                    y: 80.0,
+                    w: 300.0,
+                    h: 180.0,
+                },
+                radii: engine_core::RoundedRadii {
+                    tl: 24.0,
+                    tr: 32.0,
+                    br: 24.0,
+                    bl: 24.0,
+                },
             },
             Brush::Solid(ColorLinPremul::from_srgba_u8([238, 154, 106, 255])),
             0,

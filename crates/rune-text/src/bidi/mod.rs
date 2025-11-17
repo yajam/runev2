@@ -6,10 +6,9 @@
 //! - Mixed-direction runs and bracket mirroring helpers
 
 pub mod levels;
-pub mod reorder;
 pub mod mirror;
+pub mod reorder;
 
 pub use levels::{BaseDirection, ParagraphBidi, ParagraphDirection};
-pub use reorder::{BidiRun, reorder_line, visual_runs};
 pub use mirror::mirrored_bracket;
-
+pub use reorder::{BidiRun, reorder_line, visual_runs};

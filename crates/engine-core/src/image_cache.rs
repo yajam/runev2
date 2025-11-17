@@ -99,37 +99,41 @@ impl ImageCache {
     /// Check if an image is in the cache and return it if ready.
     /// Returns None if loading or failed, Some if ready.
     pub fn get(&mut self, path: &Path) -> Option<(Arc<wgpu::Texture>, u32, u32)> {
-        let key = CacheKey { path: path.to_path_buf() };
-        
+        let key = CacheKey {
+            path: path.to_path_buf(),
+        };
+
         // Clone the data we need before touching
         let result = if let Some(entry) = self.map.get(&key) {
             match entry {
-                CacheEntry::Ready { tex, width, height, .. } => {
-                    Some((tex.clone(), *width, *height))
-                }
+                CacheEntry::Ready {
+                    tex, width, height, ..
+                } => Some((tex.clone(), *width, *height)),
                 CacheEntry::Loading | CacheEntry::Failed => None,
             }
         } else {
             None
         };
-        
+
         if result.is_some() {
             self.touch(&key);
         }
-        
+
         result
     }
 
     /// Start loading an image if not already in cache.
     /// Marks it as Loading immediately, actual load happens synchronously.
     pub fn start_load(&mut self, path: &Path) {
-        let key = CacheKey { path: path.to_path_buf() };
-        
+        let key = CacheKey {
+            path: path.to_path_buf(),
+        };
+
         // If already in cache (any state), don't restart
         if self.map.contains_key(&key) {
             return;
         }
-        
+
         // Mark as loading
         self.map.insert(key, CacheEntry::Loading);
     }
@@ -141,14 +145,16 @@ impl ImageCache {
         path: &Path,
         queue: &wgpu::Queue,
     ) -> Option<(Arc<wgpu::Texture>, u32, u32)> {
-        let key = CacheKey { path: path.to_path_buf() };
+        let key = CacheKey {
+            path: path.to_path_buf(),
+        };
 
         // Check cache first - clone data before touching
         let cached_result = if let Some(entry) = self.map.get(&key) {
             match entry {
-                CacheEntry::Ready { tex, width, height, .. } => {
-                    Some((tex.clone(), *width, *height))
-                }
+                CacheEntry::Ready {
+                    tex, width, height, ..
+                } => Some((tex.clone(), *width, *height)),
                 CacheEntry::Loading => {
                     // Still loading, proceed to load now
                     None
@@ -158,7 +164,7 @@ impl ImageCache {
         } else {
             None
         };
-        
+
         if let Some(result) = cached_result {
             self.touch(&key);
             return Some(result);
@@ -233,21 +239,27 @@ impl ImageCache {
 
     /// Check if an image is currently loading
     pub fn is_loading(&self, path: &Path) -> bool {
-        let key = CacheKey { path: path.to_path_buf() };
+        let key = CacheKey {
+            path: path.to_path_buf(),
+        };
         matches!(self.map.get(&key), Some(CacheEntry::Loading))
     }
 
     /// Check if an image is ready
     pub fn is_ready(&self, path: &Path) -> bool {
-        let key = CacheKey { path: path.to_path_buf() };
+        let key = CacheKey {
+            path: path.to_path_buf(),
+        };
         matches!(self.map.get(&key), Some(CacheEntry::Ready { .. }))
     }
 
     /// Store a pre-loaded texture in the cache (used for async loading)
     pub fn store_ready(&mut self, path: &Path, tex: Arc<wgpu::Texture>, width: u32, height: u32) {
-        let key = CacheKey { path: path.to_path_buf() };
+        let key = CacheKey {
+            path: path.to_path_buf(),
+        };
         let bytes = (width * height * 4) as usize;
-        
+
         let entry = CacheEntry::Ready {
             tex,
             width,
@@ -255,7 +267,7 @@ impl ImageCache {
             last_tick: self.current_tick,
             bytes,
         };
-        
+
         self.insert(key, entry);
     }
 }

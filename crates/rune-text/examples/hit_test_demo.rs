@@ -1,5 +1,5 @@
-use rune_text::{FontCache, HitTestPolicy, Point};
 use rune_text::layout::TextLayout;
+use rune_text::{FontCache, HitTestPolicy, Point};
 
 fn main() {
     // Load a font
@@ -34,14 +34,14 @@ fn main() {
     println!("--- Hit Testing Results ---");
     for (x, y, description) in test_points {
         let point = Point::new(x, y);
-        
+
         if let Some(result) = layout.hit_test(point, HitTestPolicy::Clamp) {
             let char_at = if result.byte_offset < text.len() {
                 text[result.byte_offset..].chars().next().unwrap_or('∅')
             } else {
                 '∅'
             };
-            
+
             println!("\nPoint ({:.1}, {:.1}) - {}:", x, y, description);
             println!("  Byte offset: {}", result.byte_offset);
             println!("  Line index: {}", result.line_index);
@@ -94,7 +94,10 @@ fn main() {
             println!("Original offset: {}", test_offset);
             println!("Position: ({:.2}, {:.2})", pos.x, pos.y);
             println!("Hit test result: {}", result.byte_offset);
-            println!("Round-trip successful: {}", result.byte_offset == test_offset);
+            println!(
+                "Round-trip successful: {}",
+                result.byte_offset == test_offset
+            );
         }
     }
 }

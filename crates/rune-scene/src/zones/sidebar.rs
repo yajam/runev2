@@ -1,5 +1,5 @@
-use engine_core::ColorLinPremul;
 use super::common::ZoneStyle;
+use engine_core::ColorLinPremul;
 
 /// Sidebar configuration and state
 pub struct Sidebar {

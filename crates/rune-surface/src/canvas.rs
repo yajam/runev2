@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
 use engine_core::{
-    Viewport,
-    Painter,
-    Brush, ColorLinPremul, Path, Rect, Stroke, TextRun, Transform2D, RoundedRect,
-    RasterizedGlyph, TextProvider,
+    Brush, ColorLinPremul, Painter, Path, RasterizedGlyph, Rect, RoundedRect, Stroke, TextProvider,
+    TextRun, Transform2D, Viewport,
 };
 
 /// How an image should fit within its bounds.
@@ -31,8 +29,22 @@ pub struct Canvas {
     pub(crate) clear_color: Option<ColorLinPremul>,
     pub(crate) text_provider: Option<Arc<dyn TextProvider + Send + Sync>>, // optional high-level text shaper
     pub(crate) glyph_draws: Vec<([f32; 2], RasterizedGlyph, ColorLinPremul)>, // low-level glyph masks
-    pub(crate) svg_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], Option<engine_core::SvgStyle>, i32, Transform2D)>, // (path, origin, max_size, style, z, transform)
-    pub(crate) image_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], ImageFitMode, i32, Transform2D)>, // (path, origin, size, fit, z, transform)
+    pub(crate) svg_draws: Vec<(
+        std::path::PathBuf,
+        [f32; 2],
+        [f32; 2],
+        Option<engine_core::SvgStyle>,
+        i32,
+        Transform2D,
+    )>, // (path, origin, max_size, style, z, transform)
+    pub(crate) image_draws: Vec<(
+        std::path::PathBuf,
+        [f32; 2],
+        [f32; 2],
+        ImageFitMode,
+        i32,
+        Transform2D,
+    )>, // (path, origin, size, fit, z, transform)
     pub(crate) dpi_scale: f32, // DPI scale factor for text rendering
     // Effective clip stack in device coordinates for direct text rendering.
     // Each entry is the intersection of all active clips at that depth.
@@ -40,10 +52,14 @@ pub struct Canvas {
 }
 
 impl Canvas {
-    pub fn viewport(&self) -> Viewport { self.viewport }
+    pub fn viewport(&self) -> Viewport {
+        self.viewport
+    }
 
     /// Set the frame clear/background color (premultiplied linear RGBA).
-    pub fn clear(&mut self, color: ColorLinPremul) { self.clear_color = Some(color); }
+    pub fn clear(&mut self, color: ColorLinPremul) {
+        self.clear_color = Some(color);
+    }
 
     /// Fill a rectangle with a brush.
     pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, brush: Brush, z: i32) {
@@ -77,7 +93,8 @@ impl Canvas {
 
     /// Stroke a rounded rectangle.
     pub fn stroke_rounded_rect(&mut self, rrect: RoundedRect, width: f32, brush: Brush, z: i32) {
-        self.painter.stroke_rounded_rect(rrect, Stroke { width }, brush, z);
+        self.painter
+            .stroke_rounded_rect(rrect, Stroke { width }, brush, z);
     }
 
     /// Draw text using direct rasterization (recommended).
@@ -111,9 +128,16 @@ impl Canvas {
     ///     10,  // z-index
     /// );
     /// ```
-    pub fn draw_text_run(&mut self, origin: [f32; 2], text: String, size_px: f32, color: ColorLinPremul, z: i32) {
+    pub fn draw_text_run(
+        &mut self,
+        origin: [f32; 2],
+        text: String,
+        size_px: f32,
+        color: ColorLinPremul,
+        z: i32,
+    ) {
         let _ = z; // z-ordering not used for direct glyph rendering
-        
+
         // If we have a provider, rasterize immediately (simple, reliable)
         if let Some(ref provider) = self.text_provider {
             // Apply current transform to origin (handles zone positioning)
@@ -123,7 +147,7 @@ impl Canvas {
                 a * origin[0] + c * origin[1] + e,
                 b * origin[0] + d * origin[1] + f,
             ];
-            
+
             // Apply DPI scaling to both size and position
             let scaled_size = size_px * self.dpi_scale;
             let scaled_origin = [
@@ -133,7 +157,7 @@ impl Canvas {
 
             // Current effective clip rect in device coordinates, if any.
             let current_clip = self.clip_stack.last().cloned().unwrap_or(None);
-            
+
             let run = TextRun {
                 text,
                 pos: [0.0, 0.0],
@@ -145,7 +169,10 @@ impl Canvas {
             // re-rasterizing identical text every frame.
             let glyphs = engine_core::rasterize_run_cached(provider.as_ref(), &run);
             for g in glyphs.iter() {
-                let glyph_origin = [scaled_origin[0] + g.offset[0], scaled_origin[1] + g.offset[1]];
+                let glyph_origin = [
+                    scaled_origin[0] + g.offset[0],
+                    scaled_origin[1] + g.offset[1],
+                ];
 
                 if let Some(clip) = current_clip {
                     // Clip glyph to the current rect in device coordinates.
@@ -164,13 +191,28 @@ impl Canvas {
             }
         } else {
             // Fallback: use display list path (complex, but kept for compatibility)
-            self.painter.text(TextRun { text, pos: origin, size: size_px, color }, z);
+            self.painter.text(
+                TextRun {
+                    text,
+                    pos: origin,
+                    size: size_px,
+                    color,
+                },
+                z,
+            );
         }
     }
 
     /// Draw text directly by rasterizing immediately (simpler, bypasses display list).
     /// This is the recommended approach - it's simpler and more reliable than draw_text_run.
-    pub fn draw_text_direct(&mut self, origin: [f32; 2], text: &str, size_px: f32, color: ColorLinPremul, provider: &dyn TextProvider) {
+    pub fn draw_text_direct(
+        &mut self,
+        origin: [f32; 2],
+        text: &str,
+        size_px: f32,
+        color: ColorLinPremul,
+        provider: &dyn TextProvider,
+    ) {
         // Apply current transform to origin (handles zone positioning)
         let transform = self.painter.current_transform();
         let [a, b, c, d, e, f] = transform.m;
@@ -178,7 +220,7 @@ impl Canvas {
             a * origin[0] + c * origin[1] + e,
             b * origin[0] + d * origin[1] + f,
         ];
-        
+
         // Apply DPI scaling to both size and position
         let scaled_size = size_px * self.dpi_scale;
         let scaled_origin = [
@@ -200,7 +242,10 @@ impl Canvas {
         // re-rasterizing identical text every frame.
         let glyphs = engine_core::rasterize_run_cached(provider, &run);
         for g in glyphs.iter() {
-            let glyph_origin = [scaled_origin[0] + g.offset[0], scaled_origin[1] + g.offset[1]];
+            let glyph_origin = [
+                scaled_origin[0] + g.offset[0],
+                scaled_origin[1] + g.offset[1],
+            ];
 
             if let Some(clip) = current_clip {
                 if let Some((clipped_mask, clipped_origin)) =
@@ -224,7 +269,13 @@ impl Canvas {
     }
 
     /// Draw pre-rasterized glyph masks at the given origin tinted with the color.
-    pub fn draw_text_glyphs(&mut self, origin: [f32; 2], glyphs: &[RasterizedGlyph], color: ColorLinPremul, z: i32) {
+    pub fn draw_text_glyphs(
+        &mut self,
+        origin: [f32; 2],
+        glyphs: &[RasterizedGlyph],
+        color: ColorLinPremul,
+        z: i32,
+    ) {
         let _ = z; // z currently not used for low-level masks; they are composited after solids
         for g in glyphs.iter().cloned() {
             self.glyph_draws.push((origin, g, color));
@@ -234,23 +285,46 @@ impl Canvas {
     /// Queue an SVG to be rasterized and drawn at origin, scaled to fit within max_size.
     /// Captures the current transform from the painter's transform stack.
     /// Optional style parameter allows overriding fill, stroke, and stroke-width.
-    pub fn draw_svg<P: Into<std::path::PathBuf>>(&mut self, path: P, origin: [f32; 2], max_size: [f32; 2], z: i32) {
+    pub fn draw_svg<P: Into<std::path::PathBuf>>(
+        &mut self,
+        path: P,
+        origin: [f32; 2],
+        max_size: [f32; 2],
+        z: i32,
+    ) {
         let transform = self.painter.current_transform();
-        self.svg_draws.push((path.into(), origin, max_size, None, z, transform));
+        self.svg_draws
+            .push((path.into(), origin, max_size, None, z, transform));
     }
 
     /// Queue an SVG with style overrides to be rasterized and drawn.
-    pub fn draw_svg_styled<P: Into<std::path::PathBuf>>(&mut self, path: P, origin: [f32; 2], max_size: [f32; 2], style: engine_core::SvgStyle, z: i32) {
+    pub fn draw_svg_styled<P: Into<std::path::PathBuf>>(
+        &mut self,
+        path: P,
+        origin: [f32; 2],
+        max_size: [f32; 2],
+        style: engine_core::SvgStyle,
+        z: i32,
+    ) {
         let transform = self.painter.current_transform();
-        self.svg_draws.push((path.into(), origin, max_size, Some(style), z, transform));
+        self.svg_draws
+            .push((path.into(), origin, max_size, Some(style), z, transform));
     }
 
     /// Queue a raster image (PNG/JPEG/GIF/WebP) to be drawn at origin with the given size.
     /// The fit parameter controls how the image is scaled within the size bounds.
     /// Captures the current transform from the painter's transform stack.
-    pub fn draw_image<P: Into<std::path::PathBuf>>(&mut self, path: P, origin: [f32; 2], size: [f32; 2], fit: ImageFitMode, z: i32) {
+    pub fn draw_image<P: Into<std::path::PathBuf>>(
+        &mut self,
+        path: P,
+        origin: [f32; 2],
+        size: [f32; 2],
+        fit: ImageFitMode,
+        z: i32,
+    ) {
         let transform = self.painter.current_transform();
-        self.image_draws.push((path.into(), origin, size, fit, z, transform));
+        self.image_draws
+            .push((path.into(), origin, size, fit, z, transform));
     }
 
     // Expose some painter helpers for advanced users
@@ -297,14 +371,18 @@ impl Canvas {
             self.clip_stack.pop();
         }
     }
-    pub fn push_transform(&mut self, t: Transform2D) { self.painter.push_transform(t); }
-    pub fn pop_transform(&mut self) { self.painter.pop_transform(); }
-    
+    pub fn push_transform(&mut self, t: Transform2D) {
+        self.painter.push_transform(t);
+    }
+    pub fn pop_transform(&mut self) {
+        self.painter.pop_transform();
+    }
+
     /// Add a hit-only region (invisible, used for interaction detection)
     pub fn hit_region_rect(&mut self, id: u32, rect: Rect, z: i32) {
         self.painter.hit_region_rect(id, rect, z);
     }
-    
+
     /// Get a reference to the display list for hit testing
     pub fn display_list(&self) -> &engine_core::DisplayList {
         self.painter.display_list()
@@ -326,7 +404,12 @@ fn intersect_rect(a: Rect, b: Rect) -> Option<Rect> {
     if x1 <= x0 || y1 <= y0 {
         None
     } else {
-        Some(Rect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 })
+        Some(Rect {
+            x: x0,
+            y: y0,
+            w: x1 - x0,
+            h: y1 - y0,
+        })
     }
 }
 

@@ -1,22 +1,34 @@
 use super::{Scene, SceneKind};
-use engine_core::{DisplayList, Painter, Viewport, Brush, ColorLinPremul, Rect, Transform2D};
+use engine_core::{Brush, ColorLinPremul, DisplayList, Painter, Rect, Transform2D, Viewport};
 
 pub struct SvgGeomScene {
     paths: Vec<std::path::PathBuf>,
 }
 
-impl Default for SvgGeomScene { fn default() -> Self { Self { paths: Vec::new() } } }
+impl Default for SvgGeomScene {
+    fn default() -> Self {
+        Self { paths: Vec::new() }
+    }
+}
 
 impl SvgGeomScene {
     fn find_svg_paths() -> Vec<std::path::PathBuf> {
-        let mut dirs = vec![std::path::PathBuf::from("images"), std::path::PathBuf::from("crates/demo-app/images")];
+        let mut dirs = vec![
+            std::path::PathBuf::from("images"),
+            std::path::PathBuf::from("crates/demo-app/images"),
+        ];
         let mut out = Vec::new();
         for dir in dirs.drain(..) {
             if let Ok(read) = std::fs::read_dir(&dir) {
                 for ent in read.flatten() {
                     let p = ent.path();
-                    let ext = p.extension().and_then(|e| e.to_str()).map(|s| s.to_ascii_lowercase());
-                    if matches!(ext.as_deref(), Some("svg")) { out.push(p); }
+                    let ext = p
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .map(|s| s.to_ascii_lowercase());
+                    if matches!(ext.as_deref(), Some("svg")) {
+                        out.push(p);
+                    }
                 }
             }
         }
@@ -25,19 +37,34 @@ impl SvgGeomScene {
 }
 
 impl Scene for SvgGeomScene {
-    fn kind(&self) -> SceneKind { SceneKind::Geometry }
+    fn kind(&self) -> SceneKind {
+        SceneKind::Geometry
+    }
 
     fn init_display_list(&mut self, viewport: Viewport) -> Option<DisplayList> {
         // Discover SVGs once
-        if self.paths.is_empty() { self.paths = Self::find_svg_paths(); }
+        if self.paths.is_empty() {
+            self.paths = Self::find_svg_paths();
+        }
 
         let mut p = Painter::begin_frame(viewport);
 
         // Clear background with a subtle dark tone
         let bg = ColorLinPremul::from_srgba(18, 22, 30, 1.0);
-        p.rect(Rect { x: 0.0, y: 0.0, w: viewport.width as f32, h: viewport.height as f32 }, Brush::Solid(bg), -1000);
+        p.rect(
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: viewport.width as f32,
+                h: viewport.height as f32,
+            },
+            Brush::Solid(bg),
+            -1000,
+        );
 
-        if self.paths.is_empty() { return Some(p.finish()); }
+        if self.paths.is_empty() {
+            return Some(p.finish());
+        }
 
         // Grid layout similar to images scene
         let n = self.paths.len();
@@ -66,13 +93,23 @@ impl Scene for SvgGeomScene {
 
             // Draw a faint background cell
             let cell_bg = ColorLinPremul::from_srgba(255, 255, 255, 0.03);
-            p.rect(Rect { x: x0, y: y0, w: cell_w, h: cell_h }, Brush::Solid(cell_bg), -10);
+            p.rect(
+                Rect {
+                    x: x0,
+                    y: y0,
+                    w: cell_w,
+                    h: cell_h,
+                },
+                Brush::Solid(cell_bg),
+                -10,
+            );
 
             // Apply translate+scale transform and import geometry
-            let t = Transform2D { m: [scale, 0.0, 0.0, scale, ox, oy] };
+            let t = Transform2D {
+                m: [scale, 0.0, 0.0, scale, ox, oy],
+            };
             p.push_transform(t);
-            if let Some(_stats) = engine_core::import_svg_geometry_to_painter(&mut p, path) {
-            }
+            if let Some(_stats) = engine_core::import_svg_geometry_to_painter(&mut p, path) {}
             p.pop_transform();
         }
 
@@ -87,5 +124,6 @@ impl Scene for SvgGeomScene {
         _queue: &wgpu::Queue,
         _width: u32,
         _height: u32,
-    ) { }
+    ) {
+    }
 }

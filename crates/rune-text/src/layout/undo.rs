@@ -56,18 +56,30 @@ impl TextOperation {
     /// Get the selection state after this operation.
     pub fn selection_after(&self) -> &Selection {
         match self {
-            TextOperation::Insert { selection_after, .. } => selection_after,
-            TextOperation::Delete { selection_after, .. } => selection_after,
-            TextOperation::Replace { selection_after, .. } => selection_after,
+            TextOperation::Insert {
+                selection_after, ..
+            } => selection_after,
+            TextOperation::Delete {
+                selection_after, ..
+            } => selection_after,
+            TextOperation::Replace {
+                selection_after, ..
+            } => selection_after,
         }
     }
 
     /// Get the selection state before this operation.
     pub fn selection_before(&self) -> &Selection {
         match self {
-            TextOperation::Insert { selection_before, .. } => selection_before,
-            TextOperation::Delete { selection_before, .. } => selection_before,
-            TextOperation::Replace { selection_before, .. } => selection_before,
+            TextOperation::Insert {
+                selection_before, ..
+            } => selection_before,
+            TextOperation::Delete {
+                selection_before, ..
+            } => selection_before,
+            TextOperation::Replace {
+                selection_before, ..
+            } => selection_before,
         }
     }
 
@@ -79,16 +91,28 @@ impl TextOperation {
         match (self, other) {
             // Group consecutive insertions at the same position
             (
-                TextOperation::Insert { offset: offset1, text: text1, .. },
-                TextOperation::Insert { offset: offset2, .. },
+                TextOperation::Insert {
+                    offset: offset1,
+                    text: text1,
+                    ..
+                },
+                TextOperation::Insert {
+                    offset: offset2, ..
+                },
             ) => {
                 // Check if the second insertion is right after the first
                 *offset2 == *offset1 + text1.len()
             }
             // Group consecutive deletions (backspace)
             (
-                TextOperation::Delete { offset: offset1, .. },
-                TextOperation::Delete { offset: offset2, text: text2, .. },
+                TextOperation::Delete {
+                    offset: offset1, ..
+                },
+                TextOperation::Delete {
+                    offset: offset2,
+                    text: text2,
+                    ..
+                },
             ) => {
                 // Check if deleting backwards consecutively
                 *offset2 + text2.len() == *offset1
@@ -352,18 +376,18 @@ mod tests {
     #[test]
     fn test_push_and_undo() {
         let mut stack = UndoStack::new();
-        
+
         let op = TextOperation::Insert {
             offset: 0,
             text: "Hello".to_string(),
             selection_before: Selection::collapsed(0),
             selection_after: Selection::collapsed(5),
         };
-        
+
         stack.push(op.clone());
         assert!(stack.can_undo());
         assert!(!stack.can_redo());
-        
+
         let undone = stack.undo().unwrap();
         assert_eq!(undone.len(), 1);
         assert_eq!(undone[0], op);
@@ -374,17 +398,17 @@ mod tests {
     #[test]
     fn test_redo() {
         let mut stack = UndoStack::new();
-        
+
         let op = TextOperation::Insert {
             offset: 0,
             text: "Hello".to_string(),
             selection_before: Selection::collapsed(0),
             selection_after: Selection::collapsed(5),
         };
-        
+
         stack.push(op.clone());
         stack.undo();
-        
+
         let redone = stack.redo().unwrap();
         assert_eq!(redone.len(), 1);
         assert_eq!(redone[0], op);
@@ -395,25 +419,25 @@ mod tests {
     #[test]
     fn test_push_clears_redo() {
         let mut stack = UndoStack::new();
-        
+
         let op1 = TextOperation::Insert {
             offset: 0,
             text: "Hello".to_string(),
             selection_before: Selection::collapsed(0),
             selection_after: Selection::collapsed(5),
         };
-        
+
         let op2 = TextOperation::Insert {
             offset: 5,
             text: " World".to_string(),
             selection_before: Selection::collapsed(5),
             selection_after: Selection::collapsed(11),
         };
-        
+
         stack.push(op1);
         stack.undo();
         assert!(stack.can_redo());
-        
+
         stack.push(op2);
         assert!(!stack.can_redo());
     }
@@ -421,7 +445,7 @@ mod tests {
     #[test]
     fn test_operation_grouping() {
         let mut stack = UndoStack::new();
-        
+
         // Insert consecutive characters
         stack.push(TextOperation::Insert {
             offset: 0,
@@ -429,27 +453,27 @@ mod tests {
             selection_before: Selection::collapsed(0),
             selection_after: Selection::collapsed(1),
         });
-        
+
         stack.push(TextOperation::Insert {
             offset: 1,
             text: "e".to_string(),
             selection_before: Selection::collapsed(1),
             selection_after: Selection::collapsed(2),
         });
-        
+
         stack.push(TextOperation::Insert {
             offset: 2,
             text: "l".to_string(),
             selection_before: Selection::collapsed(2),
             selection_after: Selection::collapsed(3),
         });
-        
+
         // Should be grouped into one operation
         assert_eq!(stack.undo_count(), 1);
-        
+
         let undone = stack.undo().unwrap();
         assert_eq!(undone.len(), 1);
-        
+
         // The grouped operation should contain the merged text
         if let TextOperation::Insert { text, .. } = &undone[0] {
             assert_eq!(text, "Hel");
@@ -462,21 +486,21 @@ mod tests {
     fn test_operation_grouping_disabled() {
         let mut stack = UndoStack::new();
         stack.set_grouping(false);
-        
+
         stack.push(TextOperation::Insert {
             offset: 0,
             text: "H".to_string(),
             selection_before: Selection::collapsed(0),
             selection_after: Selection::collapsed(1),
         });
-        
+
         stack.push(TextOperation::Insert {
             offset: 1,
             text: "e".to_string(),
             selection_before: Selection::collapsed(1),
             selection_after: Selection::collapsed(2),
         });
-        
+
         // Should NOT be grouped
         assert_eq!(stack.undo_count(), 2);
     }
@@ -484,7 +508,7 @@ mod tests {
     #[test]
     fn test_delete_grouping() {
         let mut stack = UndoStack::new();
-        
+
         // Simulate backspace operations
         stack.push(TextOperation::Delete {
             offset: 2,
@@ -492,17 +516,17 @@ mod tests {
             selection_before: Selection::collapsed(3),
             selection_after: Selection::collapsed(2),
         });
-        
+
         stack.push(TextOperation::Delete {
             offset: 1,
             text: "e".to_string(),
             selection_before: Selection::collapsed(2),
             selection_after: Selection::collapsed(1),
         });
-        
+
         // Should be grouped
         assert_eq!(stack.undo_count(), 1);
-        
+
         let undone = stack.undo().unwrap();
         if let TextOperation::Delete { text, .. } = &undone[0] {
             assert_eq!(text, "el");
@@ -515,7 +539,7 @@ mod tests {
     fn test_size_limit() {
         let mut stack = UndoStack::with_limit(3);
         stack.set_grouping(false); // Disable grouping for this test
-        
+
         for i in 0..5 {
             stack.push(TextOperation::Insert {
                 offset: i,
@@ -524,7 +548,7 @@ mod tests {
                 selection_after: Selection::collapsed(i + 1),
             });
         }
-        
+
         // Should only keep the last 3 operations
         assert_eq!(stack.undo_count(), 3);
     }
@@ -532,20 +556,20 @@ mod tests {
     #[test]
     fn test_clear() {
         let mut stack = UndoStack::new();
-        
+
         stack.push(TextOperation::Insert {
             offset: 0,
             text: "Hello".to_string(),
             selection_before: Selection::collapsed(0),
             selection_after: Selection::collapsed(5),
         });
-        
+
         stack.undo();
-        
+
         assert!(stack.can_redo());
-        
+
         stack.clear();
-        
+
         assert!(!stack.can_undo());
         assert!(!stack.can_redo());
     }
@@ -558,21 +582,21 @@ mod tests {
             selection_before: Selection::collapsed(0),
             selection_after: Selection::collapsed(1),
         };
-        
+
         let op2 = TextOperation::Insert {
             offset: 1,
             text: "e".to_string(),
             selection_before: Selection::collapsed(1),
             selection_after: Selection::collapsed(2),
         };
-        
+
         let op3 = TextOperation::Insert {
             offset: 10,
             text: "x".to_string(),
             selection_before: Selection::collapsed(10),
             selection_after: Selection::collapsed(11),
         };
-        
+
         assert!(op1.can_group_with(&op2));
         assert!(!op1.can_group_with(&op3));
     }

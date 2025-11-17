@@ -21,10 +21,21 @@ pub struct RunMetrics {
 
 /// Measure run metrics using rasterized glyph masks rather than provider baselines.
 /// This avoids inconsistencies across shapers (e.g., cosmic-text) when using logical_px.
-pub fn measure_run(provider: &dyn engine_core::TextProvider, text: &str, size_px: f32) -> Option<RunMetrics> {
-    let run = TextRun { text: text.to_string(), pos: [0.0, 0.0], size: size_px.max(1.0), color: ColorLinPremul::from_srgba_u8([255, 255, 255, 255]) };
+pub fn measure_run(
+    provider: &dyn engine_core::TextProvider,
+    text: &str,
+    size_px: f32,
+) -> Option<RunMetrics> {
+    let run = TextRun {
+        text: text.to_string(),
+        pos: [0.0, 0.0],
+        size: size_px.max(1.0),
+        color: ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
+    };
     let glyphs = provider.rasterize_run(&run);
-    if glyphs.is_empty() { return None; }
+    if glyphs.is_empty() {
+        return None;
+    }
     let mut top = f32::INFINITY;
     let mut bottom = f32::NEG_INFINITY;
     let mut max_x = 0.0f32;
@@ -36,40 +47,56 @@ pub fn measure_run(provider: &dyn engine_core::TextProvider, text: &str, size_px
     let ascent = (-top).max(0.0);
     let descent = bottom.max(0.0);
     let height = (bottom - top).max(size_px * 0.5);
-    Some(RunMetrics { width: max_x, top, bottom, ascent, descent, height })
+    Some(RunMetrics {
+        width: max_x,
+        top,
+        bottom,
+        ascent,
+        descent,
+        height,
+    })
 }
 
 /// Simple word wrap: splits text into lines so that measured width <= max_width.
 /// Fast approximation version that uses character count instead of expensive glyph rasterization.
-pub fn wrap_text(_provider: &dyn engine_core::TextProvider, text: &str, size_px: f32, max_width: f32) -> Vec<String> {
+pub fn wrap_text(
+    _provider: &dyn engine_core::TextProvider,
+    text: &str,
+    size_px: f32,
+    max_width: f32,
+) -> Vec<String> {
     let words: Vec<&str> = text.split_whitespace().collect();
-    if words.is_empty() { return vec![String::new()]; }
-    
+    if words.is_empty() {
+        return vec![String::new()];
+    }
+
     // Use fast approximation: average character width is ~0.5-0.6 of font size for proportional fonts
     // This avoids expensive glyph rasterization during wrapping
     let avg_char_width = size_px * 0.55;
     let max_chars_per_line = (max_width / avg_char_width).floor() as usize;
-    if max_chars_per_line == 0 { return vec![text.to_string()]; }
-    
+    if max_chars_per_line == 0 {
+        return vec![text.to_string()];
+    }
+
     let mut lines: Vec<String> = Vec::new();
     let mut cur = String::new();
-    
+
     for w in words.iter() {
-        let test_line = if cur.is_empty() { 
-            (*w).to_string() 
-        } else { 
-            format!("{} {}", cur, w) 
+        let test_line = if cur.is_empty() {
+            (*w).to_string()
+        } else {
+            format!("{} {}", cur, w)
         };
-        
+
         // Simple character count check
         if test_line.len() <= max_chars_per_line {
             cur = test_line;
         } else {
             // Line would be too long
-            if !cur.is_empty() { 
-                lines.push(cur); 
+            if !cur.is_empty() {
+                lines.push(cur);
             }
-            
+
             // If single word is too long, break it
             if w.len() > max_chars_per_line {
                 let mut remaining = *w;
@@ -84,9 +111,13 @@ pub fn wrap_text(_provider: &dyn engine_core::TextProvider, text: &str, size_px:
             }
         }
     }
-    
-    if !cur.is_empty() { lines.push(cur); }
-    if lines.is_empty() { lines.push(String::new()); }
+
+    if !cur.is_empty() {
+        lines.push(cur);
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
     lines
 }
 
@@ -96,11 +127,7 @@ pub fn wrap_text(_provider: &dyn engine_core::TextProvider, text: &str, size_px:
 /// grapheme clusters and UAX-14 line breaking. It requires a font path
 /// via the `RUNE_TEXT_FONT` environment variable; if unavailable or
 /// loading fails, it falls back to the simple `wrap_text` heuristic.
-pub fn wrap_text_rune(
-    text: &str,
-    size_px: f32,
-    max_width: f32,
-) -> Vec<String> {
+pub fn wrap_text_rune(text: &str, size_px: f32, max_width: f32) -> Vec<String> {
     use rune_text::font::{FontCache, FontError};
     use rune_text::layout::{TextLayout, WrapMode};
 
@@ -204,17 +231,32 @@ pub fn baselines_for_lines(
     scale_factor: Option<f32>,
 ) -> Vec<f32> {
     let snap = |v: f32| -> f32 {
-        if let Some(sf) = scale_factor { if sf.is_finite() && sf > 0.0 { return (v * sf).round() / sf; } }
+        if let Some(sf) = scale_factor {
+            if sf.is_finite() && sf > 0.0 {
+                return (v * sf).round() / sf;
+            }
+        }
         v
     };
     let mut out = Vec::with_capacity(lines.len());
-    if lines.is_empty() { return out; }
+    if lines.is_empty() {
+        return out;
+    }
     // First line baseline
     out.push(snap(start_baseline_y));
     // Precompute metrics
     let metrics: Vec<RunMetrics> = lines
         .iter()
-        .map(|s| measure_run(provider, s, size_px).unwrap_or(RunMetrics { width: 0.0, top: -size_px * 0.8, bottom: size_px * 0.2, ascent: size_px * 0.8, descent: size_px * 0.2, height: size_px }))
+        .map(|s| {
+            measure_run(provider, s, size_px).unwrap_or(RunMetrics {
+                width: 0.0,
+                top: -size_px * 0.8,
+                bottom: size_px * 0.2,
+                ascent: size_px * 0.8,
+                descent: size_px * 0.2,
+                height: size_px,
+            })
+        })
         .collect();
     for i in 1..lines.len() {
         let prev = metrics[i - 1];
@@ -252,7 +294,7 @@ pub fn layout_text(
     // explicit newlines. This avoids heavy rune-text layout paths and
     // keeps rendering stable even when RUNE_TEXT_LAYOUT is set.
     let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
-    
+
     // Use simplified baseline calculation for performance
     // Instead of measuring every line, use a single sample measurement
     let sample_metrics = if !lines.is_empty() {
@@ -261,7 +303,7 @@ pub fn layout_text(
     } else {
         None
     };
-    
+
     let (line_height, ascent, descent) = if let Some(m) = sample_metrics {
         (m.height, m.ascent, m.descent)
     } else {
@@ -269,17 +311,17 @@ pub fn layout_text(
         let h = opts.size_px * 1.2;
         (h, opts.size_px * 0.8, opts.size_px * 0.2)
     };
-    
+
     // Compute baselines using uniform line height
     let snap = |v: f32| -> f32 {
-        if let Some(sf) = opts.scale_factor { 
-            if sf.is_finite() && sf > 0.0 { 
-                return (v * sf).round() / sf; 
-            } 
+        if let Some(sf) = opts.scale_factor {
+            if sf.is_finite() && sf > 0.0 {
+                return (v * sf).round() / sf;
+            }
         }
         v
     };
-    
+
     let mut baselines = Vec::with_capacity(lines.len());
     if !lines.is_empty() {
         baselines.push(snap(opts.start_baseline_y));
@@ -288,12 +330,17 @@ pub fn layout_text(
             baselines.push(snap(baseline));
         }
     }
-    
-    let total_h = if baselines.len() > 1 { 
-        baselines.last().copied().unwrap_or(opts.start_baseline_y) - baselines[0] + line_height 
-    } else { 
-        line_height 
+
+    let total_h = if baselines.len() > 1 {
+        baselines.last().copied().unwrap_or(opts.start_baseline_y) - baselines[0] + line_height
+    } else {
+        line_height
     };
-    
-    LayoutResult { lines, baselines, line_height_est: line_height, total_height: total_h }
+
+    LayoutResult {
+        lines,
+        baselines,
+        line_height_est: line_height,
+        total_height: total_h,
+    }
 }

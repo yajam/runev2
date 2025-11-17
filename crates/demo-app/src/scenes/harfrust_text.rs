@@ -1,5 +1,5 @@
-use engine_core::{DisplayList, PassManager, Viewport};
 use engine_core::{ColorLinPremul, SubpixelOrientation, TextRun};
+use engine_core::{DisplayList, PassManager, Viewport};
 use engine_core::{LineMetrics, TextProvider};
 
 use super::{Scene, SceneKind};
@@ -79,7 +79,9 @@ impl HarfrustTextScene {
         for g in self.provider.rasterize_run(&header_run) {
             let origin_x = margin_x + g.offset[0];
             let origin_y = baseline0 + g.offset[1];
-            glyph_batch.glyphs.push((g.mask, [origin_x, origin_y], color));
+            glyph_batch
+                .glyphs
+                .push((g.mask, [origin_x, origin_y], color));
         }
 
         // 200 short lines to stress shaping + baseline math without overflowing buffers.
@@ -95,7 +97,9 @@ impl HarfrustTextScene {
             for g in self.provider.rasterize_run(&run) {
                 let origin_x = margin_x + g.offset[0];
                 let origin_y = y + g.offset[1];
-                glyph_batch.glyphs.push((g.mask, [origin_x, origin_y], color));
+                glyph_batch
+                    .glyphs
+                    .push((g.mask, [origin_x, origin_y], color));
             }
             y += line_height;
         }
@@ -144,7 +148,14 @@ impl Scene for HarfrustTextScene {
         );
 
         if !self.glyphs.is_empty() {
-            passes.draw_text_mask(encoder, surface_view, width, height, &self.glyphs.glyphs, queue);
+            passes.draw_text_mask(
+                encoder,
+                surface_view,
+                width,
+                height,
+                &self.glyphs.glyphs,
+                queue,
+            );
         }
     }
 }

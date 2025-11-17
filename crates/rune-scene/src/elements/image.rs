@@ -1,6 +1,6 @@
-use std::path::PathBuf;
 use engine_core::{Brush, ColorLinPremul, Rect};
 use rune_surface::{Canvas, ImageFitMode};
+use std::path::PathBuf;
 
 /// How the image should fit within the rect bounds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

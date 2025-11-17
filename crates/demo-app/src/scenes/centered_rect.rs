@@ -1,4 +1,6 @@
-use engine_core::{Brush, ColorLinPremul, Rect, RoundedRadii, RoundedRect, Stroke, HitResult, HitShape};
+use engine_core::{
+    Brush, ColorLinPremul, HitResult, HitShape, Rect, RoundedRadii, RoundedRect, Stroke,
+};
 use engine_core::{DisplayList, Painter, PassManager, Viewport};
 
 use super::{Scene, SceneKind};
@@ -137,10 +139,20 @@ impl CenteredRectScene {
                     painter.stroke_rect(*rect, Stroke { width: 2.0 }, highlight.clone(), 10);
                 }
                 HitShape::StrokeRoundedRect { rrect, .. } => {
-                    painter.stroke_rounded_rect(*rrect, Stroke { width: 2.0 }, highlight.clone(), 10);
+                    painter.stroke_rounded_rect(
+                        *rrect,
+                        Stroke { width: 2.0 },
+                        highlight.clone(),
+                        10,
+                    );
                 }
                 HitShape::Ellipse { center, radii } => {
-                    painter.ellipse(*center, *radii, Brush::Solid(ColorLinPremul::from_srgba(0, 255, 255, 0.12)), 10);
+                    painter.ellipse(
+                        *center,
+                        *radii,
+                        Brush::Solid(ColorLinPremul::from_srgba(0, 255, 255, 0.12)),
+                        10,
+                    );
                 }
                 HitShape::PathBBox { rect } => {
                     painter.stroke_rect(*rect, Stroke { width: 2.0 }, highlight.clone(), 10);
@@ -195,8 +207,16 @@ impl Scene for CenteredRectScene {
         None
     }
 
-    fn on_pointer_down(&mut self, _pos: [f32; 2], _hit: Option<&HitResult>) -> Option<DisplayList> { None }
-    fn on_pointer_up(&mut self, _pos: [f32; 2], _hit: Option<&HitResult>) -> Option<DisplayList> { None }
-    fn on_click(&mut self, _pos: [f32; 2], _hit: Option<&HitResult>) -> Option<DisplayList> { None }
-    fn on_drag(&mut self, _pos: [f32; 2], _hit: Option<&HitResult>) -> Option<DisplayList> { None }
+    fn on_pointer_down(&mut self, _pos: [f32; 2], _hit: Option<&HitResult>) -> Option<DisplayList> {
+        None
+    }
+    fn on_pointer_up(&mut self, _pos: [f32; 2], _hit: Option<&HitResult>) -> Option<DisplayList> {
+        None
+    }
+    fn on_click(&mut self, _pos: [f32; 2], _hit: Option<&HitResult>) -> Option<DisplayList> {
+        None
+    }
+    fn on_drag(&mut self, _pos: [f32; 2], _hit: Option<&HitResult>) -> Option<DisplayList> {
+        None
+    }
 }

@@ -6,7 +6,9 @@ use crate::scene::ColorLinPremul;
 impl ColorLinPremul {
     /// Convenience alias matching Color::rgba(...) widely used in UI code.
     #[inline]
-    pub fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self { Self::from_srgba_u8([r, g, b, a]) }
+    pub fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self::from_srgba_u8([r, g, b, a])
+    }
 
     /// Create from sRGB u8 RGBA array (premultiplied in linear space).
     #[inline]
@@ -18,26 +20,36 @@ impl ColorLinPremul {
             c[3] as f32 / 255.0,
         );
         let lin: LinSrgba = LinSrgba::from_color(s);
-        Self { r: lin.red * lin.alpha, g: lin.green * lin.alpha, b: lin.blue * lin.alpha, a: lin.alpha }
+        Self {
+            r: lin.red * lin.alpha,
+            g: lin.green * lin.alpha,
+            b: lin.blue * lin.alpha,
+            a: lin.alpha,
+        }
     }
 
     /// Create from sRGB u8 RGB with float alpha (CSS-like rgba).
     #[inline]
     pub fn from_srgba(r: u8, g: u8, b: u8, a: f32) -> Self {
-        let s = Srgba::new(
-            r as f32 / 255.0,
-            g as f32 / 255.0,
-            b as f32 / 255.0,
-            a,
-        );
+        let s = Srgba::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, a);
         let lin: LinSrgba = LinSrgba::from_color(s);
-        Self { r: lin.red * lin.alpha, g: lin.green * lin.alpha, b: lin.blue * lin.alpha, a: lin.alpha }
+        Self {
+            r: lin.red * lin.alpha,
+            g: lin.green * lin.alpha,
+            b: lin.blue * lin.alpha,
+            a: lin.alpha,
+        }
     }
 
     /// Create directly from linear RGBA floats and premultiply.
     #[inline]
     pub fn from_lin_rgba(r: f32, g: f32, b: f32, a: f32) -> Self {
-        Self { r: r * a, g: g * a, b: b * a, a }
+        Self {
+            r: r * a,
+            g: g * a,
+            b: b * a,
+            a,
+        }
     }
 
     /// Convert back to sRGB u8 RGBA array (unpremultiplied).
@@ -49,11 +61,11 @@ impl ColorLinPremul {
         } else {
             (0.0, 0.0, 0.0)
         };
-        
+
         // Convert linear to sRGB
         let lin = LinSrgba::new(r, g, b, self.a);
         let srgb: Srgba = Srgba::from_color(lin);
-        
+
         [
             (srgb.red * 255.0).round().clamp(0.0, 255.0) as u8,
             (srgb.green * 255.0).round().clamp(0.0, 255.0) as u8,

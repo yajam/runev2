@@ -1,15 +1,18 @@
 pub mod common;
+pub mod devtools;
 pub mod sidebar;
 pub mod toolbar;
 pub mod viewport;
-pub mod devtools;
 
 // Re-export commonly used types
-pub use common::{ZoneId, ZoneStyle, ZoneLayout};
+pub use common::{ZoneId, ZoneLayout, ZoneStyle};
+pub use devtools::{
+    DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID,
+    DEVTOOLS_ELEMENTS_TAB_REGION_ID, DevTools, DevToolsTab,
+};
 pub use sidebar::Sidebar;
-pub use toolbar::{Toolbar, TOGGLE_BUTTON_REGION_ID, DEVTOOLS_BUTTON_REGION_ID};
+pub use toolbar::{DEVTOOLS_BUTTON_REGION_ID, TOGGLE_BUTTON_REGION_ID, Toolbar};
 pub use viewport::Viewport;
-pub use devtools::{DevTools, DevToolsTab, DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_ELEMENTS_TAB_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID};
 
 /// Zone manager for rendering and interaction
 pub struct ZoneManager {

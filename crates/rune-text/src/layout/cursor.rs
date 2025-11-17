@@ -168,7 +168,7 @@ impl Cursor {
     }
 
     /// Update the cursor blink animation.
-    /// 
+    ///
     /// # Arguments
     /// * `delta_time` - Time elapsed since last update in seconds.
     pub fn update_blink(&mut self, delta_time: f32) {
@@ -253,19 +253,19 @@ mod tests {
     #[test]
     fn test_snap_to_grapheme_boundary() {
         let text = "Hello 世界";
-        
+
         // At valid boundary (0)
         let pos = CursorPosition::new(0).snap_to_grapheme_boundary(text);
         assert_eq!(pos.byte_offset, 0);
-        
+
         // At valid boundary (6, after "Hello ")
         let pos = CursorPosition::new(6).snap_to_grapheme_boundary(text);
         assert_eq!(pos.byte_offset, 6);
-        
+
         // At end
         let pos = CursorPosition::new(text.len()).snap_to_grapheme_boundary(text);
         assert_eq!(pos.byte_offset, text.len());
-        
+
         // Beyond end
         let pos = CursorPosition::new(100).snap_to_grapheme_boundary(text);
         assert_eq!(pos.byte_offset, text.len());
@@ -291,10 +291,10 @@ mod tests {
     fn test_cursor_visibility() {
         let mut cursor = Cursor::new();
         assert!(cursor.is_visible());
-        
+
         cursor.set_visible(false);
         assert!(!cursor.is_visible());
-        
+
         cursor.toggle_visibility();
         assert!(cursor.is_visible());
     }
@@ -303,17 +303,17 @@ mod tests {
     fn test_cursor_blink() {
         let mut cursor = Cursor::new();
         cursor.set_blink_interval(0.5);
-        
+
         assert!(cursor.is_visible());
-        
+
         // Update with half interval - should still be visible
         cursor.update_blink(0.25);
         assert!(cursor.is_visible());
-        
+
         // Update to complete interval - should toggle
         cursor.update_blink(0.25);
         assert!(!cursor.is_visible());
-        
+
         // Another interval - should toggle back
         cursor.update_blink(0.5);
         assert!(cursor.is_visible());

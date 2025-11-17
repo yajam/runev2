@@ -1,7 +1,7 @@
+use crate::elements::caret::CaretBlink;
 use engine_core::{ColorLinPremul, FillRule, Path, PathCmd, Rect};
 use rune_surface::Canvas;
 use rune_text::layout::{CursorPosition, TextLayout};
-use crate::elements::caret::CaretBlink;
 
 /// Configuration for rendering the text caret.
 pub struct CaretRenderConfig {

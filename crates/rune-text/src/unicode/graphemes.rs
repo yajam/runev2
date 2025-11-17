@@ -127,4 +127,3 @@ mod tests {
         assert_eq!(clusters[0].range, 0..text.len());
     }
 }
-

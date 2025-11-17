@@ -6,8 +6,7 @@ fn main() {
 
     // Load a font
     let font_path = "../../fonts/Geist/static/Geist-Regular.ttf";
-    let font = FontFace::from_path(font_path, 0)
-        .expect("Failed to load font");
+    let font = FontFace::from_path(font_path, 0).expect("Failed to load font");
 
     let font_size = 16.0;
 
@@ -16,9 +15,13 @@ fn main() {
     println!("---------------------------");
     let text = "Hello, 世界! 👨‍👩‍👧‍👦";
     let layout = TextLayout::new(text, &font, font_size);
-    
+
     println!("Text: \"{}\"", text);
-    println!("Length: {} bytes, {} chars\n", text.len(), text.chars().count());
+    println!(
+        "Length: {} bytes, {} chars\n",
+        text.len(),
+        text.chars().count()
+    );
 
     // Move right through the text
     let mut offset = 0;
@@ -26,7 +29,13 @@ fn main() {
     while offset < text.len() {
         let next = layout.move_cursor_right(offset);
         let moved_text = &text[offset..next];
-        println!("  {} -> {}: \"{}\" ({} bytes)", offset, next, moved_text, next - offset);
+        println!(
+            "  {} -> {}: \"{}\" ({} bytes)",
+            offset,
+            next,
+            moved_text,
+            next - offset
+        );
         offset = next;
     }
 
@@ -36,7 +45,13 @@ fn main() {
     while offset > 0 {
         let prev = layout.move_cursor_left(offset);
         let moved_text = &text[prev..offset];
-        println!("  {} -> {}: \"{}\" ({} bytes)", offset, prev, moved_text, offset - prev);
+        println!(
+            "  {} -> {}: \"{}\" ({} bytes)",
+            offset,
+            prev,
+            moved_text,
+            offset - prev
+        );
         offset = prev;
     }
 
@@ -45,7 +60,7 @@ fn main() {
     println!("---------------------");
     let text = "The quick brown fox jumps over the lazy dog.";
     let layout = TextLayout::new(text, &font, font_size);
-    
+
     println!("Text: \"{}\"", text);
 
     // Move right by word
@@ -79,8 +94,9 @@ fn main() {
     println!("--------------------------------------");
     let text = "This is a long line of text that will wrap across multiple lines when we set a maximum width constraint.";
     let max_width = 200.0;
-    let layout = TextLayout::with_wrap(text, &font, font_size, Some(max_width), WrapMode::BreakWord);
-    
+    let layout =
+        TextLayout::with_wrap(text, &font, font_size, Some(max_width), WrapMode::BreakWord);
+
     println!("Text: \"{}\"", text);
     println!("Max width: {}", max_width);
     println!("Number of lines: {}\n", layout.lines().len());
@@ -96,7 +112,10 @@ fn main() {
     let mut preferred_x = None;
     for i in 0..layout.lines().len() {
         let (new_offset, x) = layout.move_cursor_down(offset, preferred_x);
-        println!("  Line {}: offset {} -> {} (x: {:.2})", i, offset, new_offset, x);
+        println!(
+            "  Line {}: offset {} -> {} (x: {:.2})",
+            i, offset, new_offset, x
+        );
         offset = new_offset;
         preferred_x = Some(x);
     }
@@ -106,7 +125,10 @@ fn main() {
     preferred_x = None;
     for i in (0..layout.lines().len()).rev() {
         let (new_offset, x) = layout.move_cursor_up(offset, preferred_x);
-        println!("  Line {}: offset {} -> {} (x: {:.2})", i, offset, new_offset, x);
+        println!(
+            "  Line {}: offset {} -> {} (x: {:.2})",
+            i, offset, new_offset, x
+        );
         offset = new_offset;
         preferred_x = Some(x);
     }
@@ -116,7 +138,7 @@ fn main() {
     println!("-------------------------");
     let text = "Line 1\nLine 2 is longer\nLine 3";
     let layout = TextLayout::new(text, &font, font_size);
-    
+
     println!("Text:");
     for (i, line) in layout.lines().iter().enumerate() {
         let line_text = &text[line.text_range.clone()];
@@ -129,7 +151,10 @@ fn main() {
         let mid_offset = (line.text_range.start + line.text_range.end) / 2;
         let start = layout.move_cursor_line_start(mid_offset);
         let end = layout.move_cursor_line_end(mid_offset);
-        println!("  Line {}: start={}, end={}, range={:?}", i, start, end, line.text_range);
+        println!(
+            "  Line {}: start={}, end={}, range={:?}",
+            i, start, end, line.text_range
+        );
     }
 
     // Test 5: Document start/end
@@ -146,7 +171,7 @@ fn main() {
     println!("--------------------------");
     let text = "Hello مرحبا World";
     let layout = TextLayout::new(text, &font, font_size);
-    
+
     println!("Text: \"{}\"", text);
     println!("(Contains Arabic RTL text)\n");
 
@@ -181,7 +206,12 @@ fn main() {
         let new_offset = layout.move_cursor_right(cursor.byte_offset());
         cursor.set_byte_offset(new_offset);
         let char_at = &text[cursor.byte_offset()..].chars().next().unwrap_or(' ');
-        println!("  Step {}: offset={}, next char='{}'", i + 1, cursor.byte_offset(), char_at);
+        println!(
+            "  Step {}: offset={}, next char='{}'",
+            i + 1,
+            cursor.byte_offset(),
+            char_at
+        );
     }
 
     // Move left 2 times
@@ -190,7 +220,12 @@ fn main() {
         let new_offset = layout.move_cursor_left(cursor.byte_offset());
         cursor.set_byte_offset(new_offset);
         let char_at = &text[cursor.byte_offset()..].chars().next().unwrap_or(' ');
-        println!("  Step {}: offset={}, next char='{}'", i + 1, cursor.byte_offset(), char_at);
+        println!(
+            "  Step {}: offset={}, next char='{}'",
+            i + 1,
+            cursor.byte_offset(),
+            char_at
+        );
     }
 
     // Move to end

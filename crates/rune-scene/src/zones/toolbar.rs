@@ -1,5 +1,5 @@
-use engine_core::{ColorLinPremul, Rect};
 use super::common::ZoneStyle;
+use engine_core::{ColorLinPremul, Rect};
 
 /// Toolbar configuration and state
 pub struct Toolbar {
@@ -29,16 +29,16 @@ impl Toolbar {
         let toggle_margin = 12.0;
         let toggle_x = toggle_margin;
         let toggle_y = (toolbar_rect.h - toggle_size) / 2.0;
-        
+
         let toggle_rect = Rect {
             x: toggle_x,
             y: toggle_y,
             w: toggle_size,
             h: toggle_size,
         };
-        
+
         canvas.hit_region_rect(TOGGLE_BUTTON_REGION_ID, toggle_rect, 10100);
-        
+
         // Draw the toggle button icon with white stroke and custom width
         let white = engine_core::Color::rgba(255, 255, 255, 255);
         let icon_style = engine_core::SvgStyle::new()
@@ -56,16 +56,16 @@ impl Toolbar {
         const DEVTOOLS_BUTTON_REGION_ID: u32 = 1001;
         let devtools_x = toolbar_rect.w - toggle_size - toggle_margin;
         let devtools_y = (toolbar_rect.h - toggle_size) / 2.0;
-        
+
         let devtools_rect = Rect {
             x: devtools_x,
             y: devtools_y,
             w: toggle_size,
             h: toggle_size,
         };
-        
+
         canvas.hit_region_rect(DEVTOOLS_BUTTON_REGION_ID, devtools_rect, 10100);
-        
+
         // Draw the inspection panel icon with white stroke
         canvas.draw_svg_styled(
             "images/inspection-panel.svg",

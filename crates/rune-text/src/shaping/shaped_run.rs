@@ -52,4 +52,3 @@ pub struct GlyphPosition {
     pub x_offset: f32,
     pub y_offset: f32,
 }
-

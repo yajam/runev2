@@ -1,4 +1,4 @@
-use engine_core::{Brush, RoundedRect, Path, PathCmd, FillRule};
+use engine_core::{Brush, FillRule, Path, PathCmd, RoundedRect};
 
 use crate::canvas::Canvas;
 
@@ -23,15 +23,33 @@ pub struct RectStyle {
 }
 
 /// Draw a rectangle with optional fill and per-side border widths.
-pub fn draw_rectangle(canvas: &mut Canvas, x: f32, y: f32, w: f32, h: f32, style: &RectStyle, z: i32) {
-    if let Some(fill) = &style.fill { canvas.fill_rect(x, y, w, h, fill.clone(), z); }
+pub fn draw_rectangle(
+    canvas: &mut Canvas,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    style: &RectStyle,
+    z: i32,
+) {
+    if let Some(fill) = &style.fill {
+        canvas.fill_rect(x, y, w, h, fill.clone(), z);
+    }
     if let Some(border) = &style.border {
         let b = &border.widths;
         let brush = border.brush.clone();
-        if b.top > 0.0 { canvas.fill_rect(x, y, w, b.top, brush.clone(), z + 1); }
-        if b.right > 0.0 { canvas.fill_rect(x + w - b.right, y, b.right, h, brush.clone(), z + 1); }
-        if b.bottom > 0.0 { canvas.fill_rect(x, y + h - b.bottom, w, b.bottom, brush.clone(), z + 1); }
-        if b.left > 0.0 { canvas.fill_rect(x, y, b.left, h, brush, z + 1); }
+        if b.top > 0.0 {
+            canvas.fill_rect(x, y, w, b.top, brush.clone(), z + 1);
+        }
+        if b.right > 0.0 {
+            canvas.fill_rect(x + w - b.right, y, b.right, h, brush.clone(), z + 1);
+        }
+        if b.bottom > 0.0 {
+            canvas.fill_rect(x, y + h - b.bottom, w, b.bottom, brush.clone(), z + 1);
+        }
+        if b.left > 0.0 {
+            canvas.fill_rect(x, y, b.left, h, brush, z + 1);
+        }
     }
 }
 
@@ -44,8 +62,12 @@ pub fn draw_rounded_rectangle(
     stroke_brush: Option<Brush>,
     z: i32,
 ) {
-    if let Some(f) = fill { canvas.rounded_rect(rrect, f, z); }
-    if let (Some(w), Some(b)) = (stroke_width, stroke_brush) { canvas.stroke_rounded_rect(rrect, w, b, z + 1); }
+    if let Some(f) = fill {
+        canvas.rounded_rect(rrect, f, z);
+    }
+    if let (Some(w), Some(b)) = (stroke_width, stroke_brush) {
+        canvas.stroke_rounded_rect(rrect, w, b, z + 1);
+    }
 }
 
 /// Draw a circle with optional fill and stroke. Stroke supports solid color only.
@@ -58,20 +80,29 @@ pub fn draw_circle(
     stroke_brush: Option<Brush>,
     z: i32,
 ) {
-    if let Some(f) = fill { canvas.circle(center, radius, f, z); }
+    if let Some(f) = fill {
+        canvas.circle(center, radius, f, z);
+    }
     if let (Some(w), Some(sb)) = (stroke_width, stroke_brush) {
         // Only solid strokes are supported for path-based circle stroke
         if let Brush::Solid(col) = sb {
             let segs = 48u32;
-            let mut path = Path { cmds: Vec::new(), fill_rule: FillRule::NonZero };
+            let mut path = Path {
+                cmds: Vec::new(),
+                fill_rule: FillRule::NonZero,
+            };
             let mut first = true;
             for i in 0..=segs {
                 let t = (i as f32) / (segs as f32);
                 let ang = std::f32::consts::TAU * t;
                 let x = center[0] + radius * ang.cos();
                 let y = center[1] + radius * ang.sin();
-                if first { path.cmds.push(PathCmd::MoveTo([x, y])); first = false; }
-                else { path.cmds.push(PathCmd::LineTo([x, y])); }
+                if first {
+                    path.cmds.push(PathCmd::MoveTo([x, y]));
+                    first = false;
+                } else {
+                    path.cmds.push(PathCmd::LineTo([x, y]));
+                }
             }
             path.cmds.push(PathCmd::Close);
             canvas.stroke_path(path, w, col, z + 1);
@@ -89,20 +120,29 @@ pub fn draw_ellipse(
     stroke_brush: Option<Brush>,
     z: i32,
 ) {
-    if let Some(f) = fill { canvas.ellipse(center, radii, f, z); }
+    if let Some(f) = fill {
+        canvas.ellipse(center, radii, f, z);
+    }
     if let (Some(w), Some(sb)) = (stroke_width, stroke_brush) {
         // Only solid strokes are supported for path-based ellipse stroke
         if let Brush::Solid(col) = sb {
             let segs = 64u32;
-            let mut path = Path { cmds: Vec::new(), fill_rule: FillRule::NonZero };
+            let mut path = Path {
+                cmds: Vec::new(),
+                fill_rule: FillRule::NonZero,
+            };
             let mut first = true;
             for i in 0..=segs {
                 let t = (i as f32) / (segs as f32);
                 let ang = std::f32::consts::TAU * t;
                 let x = center[0] + radii[0] * ang.cos();
                 let y = center[1] + radii[1] * ang.sin();
-                if first { path.cmds.push(PathCmd::MoveTo([x, y])); first = false; }
-                else { path.cmds.push(PathCmd::LineTo([x, y])); }
+                if first {
+                    path.cmds.push(PathCmd::MoveTo([x, y]));
+                    first = false;
+                } else {
+                    path.cmds.push(PathCmd::LineTo([x, y]));
+                }
             }
             path.cmds.push(PathCmd::Close);
             canvas.stroke_path(path, w, col, z + 1);

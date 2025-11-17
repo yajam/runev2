@@ -1,5 +1,5 @@
-use engine_core::{ColorLinPremul, Rect};
 use super::common::ZoneStyle;
+use engine_core::{ColorLinPremul, Rect};
 
 /// DevTools tab types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,7 +44,7 @@ impl DevTools {
         ZoneStyle {
             bg_color: ColorLinPremul::from_srgba_u8([40, 50, 70, 255]), // Much brighter to be clearly visible
             border_color: ColorLinPremul::from_srgba_u8([100, 120, 150, 255]), // Very bright border
-            border_width: 3.0, // Even thicker border
+            border_width: 3.0,                                          // Even thicker border
         }
     }
 
@@ -60,7 +60,7 @@ impl DevTools {
             engine_core::Brush::Solid(overlay_color),
             10150,
         );
-        
+
         // Add a prominent label
         let label_color = engine_core::Color::rgba(220, 230, 240, 255);
         canvas.draw_text_run(
