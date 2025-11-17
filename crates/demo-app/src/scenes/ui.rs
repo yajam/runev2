@@ -1,13 +1,19 @@
 use engine_core::{
-    Brush, ColorLinPremul as Color, DisplayList, Painter, Path, PathCmd, Rect, RoundedRadii,
-    RoundedRect, Stroke, Viewport,
+    Brush, ColorLinPremul as Color, DisplayList, HitResult, Painter, Path, PathCmd, Rect,
+    RoundedRadii, RoundedRect, Stroke, Viewport,
 };
 
 use super::{Scene, SceneKind};
 
 pub struct UiElementsScene {
     viewport: Viewport,
+    checkbox1_checked: bool,
+    checkbox2_checked: bool,
 }
+
+// Hit region IDs for checkboxes
+const CHECKBOX1_ID: u32 = 1001;
+const CHECKBOX2_ID: u32 = 1002;
 
 impl Default for UiElementsScene {
     fn default() -> Self {
@@ -16,6 +22,8 @@ impl Default for UiElementsScene {
                 width: 1280,
                 height: 800,
             },
+            checkbox1_checked: false,
+            checkbox2_checked: true,
         }
     }
 }
@@ -136,6 +144,34 @@ impl UiElementsScene {
             Brush::Solid(Color::from_srgba_u8([180, 180, 180, 255])),
             4,
         );
+        // Add hit region for first checkbox
+        p.hit_region_rect(CHECKBOX1_ID, cb0, 10);
+        
+        // If checkbox1 is checked, draw the check mark
+        if self.checkbox1_checked {
+            let inset = 2.0f32;
+            let inner = Rect {
+                x: cb0.x + inset,
+                y: cb0.y + inset,
+                w: (cb0.w - 2.0 * inset).max(0.0),
+                h: (cb0.h - 2.0 * inset).max(0.0),
+            };
+            let inner_r = RoundedRadii {
+                tl: 1.5,
+                tr: 1.5,
+                br: 1.5,
+                bl: 1.5,
+            };
+            p.rounded_rect(
+                RoundedRect {
+                    rect: inner,
+                    radii: inner_r,
+                },
+                Brush::Solid(Color::from_srgba_u8([63, 130, 246, 255])),
+                5,
+            );
+        }
+        
         p.text(
             engine_core::TextRun {
                 text: "Checkbox".to_string(),
@@ -184,28 +220,33 @@ impl UiElementsScene {
             Brush::Solid(Color::from_srgba_u8([63, 130, 246, 255])),
             4,
         );
-        // Fill inner square (checked state background)
-        let inset = 2.0f32;
-        let inner = Rect {
-            x: cb1.x + inset,
-            y: cb1.y + inset,
-            w: (cb1.w - 2.0 * inset).max(0.0),
-            h: (cb1.h - 2.0 * inset).max(0.0),
-        };
-        let inner_r = RoundedRadii {
-            tl: 1.5,
-            tr: 1.5,
-            br: 1.5,
-            bl: 1.5,
-        };
-        p.rounded_rect(
-            RoundedRect {
-                rect: inner,
-                radii: inner_r,
-            },
-            Brush::Solid(Color::from_srgba_u8([63, 130, 246, 255])),
-            5,
-        );
+        // Add hit region for second checkbox
+        p.hit_region_rect(CHECKBOX2_ID, cb1, 10);
+        
+        // If checkbox2 is checked, fill inner square (checked state background)
+        if self.checkbox2_checked {
+            let inset = 2.0f32;
+            let inner = Rect {
+                x: cb1.x + inset,
+                y: cb1.y + inset,
+                w: (cb1.w - 2.0 * inset).max(0.0),
+                h: (cb1.h - 2.0 * inset).max(0.0),
+            };
+            let inner_r = RoundedRadii {
+                tl: 1.5,
+                tr: 1.5,
+                br: 1.5,
+                bl: 1.5,
+            };
+            p.rounded_rect(
+                RoundedRect {
+                    rect: inner,
+                    radii: inner_r,
+                },
+                Brush::Solid(Color::from_srgba_u8([63, 130, 246, 255])),
+                5,
+            );
+        }
         // Tick rendered in paint_text_overlay via SVG to ensure exact geometry
         p.text(
             engine_core::TextRun {
@@ -500,30 +541,81 @@ impl Scene for UiElementsScene {
         y += 36.0; // title
         y += 46.0; // buttons row
         let cb_size = 18.0f32;
-        let cb1_x = col1_x + 160.0;
-        let cb1_y = y;
         let inset = 2.0f32;
-        let inner_x = cb1_x + inset;
-        let inner_y = cb1_y + inset;
-        let inner_w = (cb_size - 2.0 * inset).max(0.0);
-        let inner_h = (cb_size - 2.0 * inset).max(0.0);
-        // Rasterize and draw the white SVG tick into the inner rect.
-        if let Some((view, _sw, _sh)) = passes.rasterize_svg_to_view(
-            std::path::Path::new("images/check_white.svg"),
-            1.0,
-            None,
-            queue,
-        ) {
-            passes.draw_image_quad(
-                encoder,
-                surface_view,
-                [inner_x, inner_y],
-                [inner_w, inner_h],
-                &view,
+        
+        // Draw check mark for checkbox1 if checked
+        if self.checkbox1_checked {
+            let cb0_x = col1_x;
+            let cb0_y = y;
+            let inner_x = cb0_x + inset;
+            let inner_y = cb0_y + inset;
+            let inner_w = (cb_size - 2.0 * inset).max(0.0);
+            let inner_h = (cb_size - 2.0 * inset).max(0.0);
+            // Rasterize and draw the white SVG tick into the inner rect.
+            if let Some((view, _sw, _sh)) = passes.rasterize_svg_to_view(
+                std::path::Path::new("images/check_white.svg"),
+                1.0,
+                None,
                 queue,
-                self.viewport.width,
-                self.viewport.height,
-            );
+            ) {
+                passes.draw_image_quad(
+                    encoder,
+                    surface_view,
+                    [inner_x, inner_y],
+                    [inner_w, inner_h],
+                    &view,
+                    queue,
+                    self.viewport.width,
+                    self.viewport.height,
+                );
+            }
         }
+        
+        // Draw check mark for checkbox2 if checked
+        if self.checkbox2_checked {
+            let cb1_x = col1_x + 160.0;
+            let cb1_y = y;
+            let inner_x = cb1_x + inset;
+            let inner_y = cb1_y + inset;
+            let inner_w = (cb_size - 2.0 * inset).max(0.0);
+            let inner_h = (cb_size - 2.0 * inset).max(0.0);
+            // Rasterize and draw the white SVG tick into the inner rect.
+            if let Some((view, _sw, _sh)) = passes.rasterize_svg_to_view(
+                std::path::Path::new("images/check_white.svg"),
+                1.0,
+                None,
+                queue,
+            ) {
+                passes.draw_image_quad(
+                    encoder,
+                    surface_view,
+                    [inner_x, inner_y],
+                    [inner_w, inner_h],
+                    &view,
+                    queue,
+                    self.viewport.width,
+                    self.viewport.height,
+                );
+            }
+        }
+    }
+
+    fn on_click(&mut self, _pos: [f32; 2], hit: Option<&HitResult>) -> Option<DisplayList> {
+        if let Some(h) = hit {
+            if let Some(region_id) = h.region_id {
+                match region_id {
+                    CHECKBOX1_ID => {
+                        self.checkbox1_checked = !self.checkbox1_checked;
+                        return Some(self.build());
+                    }
+                    CHECKBOX2_ID => {
+                        self.checkbox2_checked = !self.checkbox2_checked;
+                        return Some(self.build());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        None
     }
 }

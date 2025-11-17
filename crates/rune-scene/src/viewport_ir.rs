@@ -3,6 +3,10 @@ use crate::elements;
 /// (formerly `sample_ui`, now evolving into the extended IR implementation)
 use engine_core::{Color, ColorLinPremul, Rect};
 
+// Hit region IDs for checkboxes
+pub const CHECKBOX1_REGION_ID: u32 = 2001;
+pub const CHECKBOX2_REGION_ID: u32 = 2002;
+
 // UI Element Data Structures
 #[derive(Clone)]
 pub struct CheckboxData {
@@ -500,7 +504,7 @@ impl SampleUIElements {
         }
 
         // Render all checkboxes (z=20, ticks drawn in overlay for crispness)
-        for cb_data in self.checkboxes.iter() {
+        for (idx, cb_data) in self.checkboxes.iter().enumerate() {
             let cb = elements::checkbox::Checkbox {
                 rect: cb_data.rect,
                 checked: cb_data.checked,
@@ -510,6 +514,14 @@ impl SampleUIElements {
                 color: cb_data.color,
             };
             cb.render(canvas, 20);
+            
+            // Register hit region for checkbox
+            let region_id = match idx {
+                0 => CHECKBOX1_REGION_ID,
+                1 => CHECKBOX2_REGION_ID,
+                _ => 2000 + idx as u32, // fallback for additional checkboxes
+            };
+            canvas.hit_region_rect(region_id, cb_data.rect, 20);
         }
 
         // Render all buttons (z=30)

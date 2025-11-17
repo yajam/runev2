@@ -856,8 +856,113 @@ pub fn run() -> Result<()> {
                                     }
                                 }
 
-                                // If clicked outside all input boxes and text areas, unfocus all
+                                // Check if click is on a checkbox or its label (adjust for viewport transform and scroll)
+                                let mut clicked_checkbox = false;
                                 if !clicked_input && !clicked_textarea {
+                                    for (idx, checkbox) in viewport_ir.checkboxes.iter_mut().enumerate() {
+                                        // Calculate clickable area including label
+                                        // Label starts at rect.x + rect.w + 8.0 (8px gap)
+                                        // Estimate label width: ~7px per character at 16px font size (conservative estimate)
+                                        let label_width = if let Some(label) = checkbox.label {
+                                            let char_width = checkbox.label_size * 0.5; // rough estimate
+                                            label.len() as f32 * char_width + 8.0 // text width + gap
+                                        } else {
+                                            0.0
+                                        };
+                                        
+                                        // Clickable area includes checkbox + label
+                                        let clickable_width = checkbox.rect.w + label_width;
+                                        let clickable_height = checkbox.rect.h.max(checkbox.label_size * 1.2); // ensure label height is covered
+                                        
+                                        let in_bounds = viewport_local_x >= checkbox.rect.x
+                                            && viewport_local_x <= checkbox.rect.x + clickable_width
+                                            && viewport_local_y >= checkbox.rect.y
+                                            && viewport_local_y <= checkbox.rect.y + clickable_height;
+
+                                        if in_bounds {
+                                            // Toggle the checkbox
+                                            checkbox.checked = !checkbox.checked;
+                                            
+                                            // Clear focus from all checkboxes, input boxes, and text areas
+                                            for cb in viewport_ir.checkboxes.iter_mut() {
+                                                cb.focused = false;
+                                            }
+                                            for input in viewport_ir.input_boxes.iter_mut() {
+                                                input.focused = false;
+                                            }
+                                            for ta in viewport_ir.text_areas.iter_mut() {
+                                                ta.focused = false;
+                                            }
+                                            
+                                            // Set focus on clicked checkbox
+                                            viewport_ir.checkboxes[idx].focused = true;
+                                            
+                                            clicked_checkbox = true;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                // Check if click is on a radio button or its label (adjust for viewport transform and scroll)
+                                let mut clicked_radio = false;
+                                if !clicked_input && !clicked_textarea && !clicked_checkbox {
+                                    for (idx, radio) in viewport_ir.radios.iter_mut().enumerate() {
+                                        // Calculate clickable area including label
+                                        // Radio uses center and radius, so convert to bounds
+                                        let radio_left = radio.center[0] - radio.radius;
+                                        let radio_top = radio.center[1] - radio.radius;
+                                        let radio_size = radio.radius * 2.0;
+                                        
+                                        // Label starts at center[0] + radius + 8.0 (8px gap)
+                                        let label_width = if let Some(label) = radio.label {
+                                            let char_width = radio.label_size * 0.5; // rough estimate
+                                            label.len() as f32 * char_width + 8.0 // text width + gap
+                                        } else {
+                                            0.0
+                                        };
+                                        
+                                        // Clickable area includes radio circle + label
+                                        let clickable_width = radio_size + label_width;
+                                        let clickable_height = radio_size.max(radio.label_size * 1.2);
+                                        
+                                        let in_bounds = viewport_local_x >= radio_left
+                                            && viewport_local_x <= radio_left + clickable_width
+                                            && viewport_local_y >= radio_top
+                                            && viewport_local_y <= radio_top + clickable_height;
+
+                                        if in_bounds {
+                                            // Select this radio button and deselect all others in the group
+                                            for (i, r) in viewport_ir.radios.iter_mut().enumerate() {
+                                                r.selected = i == idx;
+                                                r.focused = false;
+                                            }
+                                            
+                                            // Clear focus from all other UI elements
+                                            for cb in viewport_ir.checkboxes.iter_mut() {
+                                                cb.focused = false;
+                                            }
+                                            for input in viewport_ir.input_boxes.iter_mut() {
+                                                input.focused = false;
+                                            }
+                                            for ta in viewport_ir.text_areas.iter_mut() {
+                                                ta.focused = false;
+                                            }
+                                            
+                                            // Set focus on clicked radio button
+                                            viewport_ir.radios[idx].focused = true;
+                                            
+                                            clicked_radio = true;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                // If clicked outside all input boxes, text areas, checkboxes, and radios, unfocus all
+                                if !clicked_input && !clicked_textarea && !clicked_checkbox && !clicked_radio {
                                     for input_box in viewport_ir.input_boxes.iter_mut() {
                                         if input_box.focused {
                                             input_box.focused = false;
@@ -872,11 +977,25 @@ pub fn run() -> Result<()> {
                                             window.request_redraw();
                                         }
                                     }
+                                    for checkbox in viewport_ir.checkboxes.iter_mut() {
+                                        if checkbox.focused {
+                                            checkbox.focused = false;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                    for radio in viewport_ir.radios.iter_mut() {
+                                        if radio.focused {
+                                            radio.focused = false;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
                                 }
 
                                 // Perform hit test using the stored hit index
-                                // Only if we didn't click on an input box or text area
-                                if !clicked_input && !clicked_textarea {
+                                // Only if we didn't click on an input box, text area, checkbox, or radio
+                                if !clicked_input && !clicked_textarea && !clicked_checkbox && !clicked_radio {
                                     if let Some(ref index) = hit_index {
                                         if let Some(hit) = index.topmost_at([logical_x, logical_y])
                                         {

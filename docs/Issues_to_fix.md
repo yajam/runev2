@@ -6,4 +6,5 @@
   - [x] Background-only renders work during resize debounce
   - [ ] Background zones not visually filling full width during rapid expansion
   - See `docs/2-pass-resize-fix.md` for details
+- Textarea caret doesnt move between lines
 - Complete SVG implementation with inline and animation support
