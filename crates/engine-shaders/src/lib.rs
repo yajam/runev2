@@ -51,6 +51,7 @@ struct ViewportUniform {
 };
 
 @group(0) @binding(0) var<uniform> vp: ViewportUniform;
+@group(1) @binding(0) var<uniform> z_index: f32;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -63,7 +64,11 @@ fn vs_main(@location(0) in_pos: vec2<f32>, @location(1) in_color: vec4<f32>) -> 
     // in_pos is in local/layout pixel coordinates (y-down)
     let ndc = vec2<f32>(in_pos.x * vp.scale.x + vp.translate.x,
                         in_pos.y * vp.scale.y + vp.translate.y);
-    out.pos = vec4<f32>(ndc, 0.0, 1.0);
+    // Convert z-index to depth [0.0, 1.0]
+    // z-index range [-10000, 10000] maps to depth [0.0, 1.0]
+    // Negative z (closer) -> (0.0, 0.5), Positive z (farther) -> (0.5, 1.0)
+    let depth = (clamp(z_index, -10000.0, 10000.0) / 10000.0) * 0.5 + 0.5;
+    out.pos = vec4<f32>(ndc, depth, 1.0);
     out.color = in_color; // premultiplied linear color
     return out;
 }
@@ -185,7 +190,8 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
         vec2<f32>(0.0, 2.0),
     );
     var out: VsOut;
-    out.pos = vec4<f32>(pos[vi], 0.0, 1.0);
+    // Backgrounds render at max depth (1.0) to be behind everything else
+    out.pos = vec4<f32>(pos[vi], 1.0, 1.0);
     out.uv = uv[vi];
     return out;
 }
@@ -416,6 +422,7 @@ struct ViewportUniform {
 };
 
 @group(0) @binding(0) var<uniform> vp: ViewportUniform;
+@group(1) @binding(0) var<uniform> z_index: f32;
 
 struct VsIn {
     @location(0) pos: vec2<f32>,
@@ -434,14 +441,16 @@ fn vs_main(inp: VsIn) -> VsOut {
     var out: VsOut;
     let ndc = vec2<f32>(inp.pos.x * vp.scale.x + vp.translate.x,
                         inp.pos.y * vp.scale.y + vp.translate.y);
-    out.pos = vec4<f32>(ndc, 0.0, 1.0);
+    // Convert z-index to depth [0.0, 1.0]
+    let depth = (clamp(z_index, -10000.0, 10000.0) / 10000.0) * 0.5 + 0.5;
+    out.pos = vec4<f32>(ndc, depth, 1.0);
     out.uv = inp.uv;
     out.color = inp.color;
     return out;
 }
 
-@group(1) @binding(0) var mask_tex: texture_2d<f32>;
-@group(1) @binding(1) var mask_smp: sampler;
+@group(2) @binding(0) var mask_tex: texture_2d<f32>;
+@group(2) @binding(1) var mask_smp: sampler;
 
 @fragment
 fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
@@ -474,6 +483,7 @@ struct ViewportUniform {
 };
 
 @group(0) @binding(0) var<uniform> vp: ViewportUniform;
+@group(1) @binding(0) var<uniform> z_index: f32;
 
 struct VsIn {
     @location(0) pos: vec2<f32>,
@@ -490,13 +500,15 @@ fn vs_main(inp: VsIn) -> VsOut {
     var out: VsOut;
     let ndc = vec2<f32>(inp.pos.x * vp.scale.x + vp.translate.x,
                         inp.pos.y * vp.scale.y + vp.translate.y);
-    out.pos = vec4<f32>(ndc, 0.0, 1.0);
+    // Convert z-index to depth [0.0, 1.0]
+    let depth = (clamp(z_index, -10000.0, 10000.0) / 10000.0) * 0.5 + 0.5;
+    out.pos = vec4<f32>(ndc, depth, 1.0);
     out.uv = inp.uv;
     return out;
 }
 
-@group(1) @binding(0) var src_tex: texture_2d<f32>;
-@group(1) @binding(1) var src_smp: sampler;
+@group(2) @binding(0) var src_tex: texture_2d<f32>;
+@group(2) @binding(1) var src_smp: sampler;
 
 @fragment
 fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {

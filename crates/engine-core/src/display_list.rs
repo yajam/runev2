@@ -143,3 +143,23 @@ impl DisplayList {
         });
     }
 }
+
+/// Convert z-index to depth value for GPU depth testing.
+/// Maps z-index range to [0.0, 1.0] where lower z-index = closer to camera = lower depth.
+/// 
+/// Strategy:
+/// - z = 0 maps to depth 0.5 (middle)
+/// - Negative z (closer) maps to (0.0, 0.5)
+/// - Positive z (farther) maps to (0.5, 1.0)
+/// - Clamps to reasonable range to avoid precision issues
+pub fn z_index_to_depth(z: i32) -> f32 {
+    // Clamp z-index to reasonable range [-10000, 10000]
+    let z_clamped = z.clamp(-10000, 10000) as f32;
+    
+    // Map to [0.0, 1.0] with 0.5 as center
+    // Lower z-index = closer = lower depth value (rendered on top)
+    let normalized = (z_clamped / 10000.0) * 0.5 + 0.5;
+    
+    // Clamp to valid depth range
+    normalized.clamp(0.0, 1.0)
+}

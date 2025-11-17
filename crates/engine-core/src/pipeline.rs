@@ -5,6 +5,7 @@ use crate::upload::GpuScene;
 pub struct BasicSolidRenderer {
     pipeline: wgpu::RenderPipeline,
     bgl: wgpu::BindGroupLayout,
+    z_bgl: wgpu::BindGroupLayout,
 }
 
 impl BasicSolidRenderer {
@@ -32,9 +33,23 @@ impl BasicSolidRenderer {
             }],
         });
 
+        let z_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("solid-z-bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: std::num::NonZeroU64::new(4),
+                },
+                count: None,
+            }],
+        });
+
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("solid-pipeline-layout"),
-            bind_group_layouts: &[&bgl],
+            bind_group_layouts: &[&bgl, &z_bgl],
             push_constant_ranges: &[],
         });
 
@@ -71,7 +86,13 @@ impl BasicSolidRenderer {
                 })],
             }),
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: sample_count,
                 ..Default::default()
@@ -79,17 +100,19 @@ impl BasicSolidRenderer {
             multiview: None,
         });
 
-        Self { pipeline, bgl }
+        Self { pipeline, bgl, z_bgl }
     }
 
     pub fn record<'a>(
         &'a self,
         pass: &mut wgpu::RenderPass<'a>,
         vp_bg: &'a wgpu::BindGroup,
+        z_bg: &'a wgpu::BindGroup,
         scene: &'a GpuScene,
     ) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, vp_bg, &[]);
+        pass.set_bind_group(1, z_bg, &[]);
         pass.set_vertex_buffer(0, scene.vertex.buffer.slice(..));
         pass.set_index_buffer(scene.index.buffer.slice(..), wgpu::IndexFormat::Uint16);
         pass.draw_indexed(0..scene.indices, 0, 0..1);
@@ -97,6 +120,10 @@ impl BasicSolidRenderer {
 
     pub fn viewport_bgl(&self) -> &wgpu::BindGroupLayout {
         &self.bgl
+    }
+
+    pub fn z_index_bgl(&self) -> &wgpu::BindGroupLayout {
+        &self.z_bgl
     }
 }
 
@@ -380,7 +407,13 @@ impl BackgroundRenderer {
                 })],
             }),
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
@@ -655,6 +688,7 @@ impl ShadowCompositeRenderer {
 pub struct TextRenderer {
     pub pipeline: wgpu::RenderPipeline,
     vp_bgl: wgpu::BindGroupLayout,
+    z_bgl: wgpu::BindGroupLayout,
     pub tex_bgl: wgpu::BindGroupLayout,
     pub sampler: wgpu::Sampler,
     pub color_buffer: wgpu::Buffer,
@@ -677,6 +711,21 @@ impl TextRenderer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
                     min_binding_size: std::num::NonZeroU64::new(16),
+                },
+                count: None,
+            }],
+        });
+
+        // Z-index uniform
+        let z_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("text-z-bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: std::num::NonZeroU64::new(4),
                 },
                 count: None,
             }],
@@ -707,7 +756,7 @@ impl TextRenderer {
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("text-pipeline-layout"),
-            bind_group_layouts: &[&vp_bgl, &tex_bgl],
+            bind_group_layouts: &[&vp_bgl, &z_bgl, &tex_bgl],
             push_constant_ranges: &[],
         });
 
@@ -749,7 +798,13 @@ impl TextRenderer {
                 })],
             }),
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
@@ -775,6 +830,7 @@ impl TextRenderer {
         Self {
             pipeline,
             vp_bgl,
+            z_bgl,
             tex_bgl,
             sampler,
             color_buffer,
@@ -821,6 +877,7 @@ impl TextRenderer {
         &'a self,
         pass: &mut wgpu::RenderPass<'a>,
         vp_bg: &'a wgpu::BindGroup,
+        z_bg: &'a wgpu::BindGroup,
         tex_bg: &'a wgpu::BindGroup,
         vbuf: &'a wgpu::Buffer,
         ibuf: &'a wgpu::Buffer,
@@ -828,7 +885,8 @@ impl TextRenderer {
     ) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, vp_bg, &[]);
-        pass.set_bind_group(1, tex_bg, &[]);
+        pass.set_bind_group(1, z_bg, &[]);
+        pass.set_bind_group(2, tex_bg, &[]);
         pass.set_vertex_buffer(0, vbuf.slice(..));
         pass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint16);
         pass.draw_indexed(0..icount, 0, 0..1);
@@ -838,6 +896,7 @@ impl TextRenderer {
 pub struct ImageRenderer {
     pipeline: wgpu::RenderPipeline,
     vp_bgl: wgpu::BindGroupLayout,
+    z_bgl: wgpu::BindGroupLayout,
     tex_bgl: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
 }
@@ -859,6 +918,21 @@ impl ImageRenderer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
                     min_binding_size: std::num::NonZeroU64::new(16),
+                },
+                count: None,
+            }],
+        });
+
+        // Z-index uniform
+        let z_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("image-z-bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: std::num::NonZeroU64::new(4),
                 },
                 count: None,
             }],
@@ -889,7 +963,7 @@ impl ImageRenderer {
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("image-pipeline-layout"),
-            bind_group_layouts: &[&vp_bgl, &tex_bgl],
+            bind_group_layouts: &[&vp_bgl, &z_bgl, &tex_bgl],
             push_constant_ranges: &[],
         });
 
@@ -926,7 +1000,13 @@ impl ImageRenderer {
                 })],
             }),
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
@@ -945,6 +1025,7 @@ impl ImageRenderer {
         Self {
             pipeline,
             vp_bgl,
+            z_bgl,
             tex_bgl,
             sampler,
         }
@@ -990,6 +1071,7 @@ impl ImageRenderer {
         &'a self,
         pass: &mut wgpu::RenderPass<'a>,
         vp_bg: &'a wgpu::BindGroup,
+        z_bg: &'a wgpu::BindGroup,
         tex_bg: &'a wgpu::BindGroup,
         vbuf: &'a wgpu::Buffer,
         ibuf: &'a wgpu::Buffer,
@@ -997,7 +1079,8 @@ impl ImageRenderer {
     ) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, vp_bg, &[]);
-        pass.set_bind_group(1, tex_bg, &[]);
+        pass.set_bind_group(1, z_bg, &[]);
+        pass.set_bind_group(2, tex_bg, &[]);
         pass.set_vertex_buffer(0, vbuf.slice(..));
         pass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint16);
         pass.draw_indexed(0..icount, 0, 0..1);

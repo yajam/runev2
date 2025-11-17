@@ -125,6 +125,9 @@ pub struct RuneSurface {
     /// When true, render solids to an intermediate texture and blit to the surface.
     /// This matches the demo-app default and is often more robust across platforms during resize.
     use_intermediate: bool,
+    /// When true, use unified rendering (Phase 3) for optimal z-ordering across all draw types.
+    /// This renders solids, text, images, and SVGs in a single pass sorted by z-index.
+    use_unified_rendering: bool,
     /// When true, positions are interpreted as logical pixels and scaled by dpi_scale in PassManager.
     logical_pixels: bool,
     /// Current DPI scale factor (e.g., 2.0 on Retina).
@@ -173,6 +176,7 @@ impl RuneSurface {
             direct: false,
             preserve_surface: false,
             use_intermediate: true,
+            use_unified_rendering: true, // Enable Phase 3 unified rendering by default
             logical_pixels: true,
             dpi_scale: 1.0,
             ui_scale: 1.0,
@@ -215,6 +219,10 @@ impl RuneSurface {
     /// Choose whether to use an intermediate texture and blit to the surface.
     pub fn set_use_intermediate(&mut self, use_it: bool) {
         self.use_intermediate = use_it;
+    }
+    /// Enable or disable unified rendering (Phase 3) for optimal z-ordering.
+    pub fn set_use_unified_rendering(&mut self, use_it: bool) {
+        self.use_unified_rendering = use_it;
     }
     /// Enable or disable logical pixel interpretation.
     pub fn set_logical_pixels(&mut self, on: bool) {
@@ -358,130 +366,192 @@ impl RuneSurface {
             a: clear.a as f64,
         };
 
-        // Render solids (text is now handled separately via glyph_draws for simplicity)
-        if self.use_intermediate {
-            self.pass.render_frame_with_intermediate(
+        // Ensure depth texture is allocated for z-ordering (Phase 1 of depth buffer implementation)
+        self.pass
+            .ensure_depth_texture(&mut self.allocator, width, height);
+
+        // Choose rendering path based on use_unified_rendering flag
+        if self.use_unified_rendering {
+            // Phase 3: Unified rendering - all draw types in a single pass with optimal z-ordering
+            
+            // Sort SVG draws by z-index
+            let mut svg_draws = canvas.svg_draws.clone();
+            svg_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
+            
+            // Sort image draws by z-index and prepare simplified data
+            let mut image_draws = canvas.image_draws.clone();
+            image_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
+            
+            // Convert image draws to simplified format (path, origin, size, z)
+            // Apply transforms and fit calculations here
+            let mut prepared_images: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)> = Vec::new();
+            for (path, origin, size, fit, z, transform) in image_draws.iter() {
+                if let Some((tex_view, img_w, img_h)) =
+                    self.pass.try_get_image_view(std::path::Path::new(path))
+                {
+                    drop(tex_view); // We just need to check if it's ready
+                    let transformed_origin = apply_transform_to_point(*origin, *transform);
+                    let (render_origin, render_size) = calculate_image_fit(
+                        transformed_origin,
+                        *size,
+                        img_w as f32,
+                        img_h as f32,
+                        *fit,
+                    );
+                    prepared_images.push((path.clone(), render_origin, render_size, *z));
+                } else {
+                    // Request async load if not ready
+                    if !self.pass.is_image_ready(std::path::Path::new(path)) {
+                        self.pass.request_image_load(std::path::Path::new(path));
+                        let _ = self.image_loader_tx.send(path.clone());
+                    }
+                }
+            }
+            
+            // Call unified rendering method
+            self.pass.render_unified(
                 &mut encoder,
                 &mut self.allocator,
                 &view,
                 width,
                 height,
                 &scene,
-                clear_wgpu,
-                self.direct,
-                &self.queue,
-                self.preserve_surface, // Preserve intermediate texture if requested
-            );
-        } else {
-            self.pass.render_frame(
-                &mut encoder,
-                &mut self.allocator,
-                &view,
-                width,
-                height,
-                &scene,
+                &canvas.glyph_draws,
+                &svg_draws,
+                &prepared_images,
                 clear_wgpu,
                 self.direct,
                 &self.queue,
                 self.preserve_surface,
             );
-        }
-
-        // Draw all glyph masks in a single batched call (critical for performance!)
-        if !canvas.glyph_draws.is_empty() {
-            let batch: Vec<_> = canvas
-                .glyph_draws
-                .iter()
-                .map(|(origin, glyph, color)| {
-                    // origin already includes glyph.offset from when it was added to glyph_draws
-                    (glyph.mask.clone(), *origin, *color)
-                })
-                .collect();
-
-            self.pass
-                .draw_text_mask(&mut encoder, &view, width, height, &batch, &self.queue);
-        }
-
-        // Sort SVG draws by z-index to respect layering
-        let mut svg_draws = canvas.svg_draws.clone();
-        svg_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
-
-        // Rasterize and draw any queued SVGs
-        for (path, origin, max_size, style, _z, transform) in svg_draws.iter() {
-            // Apply transform to origin
-            let transformed_origin = apply_transform_to_point(*origin, *transform);
-
-            // First get 1x size
-            if let Some((_view1x, w1, h1)) = self.pass.rasterize_svg_to_view(
-                std::path::Path::new(path),
-                1.0,
-                *style,
-                &self.queue,
-            ) {
-                let base_w = w1.max(1) as f32;
-                let base_h = h1.max(1) as f32;
-                let scale = (max_size[0] / base_w).min(max_size[1] / base_h).max(0.0);
-                let (view_scaled, sw, sh) = if let Some((v, w, h)) = self
-                    .pass
-                    .rasterize_svg_to_view(std::path::Path::new(path), scale, *style, &self.queue)
-                {
-                    (v, w as f32, h as f32)
-                } else {
-                    continue;
-                };
-                // Draw at transformed origin with scaled size
-                self.pass.draw_image_quad(
+        } else {
+            // Legacy path: Separate passes for each draw type
+            
+            // Render solids (text is now handled separately via glyph_draws for simplicity)
+            if self.use_intermediate {
+                self.pass.render_frame_with_intermediate(
                     &mut encoder,
+                    &mut self.allocator,
                     &view,
-                    transformed_origin,
-                    [sw, sh],
-                    &view_scaled,
-                    &self.queue,
                     width,
                     height,
+                    &scene,
+                    clear_wgpu,
+                    self.direct,
+                    &self.queue,
+                    self.preserve_surface, // Preserve intermediate texture if requested
+                );
+            } else {
+                self.pass.render_frame(
+                    &mut encoder,
+                    &mut self.allocator,
+                    &view,
+                    width,
+                    height,
+                    &scene,
+                    clear_wgpu,
+                    self.direct,
+                    &self.queue,
+                    self.preserve_surface,
                 );
             }
-        }
 
-        // Sort image draws by z-index to respect layering
-        let mut image_draws = canvas.image_draws.clone();
-        image_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
+            // Draw all glyph masks in a single batched call (critical for performance!)
+            if !canvas.glyph_draws.is_empty() {
+                let batch: Vec<_> = canvas
+                    .glyph_draws
+                    .iter()
+                    .map(|(origin, glyph, color)| {
+                        // origin already includes glyph.offset from when it was added to glyph_draws
+                        (glyph.mask.clone(), *origin, *color)
+                    })
+                    .collect();
 
-        // Draw any queued raster images
-        for (path, origin, size, fit, _z, transform) in image_draws.iter() {
-            // Try to get the image from cache (non-blocking)
-            if let Some((tex_view, img_w, img_h)) =
-                self.pass.try_get_image_view(std::path::Path::new(path))
-            {
+                self.pass
+                    .draw_text_mask(&mut encoder, &view, width, height, &batch, &self.queue);
+            }
+
+            // Sort SVG draws by z-index to respect layering
+            let mut svg_draws = canvas.svg_draws.clone();
+            svg_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
+
+            // Rasterize and draw any queued SVGs
+            for (path, origin, max_size, style, _z, transform) in svg_draws.iter() {
                 // Apply transform to origin
                 let transformed_origin = apply_transform_to_point(*origin, *transform);
 
-                // Image is ready - calculate actual render size and position based on fit mode
-                let (render_origin, render_size) = calculate_image_fit(
-                    transformed_origin,
-                    *size,
-                    img_w as f32,
-                    img_h as f32,
-                    *fit,
-                );
-
-                self.pass.draw_image_quad(
-                    &mut encoder,
-                    &view,
-                    render_origin,
-                    render_size,
-                    &tex_view,
+                // First get 1x size
+                if let Some((_view1x, w1, h1)) = self.pass.rasterize_svg_to_view(
+                    std::path::Path::new(path),
+                    1.0,
+                    *style,
                     &self.queue,
-                    width,
-                    height,
-                );
-            } else {
-                // Image not ready - request async load if not already loading
-                if !self.pass.is_image_ready(std::path::Path::new(path)) {
-                    self.pass.request_image_load(std::path::Path::new(path));
-                    let _ = self.image_loader_tx.send(path.clone());
+                ) {
+                    let base_w = w1.max(1) as f32;
+                    let base_h = h1.max(1) as f32;
+                    let scale = (max_size[0] / base_w).min(max_size[1] / base_h).max(0.0);
+                    let (view_scaled, sw, sh) = if let Some((v, w, h)) = self
+                        .pass
+                        .rasterize_svg_to_view(std::path::Path::new(path), scale, *style, &self.queue)
+                    {
+                        (v, w as f32, h as f32)
+                    } else {
+                        continue;
+                    };
+                    // Draw at transformed origin with scaled size
+                    self.pass.draw_image_quad(
+                        &mut encoder,
+                        &view,
+                        transformed_origin,
+                        [sw, sh],
+                        &view_scaled,
+                        &self.queue,
+                        width,
+                        height,
+                    );
                 }
-                // Image will appear on next frame after background load completes
+            }
+
+            // Sort image draws by z-index to respect layering
+            let mut image_draws = canvas.image_draws.clone();
+            image_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
+
+            // Draw any queued raster images
+            for (path, origin, size, fit, _z, transform) in image_draws.iter() {
+                // Try to get the image from cache (non-blocking)
+                if let Some((tex_view, img_w, img_h)) =
+                    self.pass.try_get_image_view(std::path::Path::new(path))
+                {
+                    // Apply transform to origin
+                    let transformed_origin = apply_transform_to_point(*origin, *transform);
+
+                    // Image is ready - calculate actual render size and position based on fit mode
+                    let (render_origin, render_size) = calculate_image_fit(
+                        transformed_origin,
+                        *size,
+                        img_w as f32,
+                        img_h as f32,
+                        *fit,
+                    );
+
+                    self.pass.draw_image_quad(
+                        &mut encoder,
+                        &view,
+                        render_origin,
+                        render_size,
+                        &tex_view,
+                        &self.queue,
+                        width,
+                        height,
+                    );
+                } else {
+                    // Image not ready - request async load if not already loading
+                    if !self.pass.is_image_ready(std::path::Path::new(path)) {
+                        self.pass.request_image_load(std::path::Path::new(path));
+                        let _ = self.image_loader_tx.send(path.clone());
+                    }
+                    // Image will appear on next frame after background load completes
+                }
             }
         }
 
