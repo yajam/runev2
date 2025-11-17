@@ -28,7 +28,7 @@ pub struct Canvas {
     pub(crate) painter: Painter,
     pub(crate) clear_color: Option<ColorLinPremul>,
     pub(crate) text_provider: Option<Arc<dyn TextProvider + Send + Sync>>, // optional high-level text shaper
-    pub(crate) glyph_draws: Vec<([f32; 2], RasterizedGlyph, ColorLinPremul)>, // low-level glyph masks
+    pub(crate) glyph_draws: Vec<([f32; 2], RasterizedGlyph, ColorLinPremul, i32)>, // low-level glyph masks with z-index
     pub(crate) svg_draws: Vec<(
         std::path::PathBuf,
         [f32; 2],
@@ -136,8 +136,6 @@ impl Canvas {
         color: ColorLinPremul,
         z: i32,
     ) {
-        let _ = z; // z-ordering not used for direct glyph rendering
-
         // If we have a provider, rasterize immediately (simple, reliable)
         if let Some(ref provider) = self.text_provider {
             // Apply current transform to origin (handles zone positioning)
@@ -183,10 +181,10 @@ impl Canvas {
                             offset: [0.0, 0.0],
                             mask: clipped_mask,
                         };
-                        self.glyph_draws.push((clipped_origin, clipped, color));
+                        self.glyph_draws.push((clipped_origin, clipped, color, z));
                     }
                 } else {
-                    self.glyph_draws.push((glyph_origin, g.clone(), color));
+                    self.glyph_draws.push((glyph_origin, g.clone(), color, z));
                 }
             }
         } else {
@@ -255,10 +253,10 @@ impl Canvas {
                         offset: [0.0, 0.0],
                         mask: clipped_mask,
                     };
-                    self.glyph_draws.push((clipped_origin, clipped, color));
+                    self.glyph_draws.push((clipped_origin, clipped, color, 0)); // default z=0 for direct text
                 }
             } else {
-                self.glyph_draws.push((glyph_origin, g.clone(), color));
+                self.glyph_draws.push((glyph_origin, g.clone(), color, 0)); // default z=0 for direct text
             }
         }
     }
@@ -276,9 +274,8 @@ impl Canvas {
         color: ColorLinPremul,
         z: i32,
     ) {
-        let _ = z; // z currently not used for low-level masks; they are composited after solids
         for g in glyphs.iter().cloned() {
-            self.glyph_draws.push((origin, g, color));
+            self.glyph_draws.push((origin, g, color, z));
         }
     }
 

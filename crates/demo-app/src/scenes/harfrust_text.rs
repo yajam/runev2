@@ -155,6 +155,7 @@ impl Scene for HarfrustTextScene {
                 height,
                 &self.glyphs.glyphs,
                 queue,
+                0.0,
             );
         }
     }

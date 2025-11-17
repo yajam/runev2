@@ -110,6 +110,10 @@ fn main() -> Result<()> {
         Box::new(scenes::path_demo::PathDemoScene::default())
     } else if scene_env.as_deref() == Some("ui") || std::env::args().any(|a| a == "--scene=ui") {
         Box::new(scenes::ui::UiElementsScene::default())
+    } else if scene_env.as_deref() == Some("unified-test")
+        || std::env::args().any(|a| a == "--scene=unified-test" || a == "--unified-test")
+    {
+        Box::new(scenes::unified_test::UnifiedTestScene::default())
     } else {
         Box::new(scenes::default::DefaultScene::default())
     };
@@ -451,9 +455,22 @@ fn main() -> Result<()> {
                             label: Some("clear-encoder"),
                         });
                 // Background will be rendered as clear color in offscreen buffer
+                // Always upload the current display list for unified rendering
+                let unified_scene_opt = if let (SceneKind::Geometry, Some(dl)) = (scene.kind(), dlist_opt.as_ref()) {
+                    let q2 = engine.queue();
+                    // Use unified upload to extract all element types
+                    Some(
+                        engine_core::upload_display_list_unified(engine.allocator_mut(), &q2, dl)
+                            .expect("unified upload failed"),
+                    )
+                } else {
+                    None
+                };
+
                 if needs_reupload {
                     if let (SceneKind::Geometry, Some(dl)) = (scene.kind(), dlist_opt.as_ref()) {
                         let q2 = engine.queue();
+                        // Keep legacy gpu_scene for backward compatibility
                         gpu_scene_opt = Some(
                             engine_core::upload_display_list(engine.allocator_mut(), &q2, dl)
                                 .expect("upload failed on resize"),
@@ -463,7 +480,75 @@ fn main() -> Result<()> {
                 }
                 match scene.kind() {
                     SceneKind::Geometry => {
-                        if let Some(gpu_scene) = gpu_scene_opt.as_ref() {
+                        // Check for unified rendering path first
+                        if let Some(unified_scene) = unified_scene_opt.as_ref() {
+                            let queue = engine.queue();
+
+                            // Rasterize text runs from the unified scene
+                            let mut glyph_draws = Vec::new();
+                            eprintln!("🔍 Text draws in unified_scene: {}", unified_scene.text_draws.len());
+                            if let Some(provider) = text_providers.as_ref().map(|(rgb, _, _)| &**rgb) {
+                                for text_draw in &unified_scene.text_draws {
+                                    eprintln!("  📝 Processing text: '{}' at z={}", text_draw.run.text, text_draw.z);
+                                    // Apply transform to text position
+                                    let transformed_pos = [
+                                        text_draw.run.pos[0] + text_draw.transform.m[4],
+                                        text_draw.run.pos[1] + text_draw.transform.m[5],
+                                    ];
+
+                                    // Rasterize the text run
+                                    let glyphs = provider.rasterize_run(&text_draw.run);
+                                    eprintln!("    ✏️  Rasterized {} glyphs", glyphs.len());
+
+                                    // Add each glyph with its position, color, and z-index
+                                    for glyph in glyphs {
+                                        glyph_draws.push((
+                                            [transformed_pos[0] + glyph.offset[0], transformed_pos[1] + glyph.offset[1]],
+                                            glyph,
+                                            text_draw.run.color,
+                                            text_draw.z,
+                                        ));
+                                    }
+                                }
+                            } else {
+                                eprintln!("⚠️  No text provider available!");
+                            }
+                            eprintln!("🔍 Total glyph_draws: {}", glyph_draws.len());
+
+                            // Convert image and SVG draws to the format expected by render_unified
+                            let image_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)> =
+                                unified_scene.image_draws.iter()
+                                    .map(|d| (d.path.clone(), d.origin, d.size, d.z))
+                                    .collect();
+
+                            let svg_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], Option<engine_core::SvgStyle>, i32, engine_core::Transform2D)> =
+                                unified_scene.svg_draws.iter()
+                                    .map(|d| (d.path.clone(), d.origin, d.size, None, d.z, d.transform))
+                                    .collect();
+
+                            // Use unified rendering
+                            passes.render_unified(
+                                &mut encoder,
+                                engine.allocator_mut(),
+                                &view,
+                                size.width,
+                                size.height,
+                                &unified_scene.gpu_scene,
+                                &glyph_draws,
+                                &svg_draws,
+                                &image_draws,
+                                wgpu::Color {
+                                    r: 30.0 / 255.0,
+                                    g: 30.0 / 255.0,
+                                    b: 40.0 / 255.0,
+                                    a: 1.0,
+                                },
+                                !use_intermediate,  // direct rendering if not using intermediate
+                                &queue,
+                                false,  // preserve_surface
+                            );
+                        } else if let Some(gpu_scene) = gpu_scene_opt.as_ref() {
+                            // Fallback to legacy rendering path
                             let queue = engine.queue();
                             if use_intermediate {
                                 if let (Some(dl), Some(provider)) = (

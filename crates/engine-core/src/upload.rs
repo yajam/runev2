@@ -3,13 +3,14 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::allocator::{BufKey, OwnedBuffer, RenderAllocator};
 use crate::display_list::{Command, DisplayList};
-use crate::scene::{Brush, FillRule, Path, PathCmd, Rect, RoundedRect, Stroke, Transform2D};
+use crate::scene::{Brush, FillRule, Path, PathCmd, Rect, RoundedRect, Stroke, Transform2D, TextRun, ColorLinPremul};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
 pub struct Vertex {
     pub pos: [f32; 2],
     pub color: [f32; 4],
+    pub z_index: f32,
 }
 
 pub struct GpuScene {
@@ -19,12 +20,48 @@ pub struct GpuScene {
     pub indices: u32,
 }
 
+/// Extracted text draw from DisplayList
+#[derive(Clone, Debug)]
+pub struct ExtractedTextDraw {
+    pub run: TextRun,
+    pub z: i32,
+    pub transform: Transform2D,
+}
+
+/// Extracted image draw from DisplayList (placeholder for future)
+#[derive(Clone, Debug)]
+pub struct ExtractedImageDraw {
+    pub path: std::path::PathBuf,
+    pub origin: [f32; 2],
+    pub size: [f32; 2],
+    pub z: i32,
+    pub transform: Transform2D,
+}
+
+/// Extracted SVG draw from DisplayList (placeholder for future)
+#[derive(Clone, Debug)]
+pub struct ExtractedSvgDraw {
+    pub path: std::path::PathBuf,
+    pub origin: [f32; 2],
+    pub size: [f32; 2],
+    pub z: i32,
+    pub transform: Transform2D,
+}
+
+/// Complete unified scene data extracted from DisplayList
+pub struct UnifiedSceneData {
+    pub gpu_scene: GpuScene,
+    pub text_draws: Vec<ExtractedTextDraw>,
+    pub image_draws: Vec<ExtractedImageDraw>,
+    pub svg_draws: Vec<ExtractedSvgDraw>,
+}
+
 fn apply_transform(p: [f32; 2], t: Transform2D) -> [f32; 2] {
     let [a, b, c, d, e, f] = t.m;
     [a * p[0] + c * p[1] + e, b * p[0] + d * p[1] + f]
 }
 
-fn rect_to_verts(rect: Rect, color: [f32; 4], t: Transform2D) -> ([Vertex; 4], [u16; 6]) {
+fn rect_to_verts(rect: Rect, color: [f32; 4], t: Transform2D, z: f32) -> ([Vertex; 4], [u16; 6]) {
     let x0 = rect.x;
     let y0 = rect.y;
     let x1 = rect.x + rect.w;
@@ -35,10 +72,10 @@ fn rect_to_verts(rect: Rect, color: [f32; 4], t: Transform2D) -> ([Vertex; 4], [
     let p3 = apply_transform([x0, y1], t);
     (
         [
-            Vertex { pos: p0, color },
-            Vertex { pos: p1, color },
-            Vertex { pos: p2, color },
-            Vertex { pos: p3, color },
+            Vertex { pos: p0, color, z_index: z },
+            Vertex { pos: p1, color, z_index: z },
+            Vertex { pos: p2, color, z_index: z },
+            Vertex { pos: p3, color, z_index: z },
         ],
         [0, 1, 2, 0, 2, 3],
     )
@@ -50,6 +87,7 @@ fn push_rect_linear_gradient(
     rect: Rect,
     stops: &[(f32, [f32; 4])],
     t: Transform2D,
+    z: f32,
 ) {
     if stops.len() < 2 {
         return;
@@ -73,10 +111,10 @@ fn push_rect_linear_gradient(
         let p3 = apply_transform([x0, y1], t);
         let base = vertices.len() as u16;
         vertices.extend_from_slice(&[
-            Vertex { pos: p0, color: c0 },
-            Vertex { pos: p1, color: c1 },
-            Vertex { pos: p2, color: c1 },
-            Vertex { pos: p3, color: c0 },
+            Vertex { pos: p0, color: c0, z_index: z },
+            Vertex { pos: p1, color: c1, z_index: z },
+            Vertex { pos: p2, color: c1, z_index: z },
+            Vertex { pos: p3, color: c0, z_index: z },
         ]);
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
@@ -93,7 +131,7 @@ fn push_ellipse(
     let segs = 64u32;
     let base = vertices.len() as u16;
     let c = apply_transform(center, t);
-    vertices.push(Vertex { pos: c, color });
+    vertices.push(Vertex { pos: c, color, z_index: 0.0 });
 
     for i in 0..segs {
         let theta = (i as f32) / (segs as f32) * std::f32::consts::TAU;
@@ -102,7 +140,7 @@ fn push_ellipse(
             center[1] + radii[1] * theta.sin(),
         ];
         let p = apply_transform(p, t);
-        vertices.push(Vertex { pos: p, color });
+        vertices.push(Vertex { pos: p, color, z_index: 0.0 });
     }
     for i in 0..segs {
         let i0 = base;
@@ -132,6 +170,7 @@ fn push_ellipse_radial_gradient(
     vertices.push(Vertex {
         pos: cpos,
         color: s[0].1,
+        z_index: 0.0,
     });
 
     // First ring
@@ -149,6 +188,7 @@ fn push_ellipse_radial_gradient(
         vertices.push(Vertex {
             pos: p,
             color: prev_color,
+            z_index: 0.0,
         });
     }
     // Connect center to first ring if needed
@@ -174,6 +214,7 @@ fn push_ellipse_radial_gradient(
             vertices.push(Vertex {
                 pos: p,
                 color: ccur,
+                z_index: 0.0,
             });
         }
         // stitch prev ring to current ring
@@ -269,7 +310,7 @@ fn tessellate_path_fill(
     let base = vertices.len() as u16;
     for p in &geom.vertices {
         let tp = apply_transform(*p, t);
-        vertices.push(Vertex { pos: tp, color });
+        vertices.push(Vertex { pos: tp, color, z_index: 0.0 });
     }
     indices.extend(geom.indices.iter().map(|i| base + *i));
 }
@@ -357,7 +398,7 @@ fn tessellate_path_stroke(
     let base = vertices.len() as u16;
     for p in &geom.vertices {
         let tp = apply_transform(*p, t);
-        vertices.push(Vertex { pos: tp, color });
+        vertices.push(Vertex { pos: tp, color, z_index: 0.0 });
     }
     indices.extend(geom.indices.iter().map(|i| base + *i));
 }
@@ -503,14 +544,14 @@ fn push_rect_stroke(
 
     let base = vertices.len() as u16;
     vertices.extend_from_slice(&[
-        Vertex { pos: o0, color }, // 0
-        Vertex { pos: o1, color }, // 1
-        Vertex { pos: o2, color }, // 2
-        Vertex { pos: o3, color }, // 3
-        Vertex { pos: i0, color }, // 4
-        Vertex { pos: i1, color }, // 5
-        Vertex { pos: i2, color }, // 6
-        Vertex { pos: i3, color }, // 7
+        Vertex { pos: o0, color, z_index: 0.0 }, // 0
+        Vertex { pos: o1, color, z_index: 0.0 }, // 1
+        Vertex { pos: o2, color, z_index: 0.0 }, // 2
+        Vertex { pos: o3, color, z_index: 0.0 }, // 3
+        Vertex { pos: i0, color, z_index: 0.0 }, // 4
+        Vertex { pos: i1, color, z_index: 0.0 }, // 5
+        Vertex { pos: i2, color, z_index: 0.0 }, // 6
+        Vertex { pos: i3, color, z_index: 0.0 }, // 7
     ]);
     // Build ring from quads on each edge
     let idx: [u16; 24] = [
@@ -560,12 +601,13 @@ pub fn upload_display_list(
                 rect,
                 brush,
                 transform,
+                z,
                 ..
             } => {
                 match brush {
                     Brush::Solid(col) => {
                         let color = [col.r, col.g, col.b, col.a];
-                        let (v, i) = rect_to_verts(*rect, color, *transform);
+                        let (v, i) = rect_to_verts(*rect, color, *transform, *z as f32);
                         let base = vertices.len() as u16;
                         vertices.extend_from_slice(&v);
                         indices.extend(i.iter().map(|idx| base + idx));
@@ -594,6 +636,7 @@ pub fn upload_display_list(
                             *rect,
                             &packed,
                             *transform,
+                            *z as f32,
                         );
                     }
                     _ => {}
@@ -761,5 +804,278 @@ pub fn upload_display_list(
         index: ibuf,
         vertices: vertices.len() as u32,
         indices: indices.len() as u32,
+    })
+}
+
+/// Upload a DisplayList extracting all element types for unified rendering.
+/// This is the main entry point for the unified rendering system.
+///
+/// Returns:
+/// - GpuScene: Uploaded solid geometry (rectangles, paths, etc.)
+/// - text_draws: Text runs with their transforms and z-indices
+/// - image_draws: Image draws (currently placeholder, will be implemented)
+/// - svg_draws: SVG draws (currently placeholder, will be implemented)
+pub fn upload_display_list_unified(
+    allocator: &mut RenderAllocator,
+    queue: &wgpu::Queue,
+    list: &DisplayList,
+) -> Result<UnifiedSceneData> {
+    let mut vertices: Vec<Vertex> = Vec::new();
+    let mut indices: Vec<u16> = Vec::new();
+    let mut text_draws: Vec<ExtractedTextDraw> = Vec::new();
+    let mut image_draws: Vec<ExtractedImageDraw> = Vec::new();
+    let mut svg_draws: Vec<ExtractedSvgDraw> = Vec::new();
+
+    // Track current transform stack for text extraction
+    let mut transform_stack: Vec<Transform2D> = vec![Transform2D::identity()];
+    let mut current_transform = Transform2D::identity();
+
+    for cmd in &list.commands {
+        match cmd {
+            // Handle transform stack
+            Command::PushTransform(t) => {
+                current_transform = current_transform.concat(*t);
+                transform_stack.push(current_transform);
+            }
+            Command::PopTransform => {
+                transform_stack.pop();
+                current_transform = transform_stack.last().copied().unwrap_or(Transform2D::identity());
+            }
+
+            // Extract text commands
+            Command::DrawText { run, z, transform, .. } => {
+                // Apply both the command transform and the current transform stack
+                let final_transform = current_transform.concat(*transform);
+                text_draws.push(ExtractedTextDraw {
+                    run: run.clone(),
+                    z: *z,
+                    transform: final_transform,
+                });
+            }
+
+            // Process solid geometry commands
+            Command::DrawRect {
+                rect,
+                brush,
+                transform,
+                z,
+                ..
+            } => {
+                let final_transform = current_transform.concat(*transform);
+                match brush {
+                    Brush::Solid(col) => {
+                        let color = [col.r, col.g, col.b, col.a];
+                        let (v, i) = rect_to_verts(*rect, color, final_transform, *z as f32);
+                        let base = vertices.len() as u16;
+                        vertices.extend_from_slice(&v);
+                        indices.extend(i.iter().map(|idx| base + idx));
+                    }
+                    Brush::LinearGradient { stops, .. } => {
+                        // Only handle horizontal gradients for now: map t along x within rect
+                        let mut packed: Vec<(f32, [f32; 4])> = stops
+                            .iter()
+                            .map(|(tpos, c)| (*tpos, [c.r, c.g, c.b, c.a]))
+                            .collect();
+                        if packed.is_empty() {
+                            continue;
+                        }
+                        // Clamp and ensure 0 and 1 exist
+                        if packed.first().unwrap().0 > 0.0 {
+                            let c = packed.first().unwrap().1;
+                            packed.insert(0, (0.0, c));
+                        }
+                        if packed.last().unwrap().0 < 1.0 {
+                            let c = packed.last().unwrap().1;
+                            packed.push((1.0, c));
+                        }
+                        push_rect_linear_gradient(
+                            &mut vertices,
+                            &mut indices,
+                            *rect,
+                            &packed,
+                            final_transform,
+                            *z as f32,
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            Command::DrawRoundedRect {
+                rrect,
+                brush,
+                transform,
+                ..
+            } => {
+                let final_transform = current_transform.concat(*transform);
+                if let Brush::Solid(col) = brush {
+                    let color = [col.r, col.g, col.b, col.a];
+                    push_rounded_rect(&mut vertices, &mut indices, *rrect, color, final_transform);
+                }
+            }
+            Command::StrokeRect {
+                rect,
+                stroke,
+                brush,
+                transform,
+                ..
+            } => {
+                let final_transform = current_transform.concat(*transform);
+                if let Brush::Solid(col) = brush {
+                    let color = [col.r, col.g, col.b, col.a];
+                    push_rect_stroke(
+                        &mut vertices,
+                        &mut indices,
+                        *rect,
+                        *stroke,
+                        color,
+                        final_transform,
+                    );
+                }
+            }
+            Command::StrokeRoundedRect {
+                rrect,
+                stroke,
+                brush,
+                transform,
+                ..
+            } => {
+                let final_transform = current_transform.concat(*transform);
+                if let Brush::Solid(col) = brush {
+                    let color = [col.r, col.g, col.b, col.a];
+                    push_rounded_rect_stroke(
+                        &mut vertices,
+                        &mut indices,
+                        *rrect,
+                        *stroke,
+                        color,
+                        final_transform,
+                    );
+                }
+            }
+            Command::DrawEllipse {
+                center,
+                radii,
+                brush,
+                transform,
+                ..
+            } => {
+                let final_transform = current_transform.concat(*transform);
+                match brush {
+                    Brush::Solid(col) => {
+                        let color = [col.r, col.g, col.b, col.a];
+                        push_ellipse(
+                            &mut vertices,
+                            &mut indices,
+                            *center,
+                            *radii,
+                            color,
+                            final_transform,
+                        );
+                    }
+                    Brush::RadialGradient {
+                        center: _gcenter,
+                        radius: _r,
+                        stops,
+                    } => {
+                        let mut packed: Vec<(f32, [f32; 4])> = stops
+                            .iter()
+                            .map(|(t, c)| (*t, [c.r, c.g, c.b, c.a]))
+                            .collect();
+                        if packed.is_empty() {
+                            continue;
+                        }
+                        if packed.first().unwrap().0 > 0.0 {
+                            let c = packed.first().unwrap().1;
+                            packed.insert(0, (0.0, c));
+                        }
+                        if packed.last().unwrap().0 < 1.0 {
+                            let c = packed.last().unwrap().1;
+                            packed.push((1.0, c));
+                        }
+                        push_ellipse_radial_gradient(
+                            &mut vertices,
+                            &mut indices,
+                            *center,
+                            *radii,
+                            &packed,
+                            final_transform,
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            Command::FillPath {
+                path,
+                color,
+                transform,
+                ..
+            } => {
+                let final_transform = current_transform.concat(*transform);
+                let col = [color.r, color.g, color.b, color.a];
+                tessellate_path_fill(&mut vertices, &mut indices, path, col, final_transform);
+            }
+            Command::StrokePath {
+                path,
+                stroke,
+                color,
+                transform,
+                ..
+            } => {
+                let final_transform = current_transform.concat(*transform);
+                let col = [color.r, color.g, color.b, color.a];
+                tessellate_path_stroke(&mut vertices, &mut indices, path, *stroke, col, final_transform);
+            }
+            // BoxShadow commands are handled by PassManager as a separate pipeline.
+            Command::BoxShadow { .. } => {}
+            // Hit-only regions: intentionally not rendered.
+            Command::HitRegionRect { .. } => {}
+            Command::HitRegionRoundedRect { .. } => {}
+            Command::HitRegionEllipse { .. } => {}
+            // Clip commands would need special handling in unified rendering
+            Command::PushClip(_) => {}
+            Command::PopClip => {}
+        }
+    }
+
+    // Ensure index buffer size meets COPY_BUFFER_ALIGNMENT (4 bytes)
+    if (indices.len() % 2) != 0 {
+        if indices.len() >= 3 {
+            let a = indices[indices.len() - 3];
+            let b = indices[indices.len() - 2];
+            let c = indices[indices.len() - 1];
+            indices.extend_from_slice(&[a, b, c]);
+        } else {
+            indices.push(0);
+        }
+    }
+
+    // Allocate GPU buffers and upload
+    let vsize = (vertices.len() * std::mem::size_of::<Vertex>()) as u64;
+    let isize = (indices.len() * std::mem::size_of::<u16>()) as u64;
+    let vbuf = allocator.allocate_buffer(BufKey {
+        size: vsize.max(4),
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+    });
+    let ibuf = allocator.allocate_buffer(BufKey {
+        size: isize.max(4),
+        usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+    });
+    if vsize > 0 {
+        queue.write_buffer(&vbuf.buffer, 0, bytemuck::cast_slice(&vertices));
+    }
+    if isize > 0 {
+        queue.write_buffer(&ibuf.buffer, 0, bytemuck::cast_slice(&indices));
+    }
+
+    Ok(UnifiedSceneData {
+        gpu_scene: GpuScene {
+            vertex: vbuf,
+            index: ibuf,
+            vertices: vertices.len() as u32,
+            indices: indices.len() as u32,
+        },
+        text_draws,
+        image_draws,
+        svg_draws,
     })
 }

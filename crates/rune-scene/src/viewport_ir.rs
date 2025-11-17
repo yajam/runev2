@@ -7,6 +7,48 @@ use engine_core::{Color, ColorLinPremul, Rect};
 pub const CHECKBOX1_REGION_ID: u32 = 2001;
 pub const CHECKBOX2_REGION_ID: u32 = 2002;
 
+// Z-Index Manager for dynamic layering
+/// Manages z-indices for UI elements with automatic focus handling
+pub struct ZIndexManager {
+    /// Base z-index for viewport elements
+    pub base_z: i32,
+    /// Offset added to focused elements to bring them to front
+    pub focus_offset: i32,
+    /// Offset for modal/overlay elements
+    pub overlay_offset: i32,
+}
+
+impl ZIndexManager {
+    /// Create a new z-index manager with default offsets
+    pub fn new(base_z: i32) -> Self {
+        Self {
+            base_z,
+            focus_offset: 1000,
+            overlay_offset: 10000,
+        }
+    }
+
+    /// Get the effective z-index for an element
+    pub fn get_z(&self, element_z: i32, focused: bool) -> i32 {
+        if focused {
+            element_z + self.focus_offset
+        } else {
+            element_z
+        }
+    }
+
+    /// Get z-index for overlay elements (dropdowns, modals, etc.)
+    pub fn get_overlay_z(&self, element_z: i32) -> i32 {
+        element_z + self.overlay_offset
+    }
+}
+
+impl Default for ZIndexManager {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
 // UI Element Data Structures
 #[derive(Clone)]
 pub struct CheckboxData {
@@ -16,6 +58,7 @@ pub struct CheckboxData {
     pub label: Option<&'static str>,
     pub label_size: f32,
     pub color: ColorLinPremul,
+    pub z_index: i32,
 }
 
 #[derive(Clone)]
@@ -27,6 +70,7 @@ pub struct ButtonData {
     pub label: &'static str,
     pub label_size: f32,
     pub focused: bool,
+    pub z_index: i32,
 }
 
 #[derive(Clone)]
@@ -35,6 +79,7 @@ pub struct TextData {
     pub text: &'static str,
     pub size: f32,
     pub color: ColorLinPremul,
+    pub z_index: i32,
 }
 
 #[derive(Clone)]
@@ -46,6 +91,7 @@ pub struct RadioData {
     pub label_size: f32,
     pub label_color: ColorLinPremul,
     pub focused: bool,
+    pub z_index: i32,
 }
 
 #[derive(Clone)]
@@ -56,6 +102,7 @@ pub struct InputBoxData {
     pub text_color: ColorLinPremul,
     pub placeholder: Option<&'static str>,
     pub focused: bool,
+    pub z_index: i32,
 }
 
 #[derive(Clone)]
@@ -68,6 +115,7 @@ pub struct SelectData {
     pub focused: bool,
     pub options: Vec<String>,
     pub selected_index: Option<usize>,
+    pub z_index: i32,
 }
 
 #[derive(Clone)]
@@ -76,6 +124,7 @@ pub struct LabelData {
     pub text: &'static str,
     pub size: f32,
     pub color: ColorLinPremul,
+    pub z_index: i32,
 }
 
 #[derive(Clone)]
@@ -83,6 +132,7 @@ pub struct ImageData {
     pub rect: Rect,
     pub path: Option<std::path::PathBuf>,
     pub tint: ColorLinPremul,
+    pub z_index: i32,
 }
 
 // Unified UI element enum for mixed rendering
@@ -119,18 +169,21 @@ pub fn create_sample_elements() -> SampleUIElements {
             text: "Rune Scene \u{2014} UI Elements",
             size: 22.0,
             color: Color::rgba(255, 255, 255, 255),
+            z_index: 10,
         },
         TextData {
             pos: [col1_x, subtitle_y],
             text: "Subtitle example text",
             size: 18.0,
             color: Color::rgba(200, 200, 200, 255),
+            z_index: 10,
         },
         TextData {
             pos: [col1_x, 350.0],
             text: "TEST: This should be BRIGHT CYAN",
             size: 20.0,
             color: Color::rgba(0, 255, 255, 255),
+            z_index: 10,
         },
     ];
 
@@ -147,6 +200,7 @@ pub fn create_sample_elements() -> SampleUIElements {
             label: Some("Checkbox"),
             label_size: 16.0,
             color: Color::rgba(240, 240, 240, 255),
+            z_index: 20,
         },
         CheckboxData {
             rect: Rect {
@@ -160,6 +214,7 @@ pub fn create_sample_elements() -> SampleUIElements {
             label: Some("Checked + Focus"),
             label_size: 16.0,
             color: Color::rgba(240, 240, 240, 255),
+            z_index: 20,
         },
     ];
 
@@ -177,6 +232,7 @@ pub fn create_sample_elements() -> SampleUIElements {
             label: "Primary",
             label_size: 16.0,
             focused: false,
+            z_index: 30,
         },
         ButtonData {
             rect: Rect {
@@ -191,6 +247,7 @@ pub fn create_sample_elements() -> SampleUIElements {
             label: "Secondary",
             label_size: 16.0,
             focused: true,
+            z_index: 30,
         },
     ];
 
@@ -203,6 +260,7 @@ pub fn create_sample_elements() -> SampleUIElements {
             label_size: 16.0,
             label_color: Color::rgba(240, 240, 240, 255),
             focused: false,
+            z_index: 40,
         },
         RadioData {
             center: [col1_x + 140.0, radio_y + 9.0],
@@ -212,6 +270,7 @@ pub fn create_sample_elements() -> SampleUIElements {
             label_size: 16.0,
             label_color: Color::rgba(240, 240, 240, 255),
             focused: false,
+            z_index: 40,
         },
         RadioData {
             center: [col1_x + 280.0, radio_y + 9.0],
@@ -221,6 +280,7 @@ pub fn create_sample_elements() -> SampleUIElements {
             label_size: 16.0,
             label_color: Color::rgba(240, 240, 240, 255),
             focused: true,
+            z_index: 40,
         },
     ];
 
@@ -289,6 +349,7 @@ pub fn create_sample_elements() -> SampleUIElements {
             "Option 5".to_string(),
         ],
         selected_index: Some(0),
+        z_index: 70,
     }];
 
     let labels = vec![LabelData {
@@ -296,6 +357,7 @@ pub fn create_sample_elements() -> SampleUIElements {
         text: "This is a standalone label",
         size: 16.0,
         color: Color::rgba(180, 180, 200, 255),
+        z_index: 80,
     }];
 
     let images = vec![
@@ -308,6 +370,7 @@ pub fn create_sample_elements() -> SampleUIElements {
             },
             path: Some("images/squirrel.jpg".into()),
             tint: Color::rgba(100, 150, 200, 255),
+            z_index: 90,
         },
         ImageData {
             rect: Rect {
@@ -318,6 +381,7 @@ pub fn create_sample_elements() -> SampleUIElements {
             },
             path: Some("images/fire.jpg".into()),
             tint: Color::rgba(200, 100, 150, 255),
+            z_index: 90,
         },
     ];
 
@@ -500,6 +564,8 @@ impl SampleUIElements {
     /// Render all sample UI elements to a canvas in local coordinates.
     /// Caller should set up transform for zone positioning.
     /// Returns the total content height.
+    /// 
+    /// Now uses dynamic z-indices with automatic focus handling via ZIndexManager.
     pub fn render(
         &mut self,
         canvas: &mut rune_surface::Canvas,
@@ -508,13 +574,17 @@ impl SampleUIElements {
         provider: &dyn engine_core::TextProvider,
         text_cache: &engine_core::TextLayoutCache,
     ) -> f32 {
+        // Create z-index manager for dynamic layering
+        let z_manager = ZIndexManager::new(0);
+
         // Render all text elements using direct rasterization (simpler, more reliable)
         for text in self.texts.iter() {
             canvas.draw_text_direct(text.pos, text.text, text.size, text.color, provider);
         }
 
-        // Render all checkboxes (z=20, ticks drawn in overlay for crispness)
+        // Render all checkboxes with dynamic z-indices (focused elements come to front)
         for (idx, cb_data) in self.checkboxes.iter().enumerate() {
+            let z = z_manager.get_z(cb_data.z_index, cb_data.focused);
             let cb = elements::checkbox::Checkbox {
                 rect: cb_data.rect,
                 checked: cb_data.checked,
@@ -523,7 +593,7 @@ impl SampleUIElements {
                 label_size: cb_data.label_size,
                 color: cb_data.color,
             };
-            cb.render(canvas, 20);
+            cb.render(canvas, z);
 
             // Register hit region for checkbox
             let region_id = match idx {
@@ -534,8 +604,9 @@ impl SampleUIElements {
             canvas.hit_region_rect(region_id, cb_data.rect, 20);
         }
 
-        // Render all buttons (z=30)
+        // Render all buttons with dynamic z-indices
         for btn_data in self.buttons.iter() {
+            let z = z_manager.get_z(btn_data.z_index, btn_data.focused);
             let btn = elements::button::Button {
                 rect: btn_data.rect,
                 radius: btn_data.radius,
@@ -545,11 +616,12 @@ impl SampleUIElements {
                 label_size: btn_data.label_size,
                 focused: btn_data.focused,
             };
-            btn.render(canvas, 30);
+            btn.render(canvas, z);
         }
 
-        // Render all radio buttons (z=40)
+        // Render all radio buttons with dynamic z-indices
         for radio_data in self.radios.iter() {
+            let z = z_manager.get_z(radio_data.z_index, radio_data.focused);
             let radio = elements::radio::Radio {
                 center: radio_data.center,
                 radius: radio_data.radius,
@@ -559,21 +631,24 @@ impl SampleUIElements {
                 label_color: radio_data.label_color,
                 focused: radio_data.focused,
             };
-            radio.render(canvas, 40);
+            radio.render(canvas, z);
         }
 
-        // Render all input boxes (z=50)
+        // Render all input boxes with dynamic z-indices (z=50 base)
         for input in self.input_boxes.iter_mut() {
-            input.render(canvas, 50, provider);
+            let z = z_manager.get_z(50, input.focused);
+            input.render(canvas, z, provider);
         }
 
-        // Render all text areas (z=60)
+        // Render all text areas with dynamic z-indices (z=60 base)
         for textarea in self.text_areas.iter_mut() {
-            textarea.render(canvas, 60, provider);
+            let z = z_manager.get_z(60, textarea.focused);
+            textarea.render(canvas, z, provider);
         }
 
-        // Render all selects (z=70) - but NOT their dropdown overlays yet
+        // Render all selects with dynamic z-indices - but NOT their dropdown overlays yet
         for select_data in self.selects.iter() {
+            let z = z_manager.get_z(select_data.z_index, select_data.focused);
             let select = elements::select::Select {
                 rect: select_data.rect,
                 label: select_data.label.to_string(),
@@ -584,29 +659,31 @@ impl SampleUIElements {
                 options: select_data.options.clone(),
                 selected_index: select_data.selected_index,
             };
-            select.render(canvas, 70);
+            select.render(canvas, z);
         }
 
-        // Render all labels (z=80)
+        // Render all labels with dynamic z-indices
         for label_data in self.labels.iter() {
+            let z = z_manager.get_z(label_data.z_index, false);
             let label = elements::label::Label {
                 pos: label_data.pos,
                 text: label_data.text.to_string(),
                 size: label_data.size,
                 color: label_data.color,
             };
-            label.render(canvas, 80);
+            label.render(canvas, z);
         }
 
-        // Render all images (z=90)
+        // Render all images with dynamic z-indices
         for image_data in self.images.iter() {
+            let z = z_manager.get_z(image_data.z_index, false);
             let image = elements::image::ImageBox {
                 rect: image_data.rect,
                 path: image_data.path.clone(),
                 tint: image_data.tint,
                 fit: elements::image::ImageFit::Contain,
             };
-            image.render(canvas, 90);
+            image.render(canvas, z);
         }
 
         // Rune-text multi-paragraph wrapping demo (z=100)

@@ -49,7 +49,7 @@ impl BasicSolidRenderer {
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("solid-pipeline-layout"),
-            bind_group_layouts: &[&bgl, &z_bgl],
+            bind_group_layouts: &[&bgl],
             push_constant_ranges: &[],
         });
 
@@ -72,6 +72,11 @@ impl BasicSolidRenderer {
                             offset: 8,
                             shader_location: 1,
                             format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 24,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Float32,
                         },
                     ],
                 }],
@@ -107,16 +112,15 @@ impl BasicSolidRenderer {
         &'a self,
         pass: &mut wgpu::RenderPass<'a>,
         vp_bg: &'a wgpu::BindGroup,
-        z_bg: &'a wgpu::BindGroup,
         scene: &'a GpuScene,
     ) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, vp_bg, &[]);
-        pass.set_bind_group(1, z_bg, &[]);
         pass.set_vertex_buffer(0, scene.vertex.buffer.slice(..));
         pass.set_index_buffer(scene.index.buffer.slice(..), wgpu::IndexFormat::Uint16);
         pass.draw_indexed(0..scene.indices, 0, 0..1);
     }
+
 
     pub fn viewport_bgl(&self) -> &wgpu::BindGroupLayout {
         &self.bgl
@@ -805,7 +809,11 @@ impl TextRenderer {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState {
+                count: 4,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
             multiview: None,
         });
 
@@ -1007,7 +1015,11 @@ impl ImageRenderer {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState {
+                count: 4,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
             multiview: None,
         });
 

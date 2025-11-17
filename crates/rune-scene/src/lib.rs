@@ -94,6 +94,8 @@ pub fn run() -> Result<()> {
         config.format,
     );
     surf.set_use_intermediate(true);
+    // Enable unified depth-based rendering for viewport_ir; legacy path not needed here.
+    surf.set_use_unified_rendering(true);
     surf.set_direct(true);
     surf.set_logical_pixels(true);
     surf.set_dpi_scale(scale_factor);

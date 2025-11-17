@@ -176,7 +176,7 @@ impl RuneSurface {
             direct: false,
             preserve_surface: false,
             use_intermediate: true,
-            use_unified_rendering: true, // Enable Phase 3 unified rendering by default
+            use_unified_rendering: false, // Disabled by default - text/image/SVG not yet integrated
             logical_pixels: true,
             dpi_scale: 1.0,
             ui_scale: 1.0,
@@ -372,19 +372,21 @@ impl RuneSurface {
 
         // Choose rendering path based on use_unified_rendering flag
         if self.use_unified_rendering {
-            // Phase 3: Unified rendering - all draw types in a single pass with optimal z-ordering
-            
+            // Phase 3: Unified rendering - solids via unified pass, text/images/SVGs via
+            // existing depth-aware helpers to keep behavior consistent with legacy path.
+
             // Sort SVG draws by z-index
             let mut svg_draws = canvas.svg_draws.clone();
             svg_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
-            
-            // Sort image draws by z-index and prepare simplified data
+
+            // Sort image draws by z-index and prepare simplified data (for future in-pass use)
             let mut image_draws = canvas.image_draws.clone();
             image_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
-            
+
             // Convert image draws to simplified format (path, origin, size, z)
             // Apply transforms and fit calculations here
-            let mut prepared_images: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)> = Vec::new();
+            let mut prepared_images: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)> =
+                Vec::new();
             for (path, origin, size, fit, z, transform) in image_draws.iter() {
                 if let Some((tex_view, img_w, img_h)) =
                     self.pass.try_get_image_view(std::path::Path::new(path))
@@ -407,8 +409,8 @@ impl RuneSurface {
                     }
                 }
             }
-            
-            // Call unified rendering method
+
+            // Unified solids pass
             self.pass.render_unified(
                 &mut encoder,
                 &mut self.allocator,
@@ -424,6 +426,78 @@ impl RuneSurface {
                 &self.queue,
                 self.preserve_surface,
             );
+
+            // Draw all glyph masks in a single batched call (uses shared 1x depth texture)
+            if !canvas.glyph_draws.is_empty() {
+                let batch: Vec<_> = canvas
+                    .glyph_draws
+                    .iter()
+                    .map(|(origin, glyph, color, _z)| {
+                        // origin already includes glyph.offset from when it was added to glyph_draws
+                        (glyph.mask.clone(), *origin, *color)
+                    })
+                    .collect();
+
+                self.pass
+                    .draw_text_mask(&mut encoder, &view, width, height, &batch, &self.queue, -1000.0);
+            }
+
+            // Rasterize and draw any queued SVGs (sorted above)
+            for (path, origin, max_size, style, _z, transform) in svg_draws.iter() {
+                // Apply transform to origin
+                let transformed_origin = apply_transform_to_point(*origin, *transform);
+
+                // First get 1x size
+                if let Some((_view1x, w1, h1)) = self.pass.rasterize_svg_to_view(
+                    std::path::Path::new(path),
+                    1.0,
+                    *style,
+                    &self.queue,
+                ) {
+                    let base_w = w1.max(1) as f32;
+                    let base_h = h1.max(1) as f32;
+                    let scale = (max_size[0] / base_w).min(max_size[1] / base_h).max(0.0);
+                    let (view_scaled, sw, sh) = if let Some((v, w, h)) = self.pass.rasterize_svg_to_view(
+                        std::path::Path::new(path),
+                        scale,
+                        *style,
+                        &self.queue,
+                    ) {
+                        (v, w as f32, h as f32)
+                    } else {
+                        continue;
+                    };
+                    // Draw at transformed origin with scaled size
+                    self.pass.draw_image_quad(
+                        &mut encoder,
+                        &view,
+                        transformed_origin,
+                        [sw, sh],
+                        &view_scaled,
+                        &self.queue,
+                        width,
+                        height,
+                    );
+                }
+            }
+
+            // Draw any queued raster images that are ready (use prepared geometry)
+            for (path, origin, size, _z) in prepared_images.iter() {
+                if let Some((tex_view, _img_w, _img_h)) =
+                    self.pass.try_get_image_view(std::path::Path::new(path))
+                {
+                    self.pass.draw_image_quad(
+                        &mut encoder,
+                        &view,
+                        *origin,
+                        *size,
+                        &tex_view,
+                        &self.queue,
+                        width,
+                        height,
+                    );
+                }
+            }
         } else {
             // Legacy path: Separate passes for each draw type
             
@@ -461,14 +535,14 @@ impl RuneSurface {
                 let batch: Vec<_> = canvas
                     .glyph_draws
                     .iter()
-                    .map(|(origin, glyph, color)| {
+                    .map(|(origin, glyph, color, _z)| {
                         // origin already includes glyph.offset from when it was added to glyph_draws
                         (glyph.mask.clone(), *origin, *color)
                     })
                     .collect();
 
                 self.pass
-                    .draw_text_mask(&mut encoder, &view, width, height, &batch, &self.queue);
+                    .draw_text_mask(&mut encoder, &view, width, height, &batch, &self.queue, -1000.0);
             }
 
             // Sort SVG draws by z-index to respect layering

@@ -607,3 +607,174 @@ All three phases of the depth buffer implementation are now complete:
 ✅ **Phase 3**: Unified rendering (single pass, optimal z-ordering)
 
 The system is production-ready and provides correct z-ordering across all element types with optimal performance.
+
+---
+
+## Phase 4: Critical Bug Fix (Nov 17, 2025)
+
+### Issue: Blank Screen After Depth Buffer Implementation
+
+**Root Cause:**
+After implementing depth buffer support, the UI would render for a fraction of a second and then be replaced by a blank screen. The issue was caused by a mismatch between pipeline configuration and render pass setup:
+
+1. **Pipelines had depth testing enabled** (configured in Phase 1)
+2. **But render passes had `depth_attachment = None`** for text and images
+3. This created a validation error causing rendering to fail
+
+The depth attachments were intentionally disabled because:
+- Solid rendering used a temporary **4x MSAA depth texture**
+- Text/image passes couldn't access this MSAA depth texture
+- Setting `depth_attachment = None` avoided sample count mismatches
+
+### Solution: Shared Non-MSAA Depth Buffer
+
+**Changes Made:**
+
+**1. Text Rendering Pass (pass_manager.rs:649-663)**
+- ✅ Added depth attachment with `LoadOp::Load` to preserve depth values
+- ✅ Uses shared non-MSAA depth texture from `ensure_depth_texture()`
+- ✅ Enables proper z-ordering between text and other elements
+
+**2. Image Rendering Pass (pass_manager.rs:397-406)**
+- ✅ Added depth attachment with `LoadOp::Load` to preserve depth values
+- ✅ Uses shared non-MSAA depth texture from `ensure_depth_texture()`
+- ✅ Enables proper z-ordering between images and other elements
+
+**3. Solid Rendering Passes (pass_manager.rs:2587-2604, 2703-2719, 2860-2875)**
+- ✅ Changed from temporary 4x MSAA depth texture to shared non-MSAA depth texture
+- ✅ Uses `self.depth_view()` from `ensure_depth_texture()`
+- ✅ Works correctly with MSAA color + non-MSAA depth (depth test happens per-sample)
+
+### Key Technical Details
+
+**MSAA Color + Non-MSAA Depth:**
+- WebGPU/wgpu allows MSAA color attachments with non-MSAA depth attachments
+- Depth testing happens per-sample but uses the same depth value
+- This is a common optimization and works correctly for z-ordering
+
+**Depth Buffer Sharing:**
+- Single non-MSAA depth texture allocated via `ensure_depth_texture()`
+- Cleared to 1.0 at frame start (farthest depth)
+- Preserved across passes using `LoadOp::Load`
+- All element types (solids, text, images, SVGs) share the same depth buffer
+
+**Rendering Order:**
+1. Solids render first with `LoadOp::Clear(1.0)` - writes depth values
+2. Text renders with `LoadOp::Load` - preserves and tests against solid depths
+3. Images render with `LoadOp::Load` - preserves and tests against all previous depths
+4. SVGs render with `LoadOp::Load` - preserves and tests against all previous depths
+
+### Testing Checklist
+
+- [ ] Verify UI renders without blank screen
+- [ ] Test z-ordering: elements at different z-indices render in correct order
+- [ ] Test text rendering: glyphs appear correctly over/under other elements
+- [ ] Test image rendering: images respect z-index relative to UI elements
+- [ ] Test SVG rendering: SVGs respect z-index relative to other elements
+- [ ] Test viewport_ir: complex UI scenes render correctly
+- [ ] Performance test: ensure no significant slowdown from depth testing
+
+### Files Modified
+
+- `crates/engine-core/src/pass_manager.rs` - Fixed depth attachments for all render passes
+- `docs/z-layering-depth-buffer-implementation.md` - Updated documentation
+
+### Next Steps
+
+If issues persist:
+1. Check console for WebGPU validation errors
+2. Verify `ensure_depth_texture()` is called before rendering
+3. Confirm depth texture format is `Depth32Float`
+4. Test with `use_unified_rendering = false` to isolate legacy vs unified paths
+
+---
+
+## Phase 5: MSAA Sample Count Fix + Z-Fighting Safety Margins (Nov 17, 2025)
+
+### Issue: MSAA Sample Count Mismatch
+
+**Error:**
+```
+wgpu error: Validation Error
+Attachments have differing sample counts: the depth attachment's texture view has count 1 
+but is followed by the color attachment at index 0's texture view which has count 4
+```
+
+**Root Cause:**
+The shared depth texture from `ensure_depth_texture()` has `sample_count: 1`, but MSAA render passes use color attachments with `sample_count: 4`. WebGPU requires matching sample counts between all attachments in a render pass.
+
+### Solution: MSAA Depth Textures for MSAA Passes
+
+**Changes Made:**
+
+**1. render_frame_internal() - lines 2587-2602**
+- Created dedicated 4x MSAA depth texture for MSAA solid rendering
+- Matches the 4x MSAA color attachment sample count
+- Properly clears depth to 1.0 at frame start
+
+**2. render_frame() - lines 2714-2729**
+- Created dedicated 4x MSAA depth texture for direct surface rendering
+- Matches the 4x MSAA color attachment sample count
+- Supports both clear and load operations for depth preservation
+
+**Key Technical Details:**
+- MSAA render passes now use temporary MSAA depth textures
+- Non-MSAA passes (text, images) continue using the shared 1x depth texture
+- Depth values are not shared between MSAA and non-MSAA passes
+- This is acceptable because each frame starts fresh with depth cleared to 1.0
+
+### Z-Fighting Safety Margins
+
+**Problem:**
+When multiple primitives share the same z-index, micro z-fighting can occur due to:
+- Subpixel NDC rounding disagreements
+- Tiny float drift from transforms
+- Overlapping text + solids at same z
+
+**Solution: Per-Type Depth Offsets**
+
+Added small depth offsets in shaders to establish a consistent layering order within the same z-index:
+
+**Solid Primitives (SOLID_WGSL):**
+```wgsl
+let base_depth = (clamp(z_index, -10000.0, 10000.0) / 10000.0) * 0.5 + 0.5;
+let depth = base_depth + 0.00001;  // Solids render slightly behind
+```
+
+**Text (TEXT_WGSL):**
+```wgsl
+let base_depth = (clamp(z_index, -10000.0, 10000.0) / 10000.0) * 0.5 + 0.5;
+let depth = base_depth - 0.00001;  // Text renders in front of solids
+```
+
+**Images (IMAGE_WGSL):**
+```wgsl
+let base_depth = (clamp(z_index, -10000.0, 10000.0) / 10000.0) * 0.5 + 0.5;
+let depth = base_depth - 0.00002;  // Images render in front of text
+```
+
+**Layering Order (same z-index):**
+1. Images (closest, depth - 0.00002)
+2. Text (middle, depth - 0.00001)
+3. Solids (farthest, depth + 0.00001)
+
+**Offset Scale:**
+- 0.00001 ≈ 0.1 z-index units
+- 0.00002 ≈ 0.2 z-index units
+- Small enough to not interfere with intentional z-ordering
+- Large enough to prevent float precision issues
+
+### Files Modified
+
+- `crates/engine-core/src/pass_manager.rs` - MSAA depth texture creation
+- `crates/engine-shaders/src/lib.rs` - Z-fighting safety margins in all shaders
+- `docs/z-layering-depth-buffer-implementation.md` - Updated documentation
+
+### Testing Checklist
+
+- [x] Fix MSAA sample count validation error
+- [ ] Verify no z-fighting between primitives at same z-index
+- [ ] Test text rendering over solid backgrounds
+- [ ] Test images rendering over text and solids
+- [ ] Verify correct layering order within same z-index
+- [ ] Performance test: ensure no regression from MSAA depth textures

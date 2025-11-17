@@ -20,4 +20,5 @@ cargo run -p demo-app -- --scene=images
 cargo run -p demo-app -- --scene=svg
 cargo run -p demo-app -- --scene=path
 cargo run -p demo-app -- --scene=harfrust-text
+cargo run -p demo-app -- --scene=unified-test
 ```

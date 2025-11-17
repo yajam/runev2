@@ -155,11 +155,12 @@ impl DisplayList {
 pub fn z_index_to_depth(z: i32) -> f32 {
     // Clamp z-index to reasonable range [-10000, 10000]
     let z_clamped = z.clamp(-10000, 10000) as f32;
-    
+
     // Map to [0.0, 1.0] with 0.5 as center
-    // Lower z-index = closer = lower depth value (rendered on top)
-    let normalized = (z_clamped / 10000.0) * 0.5 + 0.5;
-    
+    // HIGHER z-index = closer = LOWER depth value (rendered on top)
+    // Negate z to invert the mapping
+    let normalized = (-z_clamped / 10000.0) * 0.5 + 0.5;
+
     // Clamp to valid depth range
     normalized.clamp(0.0, 1.0)
 }

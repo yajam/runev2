@@ -51,7 +51,6 @@ struct ViewportUniform {
 };
 
 @group(0) @binding(0) var<uniform> vp: ViewportUniform;
-@group(1) @binding(0) var<uniform> z_index: f32;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -59,15 +58,15 @@ struct VsOut {
 };
 
 @vertex
-fn vs_main(@location(0) in_pos: vec2<f32>, @location(1) in_color: vec4<f32>) -> VsOut {
+fn vs_main(@location(0) in_pos: vec2<f32>, @location(1) in_color: vec4<f32>, @location(2) in_z_index: f32) -> VsOut {
     var out: VsOut;
     // in_pos is in local/layout pixel coordinates (y-down)
     let ndc = vec2<f32>(in_pos.x * vp.scale.x + vp.translate.x,
                         in_pos.y * vp.scale.y + vp.translate.y);
     // Convert z-index to depth [0.0, 1.0]
-    // z-index range [-10000, 10000] maps to depth [0.0, 1.0]
-    // Negative z (closer) -> (0.0, 0.5), Positive z (farther) -> (0.5, 1.0)
-    let depth = (clamp(z_index, -10000.0, 10000.0) / 10000.0) * 0.5 + 0.5;
+    // HIGHER z-index = closer = LOWER depth value (rendered on top)
+    // Negate z to invert the mapping: z=30 -> depth closer to 0.0, z=10 -> depth closer to 1.0
+    let depth = (-clamp(in_z_index, -10000.0, 10000.0) / 10000.0) * 0.5 + 0.5;
     out.pos = vec4<f32>(ndc, depth, 1.0);
     out.color = in_color; // premultiplied linear color
     return out;
@@ -442,7 +441,8 @@ fn vs_main(inp: VsIn) -> VsOut {
     let ndc = vec2<f32>(inp.pos.x * vp.scale.x + vp.translate.x,
                         inp.pos.y * vp.scale.y + vp.translate.y);
     // Convert z-index to depth [0.0, 1.0]
-    let depth = (clamp(z_index, -10000.0, 10000.0) / 10000.0) * 0.5 + 0.5;
+    // HIGHER z-index = closer = LOWER depth value (rendered on top)
+    let depth = (-clamp(z_index, -10000.0, 10000.0) / 10000.0) * 0.5 + 0.5;
     out.pos = vec4<f32>(ndc, depth, 1.0);
     out.uv = inp.uv;
     out.color = inp.color;
@@ -501,7 +501,8 @@ fn vs_main(inp: VsIn) -> VsOut {
     let ndc = vec2<f32>(inp.pos.x * vp.scale.x + vp.translate.x,
                         inp.pos.y * vp.scale.y + vp.translate.y);
     // Convert z-index to depth [0.0, 1.0]
-    let depth = (clamp(z_index, -10000.0, 10000.0) / 10000.0) * 0.5 + 0.5;
+    // HIGHER z-index = closer = LOWER depth value (rendered on top)
+    let depth = (-clamp(z_index, -10000.0, 10000.0) / 10000.0) * 0.5 + 0.5;
     out.pos = vec4<f32>(ndc, depth, 1.0);
     out.uv = inp.uv;
     return out;

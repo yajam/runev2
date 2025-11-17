@@ -166,6 +166,7 @@ impl Scene for CosmicDirectScene {
                 height,
                 &self.glyphs.glyphs,
                 queue,
+                0.0,
             );
         }
     }

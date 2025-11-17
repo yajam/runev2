@@ -71,4 +71,5 @@ pub mod shadow;
 pub mod svg_geom;
 pub mod text_demo;
 pub mod ui;
+pub mod unified_test;
 pub mod zones;
