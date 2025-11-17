@@ -2,6 +2,8 @@ use engine_core::{Brush, Color, ColorLinPremul, FillRule, Path, PathCmd, Rect, R
 use rune_surface::Canvas;
 use rune_surface::shapes;
 use crate::elements::caret::CaretBlink;
+use crate::elements::selection_renderer::{self, SelectionRenderConfig};
+use crate::elements::caret_renderer::{self, CaretRenderConfig};
 use rune_text::layout::{
     Selection as RtSelection, TextLayout as RtTextLayout, WrapMode as RtWrapMode,
     Point as RtPoint, HitTestPolicy, CursorPosition,
@@ -997,8 +999,6 @@ impl InputBox {
             z + 1,
         );
 
-        // Calculate cursor X position and update scroll BEFORE clipping
-        let cursor_x = self.cursor_x();
         // Update scroll to keep cursor visible and handle shrinking text.
         self.update_scroll();
         
@@ -1022,70 +1022,24 @@ impl InputBox {
         let text_y = self.rect.y + self.rect.h * 0.5 + self.text_size * 0.35;
         
         if !self.text.is_empty() {
-            // Phase 4: Draw selection highlight before text.
-            // Note: generic rect clipping is not yet implemented in the GPU
-            // pipeline, so we manually clip selection rects against the
-            // input's content rect to keep them aligned with text clipping.
+            // Draw selection highlight before text using shared renderer
             if self.focused && !self.rt_selection.is_collapsed() {
                 if let Some(layout) = self.rt_layout.as_ref() {
-                    let selection_rects = layout.selection_rects(&self.rt_selection);
-                    
-                    // Get baseline offset from layout for proper alignment
-                    let baseline_offset = if let Some(line) = layout.lines().first() {
-                        line.baseline_offset
-                    } else {
-                        self.text_size * 0.8
+                    let selection_config = SelectionRenderConfig {
+                        content_rect,
+                        text_baseline_y: text_y,
+                        scroll_x: self.scroll_x,
+                        scroll_y: 0.0, // No vertical scroll for InputBox
+                        color: Color::rgba(63, 130, 246, 80),
+                        z: z + 2,
                     };
                     
-                    let clip_left = content_x;
-                    let clip_right = content_x + content_width;
-                    let clip_top = content_y;
-                    let clip_bottom = content_y + content_height;
-
-                    for sel_rect in selection_rects {
-                        // Map layout-local coordinates to input-local coordinates
-                        // Align selection with text baseline: text_y is the baseline position,
-                        // so we need to offset by -baseline_offset to get to the top of the line
-                        let mut highlight_x = text_x + sel_rect.x;
-                        let mut highlight_y = text_y - baseline_offset + sel_rect.y;
-                        let mut highlight_w = sel_rect.width;
-                        let mut highlight_h = sel_rect.height;
-
-                        // Horizontal clip against content rect.
-                        let rect_right = highlight_x + highlight_w;
-                        let clipped_left = highlight_x.max(clip_left);
-                        let clipped_right = rect_right.min(clip_right);
-
-                        if clipped_right <= clipped_left {
-                            continue;
-                        }
-
-                        highlight_x = clipped_left;
-                        highlight_w = clipped_right - clipped_left;
-
-                        // Vertical clip against content rect.
-                        let rect_bottom = highlight_y + highlight_h;
-                        let clipped_top = highlight_y.max(clip_top);
-                        let clipped_bottom = rect_bottom.min(clip_bottom);
-
-                        if clipped_bottom <= clipped_top {
-                            continue;
-                        }
-
-                        highlight_y = clipped_top;
-                        highlight_h = clipped_bottom - clipped_top;
-
-                        // Draw semi-transparent blue selection highlight (after manual clipping).
-                        let selection_color = Color::rgba(63, 130, 246, 80);
-                        canvas.fill_rect(
-                            highlight_x,
-                            highlight_y,
-                            highlight_w,
-                            highlight_h,
-                            Brush::Solid(selection_color),
-                            z + 2,
-                        );
-                    }
+                    selection_renderer::render_selection(
+                        canvas,
+                        layout,
+                        &self.rt_selection,
+                        &selection_config,
+                    );
                 }
             }
 
@@ -1098,19 +1052,26 @@ impl InputBox {
                 provider,
             );
             
-            // Phase 4: Render cursor using cursor_rect from TextLayout
-            if self.focused && self.caret.visible {
-                let cx = text_x + cursor_x;
-                let cy0 = self.rect.y + self.padding_y;
-                let cy1 = self.rect.y + self.rect.h - self.padding_y;
-                
-                let mut caret = Path {
-                    cmds: Vec::new(),
-                    fill_rule: FillRule::NonZero,
-                };
-                caret.cmds.push(PathCmd::MoveTo([cx, cy0]));
-                caret.cmds.push(PathCmd::LineTo([cx, cy1]));
-                canvas.stroke_path(caret, 1.5, Color::rgba(63, 130, 246, 255), z + 3);
+            // Render cursor using shared caret renderer
+            if self.focused {
+                if let Some(layout) = self.rt_layout.as_ref() {
+                    let caret_config = CaretRenderConfig {
+                        content_rect,
+                        scroll_x: self.scroll_x,
+                        scroll_y: 0.0, // No vertical scroll for InputBox
+                        color: Color::rgba(63, 130, 246, 255),
+                        width: 1.5,
+                        z: z + 3,
+                    };
+                    
+                    caret_renderer::render_caret(
+                        canvas,
+                        layout,
+                        self.cursor_position,
+                        &self.caret,
+                        &caret_config,
+                    );
+                }
             }
         } else {
             // Optional placeholder text when empty
@@ -1124,7 +1085,8 @@ impl InputBox {
                 );
             }
             
-            // Render cursor at start if focused and visible, even without placeholder
+            // Render cursor at start if focused, even without placeholder
+            // For empty text, we need to manually render the caret since there's no layout
             if self.focused && self.caret.visible {
                 let cx = text_x;
                 let cy0 = self.rect.y + self.padding_y;

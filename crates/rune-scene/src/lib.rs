@@ -611,6 +611,30 @@ pub fn run() -> Result<()> {
                                 break;
                             }
                         }
+                        
+                        // Check if any text area is in mouse selection mode
+                        for textarea in viewport_ir.text_areas.iter_mut() {
+                            if textarea.focused {
+                                // Extend selection based on click count
+                                if click_count == 3 {
+                                    textarea.extend_line_selection(viewport_local_x, viewport_local_y);
+                                    textarea.update_scroll();
+                                    needs_redraw = true;
+                                    window.request_redraw();
+                                } else if click_count == 2 {
+                                    textarea.extend_word_selection(viewport_local_x, viewport_local_y);
+                                    textarea.update_scroll();
+                                    needs_redraw = true;
+                                    window.request_redraw();
+                                } else {
+                                    textarea.extend_mouse_selection(viewport_local_x, viewport_local_y);
+                                    textarea.update_scroll();
+                                    needs_redraw = true;
+                                    window.request_redraw();
+                                }
+                                break;
+                            }
+                        }
                     }
                     WindowEvent::MouseWheel { delta, .. } => {
                         // Handle scrolling in viewport
@@ -627,10 +651,16 @@ pub fn run() -> Result<()> {
                     }
                     WindowEvent::MouseInput { state, button, .. } => {
                         if button == winit::event::MouseButton::Left && state == winit::event::ElementState::Released {
-                            // Phase 5: End mouse selection on button release
+                            // End mouse selection on button release
                             for input_box in viewport_ir.input_boxes.iter_mut() {
                                 if input_box.focused {
                                     input_box.end_mouse_selection();
+                                    break;
+                                }
+                            }
+                            for textarea in viewport_ir.text_areas.iter_mut() {
+                                if textarea.focused {
+                                    textarea.end_mouse_selection();
                                     break;
                                 }
                             }
@@ -694,8 +724,47 @@ pub fn run() -> Result<()> {
                                     }
                                 }
                                 
-                                // If clicked outside all input boxes, unfocus all
+                                // Check if click is on a text area
+                                let mut clicked_textarea = false;
                                 if !clicked_input {
+                                    for (idx, textarea) in viewport_ir.text_areas.iter_mut().enumerate() {
+                                        let in_bounds = viewport_local_x >= textarea.rect.x 
+                                            && viewport_local_x <= textarea.rect.x + textarea.rect.w
+                                            && viewport_local_y >= textarea.rect.y
+                                            && viewport_local_y <= textarea.rect.y + textarea.rect.h;
+                                        
+                                        if in_bounds {
+                                            // Unfocus all input boxes and text areas
+                                            for input in viewport_ir.input_boxes.iter_mut() {
+                                                input.focused = false;
+                                            }
+                                            for other in viewport_ir.text_areas.iter_mut() {
+                                                other.focused = false;
+                                            }
+                                            
+                                            let textarea = &mut viewport_ir.text_areas[idx];
+                                            textarea.focused = true;
+                                            
+                                            // Handle double-click and triple-click
+                                            if click_count == 3 {
+                                                textarea.start_line_selection(viewport_local_x, viewport_local_y);
+                                            } else if click_count == 2 {
+                                                textarea.start_word_selection(viewport_local_x, viewport_local_y);
+                                            } else {
+                                                textarea.start_mouse_selection(viewport_local_x, viewport_local_y);
+                                            }
+                                            textarea.update_scroll();
+                                            
+                                            clicked_textarea = true;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                            break;
+                                        }
+                                    }
+                                }
+                                
+                                // If clicked outside all input boxes and text areas, unfocus all
+                                if !clicked_input && !clicked_textarea {
                                     for input_box in viewport_ir.input_boxes.iter_mut() {
                                         if input_box.focused {
                                             input_box.focused = false;
@@ -703,11 +772,20 @@ pub fn run() -> Result<()> {
                                             window.request_redraw();
                                         }
                                     }
+                                    for textarea in viewport_ir.text_areas.iter_mut() {
+                                        if textarea.focused {
+                                            textarea.focused = false;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
                                 }
                                 
                                 // Perform hit test using the stored hit index
-                                if let Some(ref index) = hit_index {
-                                    if let Some(hit) = index.topmost_at([logical_x, logical_y]) {
+                                // Only if we didn't click on an input box or text area
+                                if !clicked_input && !clicked_textarea {
+                                    if let Some(ref index) = hit_index {
+                                        if let Some(hit) = index.topmost_at([logical_x, logical_y]) {
                                         if let Some(region_id) = hit.region_id {
                                             if region_id == TOGGLE_BUTTON_REGION_ID {
                                                 let logical_width = (size.width as f32 / scale_factor) as u32;
@@ -737,6 +815,7 @@ pub fn run() -> Result<()> {
                                                 needs_redraw = true;
                                                 window.request_redraw();
                                             }
+                                        }
                                         }
                                     }
                                 }
@@ -933,6 +1012,208 @@ pub fn run() -> Result<()> {
                                     }
                                 }
                             }
+                        } else if let Some(focused_textarea) = viewport_ir.text_areas.iter_mut().find(|ta| ta.focused) {
+                        // TextArea keyboard handling (multi-line editing)
+                            if event.state == winit::event::ElementState::Pressed {
+                                let has_cmd = modifiers_state.contains(ModifiersState::SUPER);
+                                let has_ctrl = modifiers_state.contains(ModifiersState::CONTROL);
+                                let has_alt = modifiers_state.contains(ModifiersState::ALT);
+                                let has_shift = modifiers_state.contains(ModifiersState::SHIFT);
+                                
+                                let line_modifier = has_cmd || has_ctrl;
+                                let word_modifier = has_alt;
+
+                                match event.physical_key {
+                                    PhysicalKey::Code(KeyCode::KeyA) if line_modifier && !has_shift => {
+                                        focused_textarea.select_all();
+                                        focused_textarea.update_scroll();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyC) if line_modifier && !has_shift => {
+                                        if let Err(e) = focused_textarea.copy_to_clipboard() {
+                                            eprintln!("Failed to copy: {}", e);
+                                        }
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyX) if line_modifier && !has_shift => {
+                                        if let Err(e) = focused_textarea.cut_to_clipboard() {
+                                            eprintln!("Failed to cut: {}", e);
+                                        } else {
+                                            focused_textarea.update_scroll();
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyV) if line_modifier && !has_shift => {
+                                        if let Err(e) = focused_textarea.paste_from_clipboard() {
+                                            eprintln!("Failed to paste: {}", e);
+                                        } else {
+                                            focused_textarea.update_scroll();
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyZ) if line_modifier && has_shift => {
+                                        if focused_textarea.redo() {
+                                            focused_textarea.update_scroll();
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyZ) if line_modifier && !has_shift => {
+                                        if focused_textarea.undo() {
+                                            focused_textarea.update_scroll();
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyY) if has_ctrl && !has_shift => {
+                                        if focused_textarea.redo() {
+                                            focused_textarea.update_scroll();
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                    PhysicalKey::Code(KeyCode::Backspace) => {
+                                        focused_textarea.delete_before_cursor();
+                                        focused_textarea.update_scroll();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Delete) => {
+                                        focused_textarea.delete_after_cursor();
+                                        focused_textarea.update_scroll();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Enter) => {
+                                        // Insert newline in TextArea
+                                        focused_textarea.insert_char('\n');
+                                        focused_textarea.update_scroll();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::ArrowUp) => {
+                                        if line_modifier && has_shift {
+                                            // Cmd+Shift+Up: select to document start
+                                            focused_textarea.extend_selection_to_document_start();
+                                        } else if line_modifier {
+                                            // Cmd+Up: move to document start
+                                            focused_textarea.move_cursor_to_document_start();
+                                        } else if has_shift {
+                                            // Shift+Up: extend selection up
+                                            focused_textarea.extend_selection_up();
+                                        } else {
+                                            // Up: move cursor up
+                                            focused_textarea.move_cursor_up();
+                                        }
+                                        focused_textarea.update_scroll();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::ArrowDown) => {
+                                        if line_modifier && has_shift {
+                                            // Cmd+Shift+Down: select to document end
+                                            focused_textarea.extend_selection_to_document_end();
+                                        } else if line_modifier {
+                                            // Cmd+Down: move to document end
+                                            focused_textarea.move_cursor_to_document_end();
+                                        } else if has_shift {
+                                            // Shift+Down: extend selection down
+                                            focused_textarea.extend_selection_down();
+                                        } else {
+                                            // Down: move cursor down
+                                            focused_textarea.move_cursor_down();
+                                        }
+                                        focused_textarea.update_scroll();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::ArrowLeft) => {
+                                        if line_modifier && has_shift {
+                                            focused_textarea.extend_selection_to_line_start();
+                                        } else if line_modifier {
+                                            focused_textarea.move_cursor_line_start();
+                                        } else if word_modifier && has_shift {
+                                            focused_textarea.extend_selection_left_word();
+                                        } else if word_modifier {
+                                            focused_textarea.move_cursor_left_word();
+                                        } else if has_shift {
+                                            focused_textarea.extend_selection_left();
+                                        } else {
+                                            focused_textarea.move_cursor_left();
+                                        }
+                                        focused_textarea.update_scroll();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::ArrowRight) => {
+                                        if line_modifier && has_shift {
+                                            focused_textarea.extend_selection_to_line_end();
+                                        } else if line_modifier {
+                                            focused_textarea.move_cursor_line_end();
+                                        } else if word_modifier && has_shift {
+                                            focused_textarea.extend_selection_right_word();
+                                        } else if word_modifier {
+                                            focused_textarea.move_cursor_right_word();
+                                        } else if has_shift {
+                                            focused_textarea.extend_selection_right();
+                                        } else {
+                                            focused_textarea.move_cursor_right();
+                                        }
+                                        focused_textarea.update_scroll();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Home) => {
+                                        if has_shift {
+                                            focused_textarea.extend_selection_to_line_start();
+                                        } else {
+                                            focused_textarea.move_cursor_line_start();
+                                        }
+                                        focused_textarea.update_scroll();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::End) => {
+                                        if has_shift {
+                                            focused_textarea.extend_selection_to_line_end();
+                                        } else {
+                                            focused_textarea.move_cursor_line_end();
+                                        }
+                                        focused_textarea.update_scroll();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Space) => {
+                                        focused_textarea.insert_char(' ');
+                                        focused_textarea.update_scroll();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Tab) => {
+                                        // Insert tab as spaces (4 spaces)
+                                        for _ in 0..4 {
+                                            focused_textarea.insert_char(' ');
+                                        }
+                                        focused_textarea.update_scroll();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    _ => {
+                                        if let Some(text) = &event.text {
+                                            for ch in text.chars() {
+                                                if !ch.is_control() || ch == ' ' || ch == '\n' {
+                                                    focused_textarea.insert_char(ch);
+                                                }
+                                            }
+                                            focused_textarea.update_scroll();
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     WindowEvent::Resized(new_size) => {
@@ -1029,8 +1310,13 @@ pub fn run() -> Result<()> {
                                 input_box.update_blink(delta_time);
                             }
                             
-                            // Request continuous redraw for cursor blinking while any input is focused.
-                            if viewport_ir.input_boxes.iter().any(|ib| ib.focused) {
+                            for textarea in viewport_ir.text_areas.iter_mut() {
+                                textarea.update_blink(delta_time);
+                            }
+                            
+                            // Request continuous redraw for cursor blinking while any input or textarea is focused.
+                            if viewport_ir.input_boxes.iter().any(|ib| ib.focused) 
+                                || viewport_ir.text_areas.iter().any(|ta| ta.focused) {
                                 needs_redraw = true;
                                 window.request_redraw();
                             }

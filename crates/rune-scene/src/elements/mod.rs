@@ -4,6 +4,8 @@
 pub mod text;
 pub mod multiline_text;
 pub mod caret;
+pub mod selection_renderer;
+pub mod caret_renderer;
 pub mod label;
 pub mod button;
 pub mod checkbox;

@@ -55,15 +55,6 @@ pub struct InputBoxData {
 }
 
 #[derive(Clone)]
-pub struct TextAreaData {
-    pub rect: Rect,
-    pub lines: Vec<&'static str>,
-    pub text_size: f32,
-    pub text_color: ColorLinPremul,
-    pub focused: bool,
-}
-
-#[derive(Clone)]
 pub struct SelectData {
     pub rect: Rect,
     pub label: &'static str,
@@ -96,7 +87,6 @@ pub enum UIElement {
     Button(ButtonData),
     Radio(RadioData),
     InputBox(InputBoxData),
-    TextArea(TextAreaData),
     Select(SelectData),
     Label(LabelData),
     Image(ImageData),
@@ -257,22 +247,21 @@ pub fn create_sample_elements() -> SampleUIElements {
         ),
     ];
 
-    let text_areas = vec![TextAreaData {
-        rect: Rect {
-            x: col1_x,
-            y: textarea_y,
-            w: 420.0,
-            h: 120.0,
-        },
-        lines: vec![
-            "This is a multi-line text area.",
-            "You can add multiple lines of text here.",
-            "It supports scrolling and wrapping.",
-        ],
-        text_size: 14.0,
-        text_color: Color::rgba(240, 240, 240, 255),
-        focused: false,
-    }];
+    let text_areas = vec![
+        elements::text_area::TextArea::new(
+            Rect {
+                x: col1_x,
+                y: textarea_y,
+                w: 420.0,
+                h: 120.0,
+            },
+            "This is a multi-line text area.\nYou can add multiple lines of text here.\nIt supports scrolling and wrapping.".to_string(),
+            16.0,
+            Color::rgba(240, 240, 240, 255),
+            Some("Enter multi-line text...".to_string()),
+            false,
+        ),
+    ];
 
     let selects = vec![SelectData {
         rect: Rect {
@@ -484,7 +473,7 @@ pub struct SampleUIElements {
     pub buttons: Vec<ButtonData>,
     pub radios: Vec<RadioData>,
     pub input_boxes: Vec<elements::input_box::InputBox>,
-    pub text_areas: Vec<TextAreaData>,
+    pub text_areas: Vec<elements::text_area::TextArea>,
     pub selects: Vec<SelectData>,
     pub labels: Vec<LabelData>,
     pub images: Vec<ImageData>,
@@ -557,16 +546,8 @@ impl SampleUIElements {
         }
 
         // Render all text areas (z=60)
-        for textarea_data in self.text_areas.iter() {
-            let textarea = elements::text_area::TextArea {
-                rect: textarea_data.rect,
-                lines: textarea_data.lines.iter().map(|s| s.to_string()).collect(),
-                text_size: textarea_data.text_size,
-                text_color: textarea_data.text_color,
-                focused: textarea_data.focused,
-                line_height_factor: Some(1.4),
-            };
-            textarea.render(canvas, 60);
+        for textarea in self.text_areas.iter_mut() {
+            textarea.render(canvas, 60, provider);
         }
 
         // Render all selects (z=70)
