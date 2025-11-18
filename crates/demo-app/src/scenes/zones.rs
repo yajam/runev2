@@ -110,7 +110,7 @@ impl ZonesScene {
         );
 
         // Columns
-        let (sidebar, main) = self.layout();
+        let (sidebar, _main) = self.layout();
         let sidebar_bg = ColorLinPremul::from_srgba_u8([0xf5, 0xf6, 0xf7, 0xff]);
         p.rect(sidebar, Brush::Solid(sidebar_bg), 1);
         // Optional separation line (stroke as thin rect)

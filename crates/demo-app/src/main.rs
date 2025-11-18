@@ -45,7 +45,7 @@ fn main() -> Result<()> {
     // Configure surface
     let mut size = window.inner_size();
     // Track DPI scale factor and push into engine-core
-    let mut scale_factor: f32 = window.scale_factor() as f32;
+    let scale_factor: f32 = window.scale_factor() as f32;
     let config = make_surface_config(&adapter, &surface, size.width, size.height);
 
     // Initialize core engine skeleton
@@ -722,9 +722,9 @@ fn main() -> Result<()> {
             window_id,
         } if window_id == window.id() => {
             // Update scale factor dynamically and notify engine-core
-            scale_factor = new_sf as f32;
-            passes.set_scale_factor(scale_factor);
-            scene.set_scale_factor(scale_factor);
+            let new_scale_factor = new_sf as f32;
+            passes.set_scale_factor(new_scale_factor);
+            scene.set_scale_factor(new_scale_factor);
             // Reconfigure surface to match new physical size
             size = window.inner_size();
             let new_config = make_surface_config(&adapter, &surface, size.width, size.height);

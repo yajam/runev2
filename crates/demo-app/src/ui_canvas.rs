@@ -3,7 +3,7 @@ use winit::event::{Event, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
 
-use engine_core::{Color, ColorLinPremul, SubpixelOrientation, make_surface_config};
+use engine_core::{ColorLinPremul, SubpixelOrientation, make_surface_config};
 
 // Canvas-backed UI runner so we can verify using Canvas within demo-app
 pub fn run() -> Result<()> {
@@ -25,7 +25,7 @@ pub fn run() -> Result<()> {
         pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None))?;
 
     let mut size = window.inner_size();
-    let mut scale_factor = window.scale_factor() as f32;
+    let scale_factor = window.scale_factor() as f32;
     let mut config = make_surface_config(&adapter, &surface, size.width, size.height);
     surface.configure(&device, &config);
 
@@ -59,10 +59,8 @@ pub fn run() -> Result<()> {
                         window.request_redraw();
                     }
                     WindowEvent::ScaleFactorChanged {
-                        scale_factor: sf, ..
+                        scale_factor: _sf, ..
                     } => {
-                        scale_factor = sf as f32;
-                        surf.set_dpi_scale(scale_factor);
                         window.request_redraw();
                     }
                     WindowEvent::RedrawRequested => {
@@ -180,7 +178,6 @@ pub fn run() -> Result<()> {
                                 true,
                             );
                             ib.render(&mut canvas, 5, provider.as_ref());
-                            y += row_h;
                         }
                         surf.end_frame(frame, canvas).ok();
                     }

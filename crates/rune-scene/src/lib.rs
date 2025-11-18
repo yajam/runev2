@@ -1,6 +1,6 @@
 use anyhow::Result;
 use engine_core::{
-    Brush, ColorLinPremul, Rect, RoundedRadii, RoundedRect, SubpixelOrientation, TextRun,
+    Brush, ColorLinPremul, Rect, SubpixelOrientation,
     Transform2D, make_surface_config,
 };
 use winit::event::{Event, WindowEvent};
@@ -149,7 +149,7 @@ pub fn run() -> Result<()> {
     // Viewport IR content - incremental implementation
     let viewport_ir =
         std::sync::Arc::new(std::sync::Mutex::new(viewport_ir::ViewportContent::new()));
-    let viewport_ir_overlay = viewport_ir.clone();
+    let _viewport_ir_overlay = viewport_ir.clone();
 
     // Text layout cache for efficient resize performance
     let text_cache = std::sync::Arc::new(engine_core::TextLayoutCache::new(200));

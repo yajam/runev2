@@ -598,6 +598,31 @@ impl PassManager {
         let vp_data = [scale[0], scale[1], translate[0], translate[1]];
         queue.write_buffer(&self.vp_buffer_text, 0, bytemuck::bytes_of(&vp_data));
 
+        // Clear the texture atlas before uploading new glyphs to prevent artifacts
+        // from previous frames appearing as "dots and specs" in the text.
+        // We clear a reasonable region that should cover most text rendering needs.
+        let clear_size = 4096u32; // Full atlas size
+        let clear_data = vec![0u8; (clear_size * clear_size * 4) as usize];
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.text_mask_atlas,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &clear_data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(clear_size * 4),
+                rows_per_image: Some(clear_size),
+            },
+            wgpu::Extent3d {
+                width: clear_size,
+                height: clear_size,
+                depth_or_array_layers: 1,
+            },
+        );
+
         // ======= 1. UPLOAD ALL GLYPH MASKS INTO THE ATLAS ONCE =======
         let mut atlas_cursor_x = 0u32;
         let mut atlas_cursor_y = 0u32;
@@ -1411,7 +1436,7 @@ impl PassManager {
         // Render mask shape to R8 texture
         // Clear to BLACK, render WHITE for shadow shape
         // After blur: soft white blob. After cutout: white ring (shadow area)
-        let z_bg = self.create_z_bind_group(0.0, queue);
+        let _z_bg = self.create_z_bind_group(0.0, queue);
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow-mask-pass"),
@@ -1624,7 +1649,7 @@ impl PassManager {
                 indices: cutout_indices.len() as u32,
             };
 
-            let z_bg_cutout = self.create_z_bind_group(0.0, queue);
+            let _z_bg_cutout = self.create_z_bind_group(0.0, queue);
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow-cutout"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1863,8 +1888,8 @@ impl PassManager {
 
         // Render directly to target without MSAA to preserve existing content through blending
         // MSAA+resolve doesn't apply blend state correctly for layered rendering
-        let z_bg = self.create_z_bind_group(0.0, queue);
-        
+        let _z_bg = self.create_z_bind_group(0.0, queue);
+
         // Add depth attachment (using 1x since this is non-MSAA rendering)
         let depth_attachment = self.depth_texture.as_ref().map(|tex| {
             wgpu::RenderPassDepthStencilAttachment {
@@ -1936,8 +1961,8 @@ impl PassManager {
             view_formats: &[],
         });
         let msaa_depth_view = msaa_depth_tex.create_view(&wgpu::TextureViewDescriptor::default());
-        
-        let z_bg = self.create_z_bind_group(0.0, queue);
+
+        let _z_bg = self.create_z_bind_group(0.0, queue);
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("solid-offscreen-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -2738,8 +2763,8 @@ impl PassManager {
                 }),
                 stencil_ops: None,
             });
-            
-            let z_bg = self.create_z_bind_group(0.0, queue);
+
+            let _z_bg = self.create_z_bind_group(0.0, queue);
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("direct-solid-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -2865,8 +2890,8 @@ impl PassManager {
                 }),
                 stencil_ops: None,
             });
-            
-            let z_bg = self.create_z_bind_group(0.0, queue);
+
+            let _z_bg = self.create_z_bind_group(0.0, queue);
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("direct-solid-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -3037,7 +3062,7 @@ impl PassManager {
             });
 
             // Create z-index bind group before render pass (must outlive the pass)
-            let z_bg = self.create_z_bind_group(0.0, queue);
+            let _z_bg = self.create_z_bind_group(0.0, queue);
 
             // Pre-fetch (and lazily load) all image views before render pass (to avoid mutable borrow conflicts)
             let mut image_views: Vec<(wgpu::TextureView, [f32; 2], [f32; 2], f32)> = Vec::new();
@@ -3090,6 +3115,29 @@ impl PassManager {
 
             // Prepare text rendering data before render pass
             let mut text_groups = if !glyph_draws.is_empty() {
+                // Clear the texture atlas before uploading new glyphs to prevent artifacts
+                let clear_size = 4096u32;
+                let clear_data = vec![0u8; (clear_size * clear_size * 4) as usize];
+                queue.write_texture(
+                    wgpu::ImageCopyTexture {
+                        texture: &self.text_mask_atlas,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &clear_data,
+                    wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(clear_size * 4),
+                        rows_per_image: Some(clear_size),
+                    },
+                    wgpu::Extent3d {
+                        width: clear_size,
+                        height: clear_size,
+                        depth_or_array_layers: 1,
+                    },
+                );
+
                 let mut atlas_cursor_x = 0u32;
                 let mut atlas_cursor_y = 0u32;
                 let mut next_row_height = 0u32;
@@ -3101,7 +3149,7 @@ impl PassManager {
                     eprintln!("      🔠 Processing z={} with {} glyphs", z_index, glyphs.len());
 
                     let mut local_idx = 0;
-                    for (idx, origin, glyph, color) in glyphs.iter() {
+                    for (_idx, origin, glyph, color) in glyphs.iter() {
                     let mask = &glyph.mask;
                     let w = mask.width;
                     let h = mask.height;
@@ -3478,6 +3526,29 @@ impl PassManager {
 
         // Prepare text rendering data (same as direct path)
         let mut text_groups_off = if !glyph_draws.is_empty() {
+            // Clear the texture atlas before uploading new glyphs to prevent artifacts
+            let clear_size = 4096u32;
+            let clear_data = vec![0u8; (clear_size * clear_size * 4) as usize];
+            queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &self.text_mask_atlas,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &clear_data,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(clear_size * 4),
+                    rows_per_image: Some(clear_size),
+                },
+                wgpu::Extent3d {
+                    width: clear_size,
+                    height: clear_size,
+                    depth_or_array_layers: 1,
+                },
+            );
+
             let mut atlas_cursor_x = 0u32;
             let mut atlas_cursor_y = 0u32;
             let mut next_row_height = 0u32;
@@ -3768,8 +3839,8 @@ impl PassManager {
             }),
             stencil_ops: None,
         });
-        
-        let z_bg = self.create_z_bind_group(0.0, queue);
+
+        let _z_bg = self.create_z_bind_group(0.0, queue);
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("unified-offscreen-pass"),

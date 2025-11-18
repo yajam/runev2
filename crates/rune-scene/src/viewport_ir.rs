@@ -221,7 +221,7 @@ impl ViewportContent {
             label: "Select an option",
             label_size: 16.0,
             label_color: ColorLinPremul::from_srgba_u8([240, 240, 240, 255]),
-            open: true, // Set to true for testing
+            open: false, // Set to true for testing
             focused: false,
             options: vec![
                 "Option 1".to_string(),
