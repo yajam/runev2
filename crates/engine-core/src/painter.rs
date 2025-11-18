@@ -1,5 +1,6 @@
 use crate::display_list::{Command, DisplayList, Viewport};
 use crate::scene::*;
+use std::path::PathBuf;
 
 pub struct Painter {
     list: DisplayList,
@@ -123,6 +124,44 @@ impl Painter {
 
     pub fn circle(&mut self, center: [f32; 2], radius: f32, brush: Brush, z: i32) {
         self.ellipse(center, [radius, radius], brush, z);
+    }
+
+    /// Queue an SVG to be rasterized and drawn at origin, scaled to fit within max_size.
+    /// The path is interpreted relative to the process working directory.
+    pub fn svg<P: Into<PathBuf>>(
+        &mut self,
+        path: P,
+        origin: [f32; 2],
+        max_size: [f32; 2],
+        z: i32,
+    ) {
+        let t = self.current_transform();
+        self.list.commands.push(Command::DrawSvg {
+            path: path.into(),
+            origin,
+            max_size,
+            z,
+            transform: t,
+        });
+    }
+
+    /// Queue a raster image (PNG/JPEG/GIF/WebP) to be drawn at origin with the given pixel size.
+    /// The path is interpreted relative to the process working directory.
+    pub fn image<P: Into<PathBuf>>(
+        &mut self,
+        path: P,
+        origin: [f32; 2],
+        size: [f32; 2],
+        z: i32,
+    ) {
+        let t = self.current_transform();
+        self.list.commands.push(Command::DrawImage {
+            path: path.into(),
+            origin,
+            size,
+            z,
+            transform: t,
+        });
     }
 
     pub fn box_shadow(&mut self, rrect: RoundedRect, spec: BoxShadowSpec, z: i32) {

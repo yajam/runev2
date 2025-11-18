@@ -210,6 +210,7 @@ impl Canvas {
         size_px: f32,
         color: ColorLinPremul,
         provider: &dyn TextProvider,
+        z: i32,
     ) {
         // Apply current transform to origin (handles zone positioning)
         let transform = self.painter.current_transform();
@@ -253,10 +254,10 @@ impl Canvas {
                         offset: [0.0, 0.0],
                         mask: clipped_mask,
                     };
-                    self.glyph_draws.push((clipped_origin, clipped, color, 0)); // default z=0 for direct text
+                    self.glyph_draws.push((clipped_origin, clipped, color, z));
                 }
             } else {
-                self.glyph_draws.push((glyph_origin, g.clone(), color, 0)); // default z=0 for direct text
+                self.glyph_draws.push((glyph_origin, g.clone(), color, z));
             }
         }
     }
@@ -303,9 +304,10 @@ impl Canvas {
         style: engine_core::SvgStyle,
         z: i32,
     ) {
+        let path_buf = path.into();
         let transform = self.painter.current_transform();
         self.svg_draws
-            .push((path.into(), origin, max_size, Some(style), z, transform));
+            .push((path_buf, origin, max_size, Some(style), z, transform));
     }
 
     /// Queue a raster image (PNG/JPEG/GIF/WebP) to be drawn at origin with the given size.

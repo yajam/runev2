@@ -1,4 +1,5 @@
 use crate::scene::*;
+use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Viewport {
@@ -91,6 +92,24 @@ pub enum Command {
         z: i32,
         transform: Transform2D,
     },
+    /// SVG draw at a pixel origin with a max pixel size.
+    /// The path is interpreted relative to the process working directory.
+    DrawSvg {
+        path: PathBuf,
+        origin: [f32; 2],
+        max_size: [f32; 2],
+        z: i32,
+        transform: Transform2D,
+    },
+    /// Raster image draw (PNG/JPEG/GIF/WebP) at a pixel origin with a given size.
+    /// The path is interpreted relative to the process working directory.
+    DrawImage {
+        path: PathBuf,
+        origin: [f32; 2],
+        size: [f32; 2],
+        z: i32,
+        transform: Transform2D,
+    },
     PushClip(ClipRect),
     PopClip,
     PushTransform(Transform2D),
@@ -113,6 +132,8 @@ impl Command {
             Command::HitRegionRect { z, .. } => Some(*z),
             Command::HitRegionRoundedRect { z, .. } => Some(*z),
             Command::HitRegionEllipse { z, .. } => Some(*z),
+            Command::DrawImage { z, .. } => Some(*z),
+             Command::DrawSvg { z, .. } => Some(*z),
             _ => None,
         }
     }

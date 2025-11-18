@@ -1025,6 +1025,42 @@ pub fn upload_display_list_unified(
                 let col = [color.r, color.g, color.b, color.a];
                 tessellate_path_stroke(&mut vertices, &mut indices, path, *stroke, col, final_transform);
             }
+            Command::DrawImage {
+                path,
+                origin,
+                size,
+                z,
+                transform,
+            } => {
+                // Apply current transform stack and the command transform to the image origin.
+                let final_transform = current_transform.concat(*transform);
+                let world_origin = apply_transform(*origin, final_transform);
+                image_draws.push(ExtractedImageDraw {
+                    path: path.clone(),
+                    origin: world_origin,
+                    size: *size,
+                    z: *z,
+                    transform: final_transform,
+                });
+            }
+            Command::DrawSvg {
+                path,
+                origin,
+                max_size,
+                z,
+                transform,
+            } => {
+                // Apply current transform stack and the command transform to the SVG origin.
+                let final_transform = current_transform.concat(*transform);
+                let world_origin = apply_transform(*origin, final_transform);
+                svg_draws.push(ExtractedSvgDraw {
+                    path: path.clone(),
+                    origin: world_origin,
+                    size: *max_size,
+                    z: *z,
+                    transform: final_transform,
+                });
+            }
             // BoxShadow commands are handled by PassManager as a separate pipeline.
             Command::BoxShadow { .. } => {}
             // Hit-only regions: intentionally not rendered.

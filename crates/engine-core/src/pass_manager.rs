@@ -13,6 +13,14 @@ use crate::pipeline::{
 use crate::scene::{BoxShadowSpec, RoundedRadii, RoundedRect};
 use crate::upload::GpuScene;
 
+/// Apply a 2D affine transform to a point
+fn apply_transform_to_point(point: [f32; 2], transform: crate::Transform2D) -> [f32; 2] {
+    let [a, b, c, d, e, f] = transform.m;
+    let x = point[0];
+    let y = point[1];
+    [a * x + c * y + e, b * x + d * y + f]
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct TextCacheKey {
     id: u64,
@@ -93,6 +101,7 @@ pub struct PassManager {
     pub text: TextRenderer,
     pub text_offscreen: TextRenderer,
     pub image: crate::pipeline::ImageRenderer,
+    pub image_offscreen: crate::pipeline::ImageRenderer,
     pub svg_cache: crate::svg::SvgRasterCache,
     pub image_cache: crate::image_cache::ImageCache,
     offscreen_format: wgpu::TextureFormat,
@@ -193,6 +202,7 @@ impl PassManager {
         let text = TextRenderer::new(device.clone(), target_format);
         let text_offscreen = TextRenderer::new(device.clone(), offscreen_format);
         let image = crate::pipeline::ImageRenderer::new(device.clone(), target_format);
+        let image_offscreen = crate::pipeline::ImageRenderer::new(device.clone(), offscreen_format);
         let svg_cache = crate::svg::SvgRasterCache::new(device.clone());
         let image_cache = crate::image_cache::ImageCache::new(device.clone());
         let bg = BackgroundRenderer::new(device.clone(), target_format);
@@ -291,6 +301,7 @@ impl PassManager {
             text,
             text_offscreen,
             image,
+            image_offscreen,
             svg_cache,
             image_cache,
             offscreen_format,
@@ -929,7 +940,7 @@ impl PassManager {
                 view: surface_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -3028,17 +3039,24 @@ impl PassManager {
             // Create z-index bind group before render pass (must outlive the pass)
             let z_bg = self.create_z_bind_group(0.0, queue);
 
-            // Pre-fetch all image views before render pass (to avoid mutable borrow conflicts)
+            // Pre-fetch (and lazily load) all image views before render pass (to avoid mutable borrow conflicts)
             let mut image_views: Vec<(wgpu::TextureView, [f32; 2], [f32; 2], f32)> = Vec::new();
-            for (path, origin, size, _z) in image_draws.iter() {
-                if let Some((tex_view, _w, _h)) = self.try_get_image_view(std::path::Path::new(path)) {
-                    image_views.push((tex_view, *origin, *size, *_z as f32));
+            for (path, origin, size, z) in image_draws.iter() {
+                let tex_opt = if let Some(view) =
+                    self.try_get_image_view(std::path::Path::new(path))
+                {
+                    Some(view)
+                } else {
+                    self.load_image_to_view(std::path::Path::new(path), queue)
+                };
+                if let Some((tex_view, _w, _h)) = tex_opt {
+                    image_views.push((tex_view, *origin, *size, *z as f32));
                 }
             }
             
             // Pre-rasterize all SVGs before render pass (to avoid mutable borrow conflicts)
             let mut svg_views: Vec<(wgpu::TextureView, [f32; 2], [f32; 2], f32)> = Vec::new();
-            for (path, origin, max_size, style, _z, _transform) in svg_draws.iter() {
+            for (path, origin, max_size, style, _z, transform) in svg_draws.iter() {
                 if let Some((_view, w, h)) = self.rasterize_svg_to_view(
                     std::path::Path::new(path),
                     1.0,
@@ -3055,7 +3073,9 @@ impl PassManager {
                         *style,
                         queue,
                     ) {
-                        svg_views.push((view_scaled, *origin, [sw as f32, sh as f32], *_z as f32));
+                        // Apply transform to origin for correct positioning
+                        let transformed_origin = apply_transform_to_point(*origin, *transform);
+                        svg_views.push((view_scaled, transformed_origin, [sw as f32, sh as f32], *_z as f32));
                     }
                 }
             }
@@ -3402,17 +3422,24 @@ impl PassManager {
         // Offscreen path - unified rendering to offscreen target
         let targets = self.alloc_targets(allocator, width.max(1), height.max(1));
         
-        // Pre-fetch all image views before render pass (to avoid mutable borrow conflicts)
+        // Pre-fetch (and lazily load) all image views before render pass (to avoid mutable borrow conflicts)
         let mut image_views_off: Vec<(wgpu::TextureView, [f32; 2], [f32; 2], f32)> = Vec::new();
-        for (path, origin, size, _z) in image_draws.iter() {
-            if let Some((tex_view, _w, _h)) = self.try_get_image_view(std::path::Path::new(path)) {
-                image_views_off.push((tex_view, *origin, *size, *_z as f32));
+        for (path, origin, size, z) in image_draws.iter() {
+            let tex_opt = if let Some(view) =
+                self.try_get_image_view(std::path::Path::new(path))
+            {
+                Some(view)
+            } else {
+                self.load_image_to_view(std::path::Path::new(path), queue)
+            };
+            if let Some((tex_view, _w, _h)) = tex_opt {
+                image_views_off.push((tex_view, *origin, *size, *z as f32));
             }
         }
         
         // Pre-rasterize all SVGs before creating render pass (to avoid mutable borrow conflicts)
         let mut svg_views_off: Vec<(wgpu::TextureView, [f32; 2], [f32; 2], f32)> = Vec::new();
-        for (path, origin, max_size, style, _z, _transform) in svg_draws.iter() {
+        for (path, origin, max_size, style, _z, transform) in svg_draws.iter() {
             if let Some((_view, w, h)) = self.rasterize_svg_to_view(
                 std::path::Path::new(path),
                 1.0,
@@ -3429,7 +3456,14 @@ impl PassManager {
                     *style,
                     queue,
                 ) {
-                    svg_views_off.push((view_scaled, *origin, [sw as f32, sh as f32], *_z as f32));
+                    // Apply transform to origin for correct positioning (offscreen path)
+                    let transformed_origin = apply_transform_to_point(*origin, *transform);
+                    svg_views_off.push((
+                        view_scaled,
+                        transformed_origin,
+                        [sw as f32, sh as f32],
+                        *_z as f32,
+                    ));
                 }
             }
         }
@@ -3585,7 +3619,7 @@ impl PassManager {
         // Create text bind groups (use offscreen text renderer for offscreen rendering)
         let vp_bg_text_off = self.text_offscreen.vp_bind_group(&self.device, &self.vp_buffer);
         
-        // Prepare image resources
+        // Prepare image resources (offscreen: use image_offscreen to match format)
         let mut image_resources_off: Vec<(
             wgpu::Buffer,
             wgpu::Buffer,
@@ -3630,15 +3664,15 @@ impl PassManager {
             queue.write_buffer(&vbuf, 0, bytemuck::cast_slice(&verts));
             queue.write_buffer(&ibuf, 0, bytemuck::cast_slice(&idx));
 
-            let vp_bg_img = self.image.vp_bind_group(&self.device, &self.vp_buffer);
+            let vp_bg_img = self.image_offscreen.vp_bind_group(&self.device, &self.vp_buffer);
             // Pass z_index as float directly - shader will convert to depth
             let (z_bg_img, z_buf_img) = self.create_group_z_bind_group(*z_val as f32, queue);
-            let tex_bg = self.image.tex_bind_group(&self.device, tex_view);
+            let tex_bg = self.image_offscreen.tex_bind_group(&self.device, tex_view);
 
             image_resources_off.push((vbuf, ibuf, vp_bg_img, z_bg_img, tex_bg, z_buf_img));
         }
         
-        // Prepare SVG resources
+        // Prepare SVG resources (offscreen: use image_offscreen to match format)
         let mut svg_resources_off: Vec<(
             wgpu::Buffer,
             wgpu::Buffer,
@@ -3683,10 +3717,10 @@ impl PassManager {
             queue.write_buffer(&vbuf, 0, bytemuck::cast_slice(&verts));
             queue.write_buffer(&ibuf, 0, bytemuck::cast_slice(&idx));
 
-            let vp_bg_svg = self.image.vp_bind_group(&self.device, &self.vp_buffer);
+            let vp_bg_svg = self.image_offscreen.vp_bind_group(&self.device, &self.vp_buffer);
             // Pass z_index as float directly - shader will convert to depth
             let (z_bg_svg, z_buf_svg) = self.create_group_z_bind_group(*z_val as f32, queue);
-            let tex_bg = self.image.tex_bind_group(&self.device, view_scaled);
+            let tex_bg = self.image_offscreen.tex_bind_group(&self.device, view_scaled);
 
             svg_resources_off.push((vbuf, ibuf, vp_bg_svg, z_bg_svg, tex_bg, z_buf_svg));
         }
@@ -3734,14 +3768,14 @@ impl PassManager {
         });
         
         let z_bg = self.create_z_bind_group(0.0, queue);
-        
+
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("unified-offscreen-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &msaa_view,
                 resolve_target: Some(&targets.color.view),
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    load: wgpu::LoadOp::Clear(clear),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -3773,23 +3807,23 @@ impl PassManager {
             }
         }
         
-        // Render images within same pass
+        // Render images within same pass (offscreen image pipeline)
         for (vbuf, ibuf, vp_bg_img, z_bg_img, tex_bg, _z_buf_img) in image_resources_off.iter() {
-            self.image
+            self.image_offscreen
                 .record(&mut pass, vp_bg_img, z_bg_img, tex_bg, vbuf, ibuf, 6);
         }
 
-        // Render SVGs within same pass
+        // Render SVGs within same pass (offscreen image pipeline)
         for (vbuf, ibuf, vp_bg_svg, z_bg_svg, tex_bg, _z_buf_svg) in svg_resources_off.iter() {
-            self.image
+            self.image_offscreen
                 .record(&mut pass, vp_bg_svg, z_bg_svg, tex_bg, vbuf, ibuf, 6);
         }
         
         // Drop the pass to complete offscreen rendering
         drop(pass);
-        
+
         // Composite offscreen target to surface
-        self.composite_to_surface(encoder, surface_view, &targets, None);
+        self.composite_to_surface(encoder, surface_view, &targets, Some(clear));
         allocator.release_texture(targets.color);
     }
 }

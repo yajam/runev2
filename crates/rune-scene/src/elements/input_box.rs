@@ -1030,6 +1030,7 @@ impl InputBox {
                 self.text_size,
                 self.text_color,
                 provider,
+                z + 1, // Text z-index above box background
             );
 
             // Render cursor using shared caret renderer
@@ -1062,6 +1063,7 @@ impl InputBox {
                     self.text_size,
                     Color::rgba(120, 120, 130, 255),
                     provider,
+                    z + 1, // Placeholder z-index above box background
                 );
             }
 

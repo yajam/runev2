@@ -17,7 +17,8 @@ impl UnifiedTestScene {
 
 impl Default for UnifiedTestScene {
     fn default() -> Self {
-        Self::new(1) // Default to solids + text
+        // Default to solids + text + images + svgs so unified rendering tests all key types.
+        Self::new(3)
     }
 }
 
@@ -43,11 +44,11 @@ impl Scene for UnifiedTestScene {
         _width: u32,
         _height: u32,
     ) {
-        // Simple dark background
+        // Simple peach background
         passes.paint_root_color(
             encoder,
             surface_view,
-            ColorLinPremul::from_srgba_u8([30, 30, 40, 255]),
+            ColorLinPremul::from_srgba_u8([255, 229, 180, 255]),
             queue,
         );
     }
@@ -57,6 +58,19 @@ fn build_test_dl(viewport: Viewport, test_level: u32) -> DisplayList {
     use engine_core::{Rect, TextRun};
     
     let mut painter = Painter::begin_frame(viewport);
+
+    // Global background so we don't see the clear color.
+    // Use a peach tone to make layering easy to see.
+    painter.rect(
+        Rect {
+            x: 0.0,
+            y: 0.0,
+            w: viewport.width as f32,
+            h: viewport.height as f32,
+        },
+        Brush::Solid(ColorLinPremul::from_srgba_u8([255, 229, 200, 255])),
+        -100,
+    );
 
     // Test Level 0: Solids only
     // Draw bright colored rectangles to verify solid rendering and z-ordering
@@ -132,14 +146,45 @@ fn build_test_dl(viewport: Viewport, test_level: u32) -> DisplayList {
     }
 
     // Test Level 2: Add images
-    // (Would need actual image files - skip for now)
+    // Draw a raster image overlapping the colored rectangles to verify z-index
+    // For example, z=28 should appear above GREEN (z=20) but below BLUE (z=30).
+    let img_origin = [220.0, 170.0];
+    let img_size = [180.0, 180.0];
+    painter.image("images/mountains.webp", img_origin, img_size, 28);
+
+    // Label for the image at a higher z to confirm ordering.
+    painter.text(
+        TextRun {
+            text: "IMAGE (z=28)".to_string(),
+            pos: [img_origin[0] + 10.0, img_origin[1] + img_size[1] + 24.0],
+            size: 18.0,
+            color: ColorLinPremul::from_srgba_u8([255, 255, 0, 255]),
+        },
+        40,
+    );
 
     if test_level < 3 {
         return painter.finish();
     }
 
     // Test Level 3: Add SVGs
-    // (Would need actual SVG files - skip for now)
+    // Place the SVG clearly above the blue rect in Y so its z-order is easy to inspect.
+    // Blue rect: x=300..500, y=200..350. Put SVG just above at roughly the same X range.
+    let svg_origin = [320.0, 240.0];
+    let svg_size = [120.0, 120.0];
+    // z=34 — above BLUE (z=30) and IMAGE (z=28), but below the labels (z=40+).
+    painter.svg("images/image.svg", svg_origin, svg_size, 34);
+
+    // Label for the SVG at an even higher z to confirm ordering.
+    painter.text(
+        TextRun {
+            text: "SVG (z=34)".to_string(),
+            pos: [svg_origin[0] + 10.0, svg_origin[1] - 10.0],
+            size: 18.0,
+            color: ColorLinPremul::from_srgba_u8([180, 255, 180, 255]),
+        },
+        45,
+    );
 
     painter.finish()
 }

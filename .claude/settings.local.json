@@ -6,7 +6,11 @@
       "Bash(RUST_LOG=debug cargo run:*)",
       "Bash(cargo test:*)",
       "Bash(echo:*)",
-      "Bash(export PATH=\"$HOME/.cargo/bin:$PATH\")"
+      "Bash(export PATH=\"$HOME/.cargo/bin:$PATH\")",
+      "Bash(/Users/yppartha/Files/rust/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --workspace)",
+      "Bash(export PATH:*)",
+      "Bash(export PATH=\"/Users/yppartha/Files/rust/.rustup/toolchains/stable-aarch64-apple-darwin/bin:/usr/bin:$PATH\")",
+      "Bash(timeout 5 cargo run:*)"
     ],
     "deny": [],
     "ask": []

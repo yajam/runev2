@@ -335,6 +335,9 @@ impl HitIndex {
                     });
                     next_id += 1;
                 }
+                // Image and SVG draws currently do not participate in hit testing.
+                Command::DrawImage { .. } => {}
+                Command::DrawSvg { .. } => {}
             }
         }
 

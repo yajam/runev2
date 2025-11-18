@@ -68,6 +68,7 @@ pub fn run() -> Result<()> {
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new()
         .with_title("Rune Scene — UI Elements")
+        .with_maximized(true)
         .build(&event_loop)?;
     let window: &'static winit::window::Window = Box::leak(Box::new(window));
 
@@ -94,9 +95,9 @@ pub fn run() -> Result<()> {
         config.format,
     );
     surf.set_use_intermediate(true);
-    // Enable unified depth-based rendering for viewport_ir; legacy path not needed here.
+    // Enable unified rendering (Phase 3) for optimal z-ordering
     surf.set_use_unified_rendering(true);
-    surf.set_direct(true);
+    // Keep direct=false so PassManager uses the offscreen unified path.
     surf.set_logical_pixels(true);
     surf.set_dpi_scale(scale_factor);
 
@@ -135,9 +136,9 @@ pub fn run() -> Result<()> {
     let logical_height = (size.height as f32 / scale_factor) as u32;
     let mut zone_manager = ZoneManager::new(logical_width, logical_height);
 
-    // Viewport IR content (formerly sample_ui)
+    // Viewport IR content - incremental implementation
     let viewport_ir =
-        std::sync::Arc::new(std::sync::Mutex::new(viewport_ir::create_sample_elements()));
+        std::sync::Arc::new(std::sync::Mutex::new(viewport_ir::ViewportContent::new()));
     let viewport_ir_overlay = viewport_ir.clone();
 
     // Text layout cache for efficient resize performance
@@ -158,14 +159,17 @@ pub fn run() -> Result<()> {
     let sidebar_visible = std::sync::Arc::new(std::sync::Mutex::new(true));
     let sidebar_visible_overlay = sidebar_visible.clone();
 
-    // Devtools and toolbar overlay: drawn after all other content via RuneSurface overlay,
-    // so they always appear above viewport content, including raster images.
+    // Devtools and toolbar were previously rendered via a RuneSurface overlay.
+    // With unified rendering enabled, we render all chrome through the Canvas
+    // so it participates in the same z-ordered scene. Keep the overlay hook
+    // installed but make it a no-op to avoid unused warnings and preserve the
+    // ability to reintroduce GPU overlays later if needed.
     let devtools_style = zone_manager.devtools.style.clone();
     let toolbar_style = zone_manager.toolbar.style.clone();
     let overlay_provider = provider.clone();
     let overlay_scale = scale_factor;
 
-    // Shared state for devtools visibility
+    // Shared state for devtools visibility (kept for future overlay-based debugging)
     let devtools_visible = std::sync::Arc::new(std::sync::Mutex::new(false));
     let devtools_visible_overlay = devtools_visible.clone();
 
@@ -177,449 +181,26 @@ pub fn run() -> Result<()> {
     let viewport_scroll_offset = std::sync::Arc::new(std::sync::Mutex::new(0.0f32));
     let viewport_scroll_offset_overlay = viewport_scroll_offset.clone();
 
-    // Overlay callback for toolbar chrome (always), devtools chrome (when visible), and select dropdowns
     surf.set_overlay(Box::new(
-        move |passes, encoder, view, queue, width, height| {
-            // Recompute layout in logical coordinates for the current size (shared by toolbar/devtools).
+        move |_passes, _encoder, _view, _queue, width, height| {
             let sidebar_vis = *sidebar_visible_overlay.lock().unwrap();
             let logical_width = (width as f32 / overlay_scale).max(0.0) as u32;
             let logical_height = (height as f32 / overlay_scale).max(0.0) as u32;
-            let layout = zones::ZoneLayout::calculate(logical_width, logical_height, sidebar_vis);
+            let _layout = zones::ZoneLayout::calculate(logical_width, logical_height, sidebar_vis);
 
-            // --- Toolbar overlay: always render above viewport content ---
-            let toolbar_rect = layout.get_zone(ZoneId::Toolbar);
-
-            // Toolbar background strip
-            let toolbar_rrect = RoundedRect {
-                rect: toolbar_rect,
-                radii: RoundedRadii {
-                    tl: 0.0,
-                    tr: 0.0,
-                    br: 0.0,
-                    bl: 0.0,
-                },
-            };
-            passes.draw_filled_rounded_rect(
-                encoder,
-                view,
-                width,
-                height,
-                toolbar_rrect,
-                toolbar_style.bg_color,
-                queue,
+            // Mark captured vars as used so we can easily re-enable overlay
+            // rendering later without changing the closure signature.
+            let _ = (
+                &devtools_style,
+                &toolbar_style,
+                &overlay_provider,
+                &devtools_visible_overlay,
+                &devtools_active_tab_overlay,
+                &viewport_scroll_offset_overlay,
             );
 
-            // Optional toolbar border (bottom edge to visually separate viewport).
-            if toolbar_style.border_width > 0.0 {
-                let bw = toolbar_style.border_width;
-                let border_rect = Rect {
-                    x: toolbar_rect.x,
-                    y: toolbar_rect.y + toolbar_rect.h - bw,
-                    w: toolbar_rect.w,
-                    h: bw,
-                };
-                let border_rrect = RoundedRect {
-                    rect: border_rect,
-                    radii: RoundedRadii {
-                        tl: 0.0,
-                        tr: 0.0,
-                        br: 0.0,
-                        bl: 0.0,
-                    },
-                };
-                passes.draw_filled_rounded_rect(
-                    encoder,
-                    view,
-                    width,
-                    height,
-                    border_rrect,
-                    toolbar_style.border_color,
-                    queue,
-                );
-            }
-
-            // Toolbar icons (sidebar toggle and devtools toggle)
-            let toggle_size = 24.0;
-            let toggle_margin = 12.0;
-
-            // Sidebar toggle on the left
-            let toggle_x = toolbar_rect.x + toggle_margin;
-            let toggle_y = toolbar_rect.y + (toolbar_rect.h - toggle_size) * 0.5;
-
-            let white = ColorLinPremul::rgba(255, 255, 255, 255);
-            let icon_style = engine_core::SvgStyle::new()
-                .with_stroke(white)
-                .with_stroke_width(1.5);
-
-            // Helper to draw a styled SVG at the given origin and max size (rasterized).
-            fn draw_svg_icon(
-                passes: &mut engine_core::PassManager,
-                encoder: &mut wgpu::CommandEncoder,
-                view: &wgpu::TextureView,
-                queue: &wgpu::Queue,
-                width: u32,
-                height: u32,
-                path_str: &str,
-                origin: [f32; 2],
-                max_size: [f32; 2],
-                style: engine_core::SvgStyle,
-            ) {
-                let path = std::path::Path::new(path_str);
-                if let Some((_view1x, w1, h1)) =
-                    passes.rasterize_svg_to_view(path, 1.0, Some(style), queue)
-                {
-                    let base_w = w1.max(1) as f32;
-                    let base_h = h1.max(1) as f32;
-                    let scale = (max_size[0] / base_w).min(max_size[1] / base_h).max(0.0);
-                    if let Some((view_scaled, sw, sh)) =
-                        passes.rasterize_svg_to_view(path, scale, Some(style), queue)
-                    {
-                        passes.draw_image_quad(
-                            encoder,
-                            view,
-                            origin,
-                            [sw as f32, sh as f32],
-                            &view_scaled,
-                            queue,
-                            width,
-                            height,
-                        );
-                    }
-                }
-            }
-
-            draw_svg_icon(
-                passes,
-                encoder,
-                view,
-                queue,
-                width,
-                height,
-                "images/panel-left.svg",
-                [toggle_x, toggle_y],
-                [toggle_size, toggle_size],
-                icon_style,
-            );
-
-            // Devtools toggle on the right
-            let devtools_x = toolbar_rect.x + toolbar_rect.w - toggle_size - toggle_margin;
-            let devtools_y = toolbar_rect.y + (toolbar_rect.h - toggle_size) * 0.5;
-
-            draw_svg_icon(
-                passes,
-                encoder,
-                view,
-                queue,
-                width,
-                height,
-                "images/inspection-panel.svg",
-                [devtools_x, devtools_y],
-                [toggle_size, toggle_size],
-                icon_style,
-            );
-
-            let devtools_visible = *devtools_visible_overlay.lock().unwrap();
-            if devtools_visible {
-                let devtools_rect = layout.get_zone(ZoneId::DevTools);
-
-                // Background panel: solid rounded-rect (zero radii => plain rect).
-                let rrect = RoundedRect {
-                    rect: devtools_rect,
-                    radii: RoundedRadii {
-                        tl: 0.0,
-                        tr: 0.0,
-                        br: 0.0,
-                        bl: 0.0,
-                    },
-                };
-                passes.draw_filled_rounded_rect(
-                    encoder,
-                    view,
-                    width,
-                    height,
-                    rrect,
-                    devtools_style.bg_color,
-                    queue,
-                );
-
-                // Optional border: draw a thin inset rectangle with border color.
-                if devtools_style.border_width > 0.0 {
-                    let bw = devtools_style.border_width;
-                    let inset_rect = Rect {
-                        x: devtools_rect.x + bw * 0.5,
-                        y: devtools_rect.y + bw * 0.5,
-                        w: (devtools_rect.w - bw).max(0.0),
-                        h: (devtools_rect.h - bw).max(0.0),
-                    };
-                    let border_rrect = RoundedRect {
-                        rect: inset_rect,
-                        radii: RoundedRadii {
-                            tl: 0.0,
-                            tr: 0.0,
-                            br: 0.0,
-                            bl: 0.0,
-                        },
-                    };
-                    passes.draw_filled_rounded_rect(
-                        encoder,
-                        view,
-                        width,
-                        height,
-                        border_rrect,
-                        devtools_style.border_color,
-                        queue,
-                    );
-                }
-
-                // Header + tabs
-                let button_size = 18.0;
-                let tab_height = 24.0;
-                let tab_padding = 10.0;
-                let icon_text_gap = 6.0;
-                let white = ColorLinPremul::rgba(255, 255, 255, 255);
-                let inactive_color = ColorLinPremul::rgba(160, 170, 180, 255);
-                let header_bg = ColorLinPremul::rgba(34, 41, 60, 255);
-                let active_tab_bg = ColorLinPremul::rgba(54, 61, 80, 255);
-                let inactive_tab_bg = ColorLinPremul::rgba(40, 47, 66, 255);
-                let header_height = tab_height + 8.0;
-
-                // Header strip behind tabs
-                let header_rect = Rect {
-                    x: devtools_rect.x,
-                    y: devtools_rect.y,
-                    w: devtools_rect.w,
-                    h: header_height,
-                };
-                let header_rr = RoundedRect {
-                    rect: header_rect,
-                    radii: RoundedRadii {
-                        tl: 0.0,
-                        tr: 0.0,
-                        br: 0.0,
-                        bl: 0.0,
-                    },
-                };
-                passes.draw_filled_rounded_rect(
-                    encoder, view, width, height, header_rr, header_bg, queue,
-                );
-
-                // Active tab
-                let active_tab = *devtools_active_tab_overlay.lock().unwrap();
-
-                // Elements tab geometry
-                let elements_x = devtools_rect.x + tab_padding;
-                let elements_y = devtools_rect.y + (tab_height - button_size) * 0.5;
-                let elements_tab_width =
-                    button_size + icon_text_gap + 8.0 + 54.0 + tab_padding * 3.0;
-                let elements_rect = Rect {
-                    x: elements_x,
-                    y: elements_y,
-                    w: elements_tab_width,
-                    h: tab_height,
-                };
-                let is_elements_active = active_tab == DevToolsTab::Elements;
-                let elements_bg = if is_elements_active {
-                    active_tab_bg
-                } else {
-                    inactive_tab_bg
-                };
-                let elements_color = if is_elements_active {
-                    white
-                } else {
-                    inactive_color
-                };
-
-                let elements_rr = RoundedRect {
-                    rect: elements_rect,
-                    radii: RoundedRadii {
-                        tl: 0.0,
-                        tr: 0.0,
-                        br: 0.0,
-                        bl: 0.0,
-                    },
-                };
-                passes.draw_filled_rounded_rect(
-                    encoder,
-                    view,
-                    width,
-                    height,
-                    elements_rr,
-                    elements_bg,
-                    queue,
-                );
-
-                // Console tab geometry
-                let console_x = elements_x + elements_tab_width + 8.0;
-                let console_y = devtools_rect.y + (tab_height - button_size) * 0.5;
-                let console_tab_width =
-                    button_size + icon_text_gap + 8.0 + 50.0 + tab_padding * 3.0;
-                let console_rect = Rect {
-                    x: console_x,
-                    y: console_y,
-                    w: console_tab_width,
-                    h: tab_height,
-                };
-                let is_console_active = active_tab == DevToolsTab::Console;
-                let console_bg = if is_console_active {
-                    active_tab_bg
-                } else {
-                    inactive_tab_bg
-                };
-                let console_color = if is_console_active {
-                    white
-                } else {
-                    inactive_color
-                };
-
-                let console_rr = RoundedRect {
-                    rect: console_rect,
-                    radii: RoundedRadii {
-                        tl: 0.0,
-                        tr: 0.0,
-                        br: 0.0,
-                        bl: 0.0,
-                    },
-                };
-                passes.draw_filled_rounded_rect(
-                    encoder, view, width, height, console_rr, console_bg, queue,
-                );
-
-                // Labels and content text via text renderer
-                let mut overlay_list = engine_core::DisplayList {
-                    viewport: engine_core::Viewport { width, height },
-                    commands: Vec::new(),
-                };
-
-                // Elements label
-                let elements_label_run = TextRun {
-                    text: "Elements".to_string(),
-                    pos: [
-                        elements_x + button_size + icon_text_gap + 8.0,
-                        devtools_rect.y + tab_height - 6.0,
-                    ],
-                    size: 11.0,
-                    color: elements_color,
-                };
-                overlay_list.commands.push(engine_core::Command::DrawText {
-                    run: elements_label_run,
-                    z: 10100,
-                    transform: Transform2D::identity(),
-                    id: 1,
-                    dynamic: false,
-                });
-
-                // Console label
-                let console_label_run = TextRun {
-                    text: "Console".to_string(),
-                    pos: [
-                        console_x + button_size + icon_text_gap + 8.0,
-                        devtools_rect.y + tab_height - 6.0,
-                    ],
-                    size: 11.0,
-                    color: console_color,
-                };
-                overlay_list.commands.push(engine_core::Command::DrawText {
-                    run: console_label_run,
-                    z: 10100,
-                    transform: Transform2D::identity(),
-                    id: 2,
-                    dynamic: false,
-                });
-
-                // Content label inside devtools body based on active tab
-                let content_text = match active_tab {
-                    DevToolsTab::Console => "Console",
-                    DevToolsTab::Elements => "Elements",
-                };
-                let label_color: ColorLinPremul = ColorLinPremul::rgba(220, 230, 240, 255);
-                let content_label_run = TextRun {
-                    text: content_text.to_string(),
-                    pos: [
-                        devtools_rect.x + tab_padding + 4.0,
-                        devtools_rect.y + header_height + 14.0,
-                    ],
-                    size: 12.0,
-                    color: label_color,
-                };
-                overlay_list.commands.push(engine_core::Command::DrawText {
-                    run: content_label_run,
-                    z: 10150,
-                    transform: Transform2D::identity(),
-                    id: 3,
-                    dynamic: false,
-                });
-
-                passes.render_text_for_list(
-                    encoder,
-                    view,
-                    &overlay_list,
-                    queue,
-                    overlay_provider.as_ref(),
-                );
-
-                // Icons and close button SVGs drawn on top
-                let icon_style_elements = engine_core::SvgStyle::new()
-                    .with_stroke(elements_color)
-                    .with_stroke_width(2.0);
-                let icon_style_console = engine_core::SvgStyle::new()
-                    .with_stroke(console_color)
-                    .with_stroke_width(2.0);
-                let close_white = white;
-
-                let elements_icon_origin = [elements_x, elements_y];
-                let console_icon_origin = [console_x, console_y];
-                let close_size = 20.0;
-                let close_margin = 12.0;
-                let close_origin = [
-                    devtools_rect.x + devtools_rect.w - close_size - close_margin,
-                    devtools_rect.y + 6.0,
-                ];
-
-                draw_svg_icon(
-                    passes,
-                    encoder,
-                    view,
-                    queue,
-                    width,
-                    height,
-                    "images/square-mouse-pointer.svg",
-                    elements_icon_origin,
-                    [button_size, button_size],
-                    icon_style_elements,
-                );
-
-                draw_svg_icon(
-                    passes,
-                    encoder,
-                    view,
-                    queue,
-                    width,
-                    height,
-                    "images/square-terminal.svg",
-                    console_icon_origin,
-                    [button_size, button_size],
-                    icon_style_console,
-                );
-
-                let close_icon_style = engine_core::SvgStyle::new()
-                    .with_stroke(close_white)
-                    .with_stroke_width(2.0);
-                draw_svg_icon(
-                    passes,
-                    encoder,
-                    view,
-                    queue,
-                    width,
-                    height,
-                    "images/x.svg",
-                    close_origin,
-                    [close_size, close_size],
-                    close_icon_style,
-                );
-            }
-
-            // Note: Select dropdown overlays are now rendered in viewport_ir.rs
-            // at the end of the render pass with high z-index (10000+)
+            // All toolbar/devtools chrome is now rendered via Canvas in the
+            // unified path; this overlay intentionally does nothing.
         },
     ));
 
@@ -649,6 +230,8 @@ pub fn run() -> Result<()> {
                     WindowEvent::CursorMoved { position, .. } => {
                         cursor_position = Some((position.x as f32, position.y as f32));
 
+                        // TODO: Re-enable interaction code as we add UI elements incrementally
+                        /*
                         // Phase 5: Handle mouse drag for selection extension
                         let logical_x = position.x as f32 / scale_factor;
                         let logical_y = position.y as f32 / scale_factor;
@@ -712,6 +295,7 @@ pub fn run() -> Result<()> {
                                 break;
                             }
                         }
+                        */
                     }
                     WindowEvent::MouseWheel { delta, .. } => {
                         // Handle scrolling in viewport
@@ -729,6 +313,59 @@ pub fn run() -> Result<()> {
                         window.request_redraw();
                     }
                     WindowEvent::MouseInput { state, button, .. } => {
+                        // Enable hit testing for toolbar and devtools buttons
+                        if button == winit::event::MouseButton::Left
+                            && state == winit::event::ElementState::Pressed
+                        {
+                            if let Some((cursor_x, cursor_y)) = cursor_position {
+                                let logical_x = cursor_x / scale_factor;
+                                let logical_y = cursor_y / scale_factor;
+
+                                // Perform hit test for toolbar and devtools buttons
+                                if let Some(ref index) = hit_index {
+                                    if let Some(hit) = index.topmost_at([logical_x, logical_y]) {
+                                        if let Some(region_id) = hit.region_id {
+                                            if region_id == TOGGLE_BUTTON_REGION_ID {
+                                                let logical_width =
+                                                    (size.width as f32 / scale_factor) as u32;
+                                                let logical_height =
+                                                    (size.height as f32 / scale_factor) as u32;
+                                                zone_manager.toggle_sidebar(
+                                                    logical_width,
+                                                    logical_height,
+                                                );
+                                                *sidebar_visible.lock().unwrap() =
+                                                    zone_manager.is_sidebar_visible();
+                                                needs_redraw = true;
+                                                window.request_redraw();
+                                            } else if region_id == DEVTOOLS_BUTTON_REGION_ID {
+                                                zone_manager.toggle_devtools();
+                                                *devtools_visible.lock().unwrap() =
+                                                    zone_manager.is_devtools_visible();
+                                                needs_redraw = true;
+                                                window.request_redraw();
+                                            } else if region_id == DEVTOOLS_CLOSE_BUTTON_REGION_ID {
+                                                zone_manager.toggle_devtools();
+                                                *devtools_visible.lock().unwrap() =
+                                                    zone_manager.is_devtools_visible();
+                                                needs_redraw = true;
+                                                window.request_redraw();
+                                            } else if region_id == DEVTOOLS_ELEMENTS_TAB_REGION_ID {
+                                                zone_manager.devtools.set_active_tab(DevToolsTab::Elements);
+                                                needs_redraw = true;
+                                                window.request_redraw();
+                                            } else if region_id == DEVTOOLS_CONSOLE_TAB_REGION_ID {
+                                                zone_manager.devtools.set_active_tab(DevToolsTab::Console);
+                                                needs_redraw = true;
+                                                window.request_redraw();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // TODO: Re-enable viewport UI element handling as we add them incrementally
+                        /*
                         let mut viewport_ir_lock = viewport_ir.lock().unwrap();
 
                         if button == winit::event::MouseButton::Left
@@ -1146,8 +783,11 @@ pub fn run() -> Result<()> {
                                 }
                             }
                         }
+                        */
                     }
                     WindowEvent::KeyboardInput { event, .. } => {
+                        // TODO: Re-enable as we add UI elements incrementally
+                        /*
                         use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 
                         let mut viewport_ir_lock = viewport_ir.lock().unwrap();
@@ -1572,6 +1212,7 @@ pub fn run() -> Result<()> {
                                 }
                             }
                         }
+                        */
                     }
                     WindowEvent::Resized(new_size) => {
                         size = new_size;
@@ -1639,10 +1280,9 @@ pub fn run() -> Result<()> {
                             return;
                         }
 
-                        // Preserve intermediate texture content during resize to avoid white edges
-                        // The intermediate texture is kept across frames (only reallocated when needed)
-                        // Backgrounds will render incrementally over preserved content
-                        surf.set_preserve_surface(true);
+                        // For unified rendering we always clear the surface each frame
+                        // and rely on depth/z-index for layering instead of preserving contents.
+                        surf.set_preserve_surface(false);
 
                         if size_changed {
                             prev_size = size;
@@ -1660,6 +1300,9 @@ pub fn run() -> Result<()> {
                         let mut canvas = surf.begin_frame(size.width, size.height);
                         canvas.set_text_provider(provider.clone());
 
+                        // Set clear color to peach for visibility during debugging
+                        canvas.clear(ColorLinPremul::from_srgba_u8([255, 229, 180, 255]));
+
                         // Always render zone backgrounds and borders first (lowest z-index)
                         // This happens immediately during resize without debounce
                         // Note: render_zones uses zone_manager which has logical coordinates,
@@ -1674,6 +1317,8 @@ pub fn run() -> Result<()> {
                             let delta_time = (now - last_frame_time).as_secs_f32();
                             last_frame_time = now;
 
+                            // TODO: Re-enable cursor blink updates when we add text inputs
+                            /*
                             {
                                 let mut viewport_ir_lock = viewport_ir.lock().unwrap();
                                 for input_box in viewport_ir_lock.input_boxes.iter_mut() {
@@ -1692,6 +1337,7 @@ pub fn run() -> Result<()> {
                                     window.request_redraw();
                                 }
                             } // Release viewport_ir lock
+                            */
 
                             // Render sample UI elements in viewport zone with local coordinates.
                             let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
@@ -1723,6 +1369,7 @@ pub fn run() -> Result<()> {
                                     &mut canvas,
                                     scale_factor,
                                     viewport_rect.w as u32,
+                                    viewport_rect.h as u32,
                                     provider.as_ref(),
                                     text_cache.as_ref(),
                                 )
@@ -1737,20 +1384,75 @@ pub fn run() -> Result<()> {
                                 .viewport
                                 .set_content_height(content_height, viewport_rect.h);
 
-                            // Render toolbar content with hit regions (above viewport)
+                            // Render toolbar icons and hit regions
                             let toolbar_rect = zone_manager.layout.get_zone(ZoneId::Toolbar);
+                            let toggle_size = 24.0;
+                            let toggle_margin = 12.0;
+
+                            // Use toolbar-local coordinates for both hit regions and icons
                             canvas.push_transform(Transform2D::translate(
                                 toolbar_rect.x,
                                 toolbar_rect.y,
                             ));
-                            zone_manager.toolbar.render(&mut canvas, toolbar_rect);
+
+                            // Sidebar toggle (local coords)
+                            let toggle_x_local = toggle_margin;
+                            let toggle_y_local = (toolbar_rect.h - toggle_size) * 0.5;
+
+                            let toggle_rect = Rect {
+                                x: toggle_x_local,
+                                y: toggle_y_local,
+                                w: toggle_size,
+                                h: toggle_size,
+                            };
+
+                            canvas.hit_region_rect(TOGGLE_BUTTON_REGION_ID, toggle_rect, 10100);
+
+                            // Devtools toggle (local coords)
+                            let devtools_x_local = toolbar_rect.w - toggle_size - toggle_margin;
+                            let devtools_y_local = (toolbar_rect.h - toggle_size) * 0.5;
+
+                            let devtools_rect_hit = Rect {
+                                x: devtools_x_local,
+                                y: devtools_y_local,
+                                w: toggle_size,
+                                h: toggle_size,
+                            };
+
+                            canvas.hit_region_rect(
+                                DEVTOOLS_BUTTON_REGION_ID,
+                                devtools_rect_hit,
+                                10100,
+                            );
+
+                            let white = ColorLinPremul::rgba(255, 255, 255, 255);
+                            let icon_style = engine_core::SvgStyle::new()
+                                .with_stroke(white)
+                                .with_stroke_width(1.5);
+
+                            // Icons rendered in toolbar-local coordinates (transform applied)
+                            canvas.draw_svg_styled(
+                                "images/panel-left.svg",
+                                [toggle_x_local, toggle_y_local],
+                                [toggle_size, toggle_size],
+                                icon_style,
+                                10200,
+                            );
+
+                            canvas.draw_svg_styled(
+                                "images/inspection-panel.svg",
+                                [devtools_x_local, devtools_y_local],
+                                [toggle_size, toggle_size],
+                                icon_style,
+                                10200,
+                            );
+
                             canvas.pop_transform();
                         }
 
-                        // Register devtools hit regions (tabs and close button) if devtools is visible.
-                        // Visual chrome is rendered in the RuneSurface overlay callback so it
-                        // appears above all content, including raster images.
-                        // Only register hit regions during full render (not background-only)
+                        // Render devtools chrome and hit regions when devtools is visible.
+                        // All visuals go through the unified Canvas path so they share the
+                        // same coordinate system and z-ordering as the rest of the scene.
                         if should_render_full && zone_manager.is_devtools_visible() {
                             let devtools_rect = zone_manager.layout.get_zone(ZoneId::DevTools);
                             canvas.push_transform(Transform2D::translate(
@@ -1763,10 +1465,69 @@ pub fn run() -> Result<()> {
                             let tab_padding = 10.0;
                             let icon_text_gap = 6.0;
 
+                            // Colors match the previous overlay implementation so visuals stay consistent.
+                            let white = ColorLinPremul::rgba(255, 255, 255, 255);
+                            let inactive_color = ColorLinPremul::rgba(160, 170, 180, 255);
+                            let header_bg = ColorLinPremul::rgba(34, 41, 60, 255);
+                            let active_tab_bg = ColorLinPremul::rgba(54, 61, 80, 255);
+                            let inactive_tab_bg = ColorLinPremul::rgba(40, 47, 66, 255);
+                            let header_height = tab_height + 8.0;
+
+                            // Panel background in devtools-local coordinates.
+                            let devtools_style = &zone_manager.devtools.style;
+                            canvas.fill_rect(
+                                0.0,
+                                0.0,
+                                devtools_rect.w,
+                                devtools_rect.h,
+                                Brush::Solid(devtools_style.bg_color),
+                                10100,
+                            );
+
+                            // Optional border: draw as four rects around the panel.
+                            if devtools_style.border_width > 0.0 {
+                                let bw = devtools_style.border_width;
+                                let border_brush = Brush::Solid(devtools_style.border_color);
+
+                                // Top
+                                canvas.fill_rect(0.0, 0.0, devtools_rect.w, bw, border_brush.clone(), 10100);
+                                // Bottom
+                                canvas.fill_rect(
+                                    0.0,
+                                    devtools_rect.h - bw,
+                                    devtools_rect.w,
+                                    bw,
+                                    border_brush.clone(),
+                                    10100,
+                                );
+                                // Left
+                                canvas.fill_rect(0.0, 0.0, bw, devtools_rect.h, border_brush.clone(), 10100);
+                                // Right
+                                canvas.fill_rect(
+                                    devtools_rect.w - bw,
+                                    0.0,
+                                    bw,
+                                    devtools_rect.h,
+                                    border_brush,
+                                    10100,
+                                );
+                            }
+
+                            // Header strip behind tabs
+                            canvas.fill_rect(
+                                0.0,
+                                0.0,
+                                devtools_rect.w,
+                                header_height,
+                                Brush::Solid(header_bg),
+                                10110,
+                            );
+
+                            let active_tab = zone_manager.devtools.active_tab;
+
                             // Elements tab
                             let elements_x = tab_padding;
                             let elements_y = (tab_height - button_size) * 0.5;
-                            // Calculate tab width based on text
                             let elements_tab_width =
                                 button_size + icon_text_gap + 8.0 + 54.0 + tab_padding * 3.0;
 
@@ -1776,7 +1537,29 @@ pub fn run() -> Result<()> {
                                 w: elements_tab_width,
                                 h: tab_height,
                             };
+                            let is_elements_active = active_tab == DevToolsTab::Elements;
+                            let elements_bg = if is_elements_active {
+                                active_tab_bg
+                            } else {
+                                inactive_tab_bg
+                            };
+                            let elements_color = if is_elements_active {
+                                white
+                            } else {
+                                inactive_color
+                            };
 
+                            // Elements tab background
+                            canvas.fill_rect(
+                                elements_rect.x,
+                                elements_rect.y,
+                                elements_rect.w,
+                                elements_rect.h,
+                                Brush::Solid(elements_bg),
+                                10120,
+                            );
+
+                            // Register hit region in local coords
                             canvas.hit_region_rect(
                                 DEVTOOLS_ELEMENTS_TAB_REGION_ID,
                                 elements_rect,
@@ -1787,8 +1570,11 @@ pub fn run() -> Result<()> {
                             let console_x = elements_x + elements_tab_width + 8.0;
                             let console_y = (tab_height - button_size) * 0.5;
 
-                            let console_tab_width =
-                                button_size + icon_text_gap + 8.0 + 50.0 + tab_padding * 3.0;
+                            let console_tab_width = button_size
+                                + icon_text_gap
+                                + 8.0
+                                + 50.0
+                                + tab_padding * 3.0;
 
                             let console_rect = Rect {
                                 x: console_x,
@@ -1796,7 +1582,29 @@ pub fn run() -> Result<()> {
                                 w: console_tab_width,
                                 h: tab_height,
                             };
+                            let is_console_active = active_tab == DevToolsTab::Console;
+                            let console_bg = if is_console_active {
+                                active_tab_bg
+                            } else {
+                                inactive_tab_bg
+                            };
+                            let console_color = if is_console_active {
+                                white
+                            } else {
+                                inactive_color
+                            };
 
+                            // Console tab background
+                            canvas.fill_rect(
+                                console_rect.x,
+                                console_rect.y,
+                                console_rect.w,
+                                console_rect.h,
+                                Brush::Solid(console_bg),
+                                10120,
+                            );
+
+                            // Register hit region in local coords
                             canvas.hit_region_rect(
                                 DEVTOOLS_CONSOLE_TAB_REGION_ID,
                                 console_rect,
@@ -1822,6 +1630,83 @@ pub fn run() -> Result<()> {
                                 10300,
                             );
 
+                            // Elements tab icon (local coordinates within transform)
+                            let icon_style_elements = engine_core::SvgStyle::new()
+                                .with_stroke(elements_color)
+                                .with_stroke_width(2.0);
+
+                            canvas.draw_svg_styled(
+                                "images/square-mouse-pointer.svg",
+                                [elements_x, elements_y],
+                                [button_size, button_size],
+                                icon_style_elements,
+                                10250,
+                            );
+
+                            // Console tab icon (local coordinates within transform)
+                            let icon_style_console = engine_core::SvgStyle::new()
+                                .with_stroke(console_color)
+                                .with_stroke_width(2.0);
+
+                            canvas.draw_svg_styled(
+                                "images/square-terminal.svg",
+                                [console_x, console_y],
+                                [button_size, button_size],
+                                icon_style_console,
+                                10250,
+                            );
+
+                            // Close button icon (local coordinates within transform)
+                            let close_icon_style = engine_core::SvgStyle::new()
+                                .with_stroke(white)
+                                .with_stroke_width(2.0);
+
+                            canvas.draw_svg_styled(
+                                "images/x.svg",
+                                [close_x, close_y],
+                                [close_size, close_size],
+                                close_icon_style,
+                                10250,
+                            );
+
+                            // Tab labels
+                            canvas.draw_text_run(
+                                [
+                                    elements_x + button_size + icon_text_gap + 8.0,
+                                    tab_height - 6.0,
+                                ],
+                                "Elements".to_string(),
+                                11.0,
+                                elements_color,
+                                10260,
+                            );
+
+                            canvas.draw_text_run(
+                                [
+                                    console_x + button_size + icon_text_gap + 8.0,
+                                    tab_height - 6.0,
+                                ],
+                                "Console".to_string(),
+                                11.0,
+                                console_color,
+                                10260,
+                            );
+
+                            // Content label inside devtools body based on active tab
+                            let content_text = match active_tab {
+                                DevToolsTab::Console => "Console",
+                                DevToolsTab::Elements => "Elements",
+                            };
+                            let label_color: ColorLinPremul =
+                                ColorLinPremul::rgba(220, 230, 240, 255);
+                            canvas.draw_text_run(
+                                [tab_padding + 4.0, header_height + 14.0],
+                                content_text.to_string(),
+                                12.0,
+                                label_color,
+                                10260,
+                            );
+
                             canvas.pop_transform();
                         }
 
@@ -1834,9 +1719,10 @@ pub fn run() -> Result<()> {
                         surf.end_frame(frame, canvas).ok();
 
                         // Clear flags after rendering.
-                        // Keep needs_redraw true while an input box is focused so
-                        // cursor blinking continues to drive redraws.
+                        // TODO: Re-enable focused input tracking when we add text inputs
                         if should_render_full {
+                            needs_redraw = false;
+                            /*
                             let any_focused_input = {
                                 let viewport_ir_lock = viewport_ir.lock().unwrap();
                                 viewport_ir_lock.input_boxes.iter().any(|ib| ib.focused)
@@ -1844,6 +1730,7 @@ pub fn run() -> Result<()> {
                             if !any_focused_input {
                                 needs_redraw = false;
                             }
+                            */
                         }
                         needs_background_redraw = false;
                     }
