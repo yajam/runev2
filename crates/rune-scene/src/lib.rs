@@ -331,11 +331,11 @@ pub fn run() -> Result<()> {
                                 let logical_y = cursor_y / scale_factor;
 
                                 // Perform hit test for toolbar and devtools buttons
-                                eprintln!("🖱️ Click at logical ({}, {})", logical_x, logical_y);
+                                // eprintln!("🖱️ Click at logical ({}, {})", logical_x, logical_y);
                                 if let Some(ref index) = hit_index {
-                                    eprintln!("   Hit index exists");
+                                    // eprintln!("   Hit index exists");
                                     if let Some(hit) = index.topmost_at([logical_x, logical_y]) {
-                                        eprintln!("   Hit found: region_id={:?}, z={}", hit.region_id, hit.z);
+                                        // eprintln!("   Hit found: region_id={:?}, z={}", hit.region_id, hit.z);
                                         if let Some(region_id) = hit.region_id {
                                             if region_id == TOGGLE_BUTTON_REGION_ID {
                                                 let logical_width =
@@ -354,7 +354,7 @@ pub fn run() -> Result<()> {
                                             } else if region_id == DEVTOOLS_BUTTON_REGION_ID {
                                                 zone_manager.toggle_devtools();
                                                 let visible = zone_manager.is_devtools_visible();
-                                                eprintln!("🔧 DevTools toggled: visible = {}", visible);
+                                                // eprintln!("🔧 DevTools toggled: visible = {}", visible);
                                                 *devtools_visible.lock().unwrap() = visible;
                                                 clicked_toolbar_button = true;
                                                 needs_redraw = true;
@@ -608,6 +608,53 @@ pub fn run() -> Result<()> {
                                                 }
                                             }
                                             break;
+                                        }
+                                    }
+                                }
+
+                                // Check if click is on an open select dropdown overlay
+                                if !clicked_popup {
+                                    for select in viewport_ir_lock.selects.iter_mut() {
+                                        if select.open && !select.options.is_empty() {
+                                            let option_height = 36.0;
+                                            let overlay_padding = 4.0;
+                                            let overlay_height = (select.options.len() as f32 * option_height) + (overlay_padding * 2.0);
+
+                                            // Position overlay below the select box
+                                            let overlay_x = select.rect.x;
+                                            let overlay_y = select.rect.y + select.rect.h + 4.0;
+                                            let overlay_width = select.rect.w;
+
+                                            let in_overlay = viewport_local_x >= overlay_x
+                                                && viewport_local_x <= overlay_x + overlay_width
+                                                && viewport_local_y >= overlay_y
+                                                && viewport_local_y <= overlay_y + overlay_height;
+
+                                            if in_overlay {
+                                                clicked_popup = true;
+
+                                                // Calculate which option was clicked
+                                                let option_local_x = viewport_local_x - overlay_x - overlay_padding;
+                                                let option_local_y = viewport_local_y - overlay_y - overlay_padding;
+
+                                                if option_local_x >= 0.0 && option_local_y >= 0.0 {
+                                                    let option_idx = (option_local_y / option_height) as usize;
+                                                    if option_idx < select.options.len() {
+                                                        // Update selected index
+                                                        select.selected_index = Some(option_idx);
+
+                                                        // Update label to show selected option
+                                                        select.label = select.options[option_idx].clone();
+
+                                                        // Close the dropdown
+                                                        select.open = false;
+
+                                                        needs_redraw = true;
+                                                        window.request_redraw();
+                                                    }
+                                                }
+                                                break;
+                                            }
                                         }
                                     }
                                 }
@@ -1269,8 +1316,8 @@ pub fn run() -> Result<()> {
                                         if line_modifier && !has_shift =>
                                     {
                                         // Cmd/Ctrl+C: Copy to clipboard
-                                        if let Err(e) = focused_input.copy_to_clipboard() {
-                                            eprintln!("Failed to copy: {}", e);
+                                        if let Err(_e) = focused_input.copy_to_clipboard() {
+                                            // eprintln!("Failed to copy: {}", _e);
                                         }
                                         // No redraw needed for copy
                                     }
@@ -1278,8 +1325,8 @@ pub fn run() -> Result<()> {
                                         if line_modifier && !has_shift =>
                                     {
                                         // Cmd/Ctrl+X: Cut to clipboard
-                                        if let Err(e) = focused_input.cut_to_clipboard() {
-                                            eprintln!("Failed to cut: {}", e);
+                                        if let Err(_e) = focused_input.cut_to_clipboard() {
+                                            // eprintln!("Failed to cut: {}", _e);
                                         } else {
                                             focused_input.update_scroll();
                                             needs_redraw = true;
@@ -1290,8 +1337,8 @@ pub fn run() -> Result<()> {
                                         if line_modifier && !has_shift =>
                                     {
                                         // Cmd/Ctrl+V: Paste from clipboard
-                                        if let Err(e) = focused_input.paste_from_clipboard() {
-                                            eprintln!("Failed to paste: {}", e);
+                                        if let Err(_e) = focused_input.paste_from_clipboard() {
+                                            // eprintln!("Failed to paste: {}", _e);
                                         } else {
                                             focused_input.update_scroll();
                                             needs_redraw = true;
@@ -1457,15 +1504,15 @@ pub fn run() -> Result<()> {
                                     PhysicalKey::Code(KeyCode::KeyC)
                                         if line_modifier && !has_shift =>
                                     {
-                                        if let Err(e) = focused_textarea.copy_to_clipboard() {
-                                            eprintln!("Failed to copy: {}", e);
+                                        if let Err(_e) = focused_textarea.copy_to_clipboard() {
+                                            // eprintln!("Failed to copy: {}", _e);
                                         }
                                     }
                                     PhysicalKey::Code(KeyCode::KeyX)
                                         if line_modifier && !has_shift =>
                                     {
-                                        if let Err(e) = focused_textarea.cut_to_clipboard() {
-                                            eprintln!("Failed to cut: {}", e);
+                                        if let Err(_e) = focused_textarea.cut_to_clipboard() {
+                                            // eprintln!("Failed to cut: {}", _e);
                                         } else {
                                             focused_textarea.update_scroll();
                                             needs_redraw = true;
@@ -1475,8 +1522,8 @@ pub fn run() -> Result<()> {
                                     PhysicalKey::Code(KeyCode::KeyV)
                                         if line_modifier && !has_shift =>
                                     {
-                                        if let Err(e) = focused_textarea.paste_from_clipboard() {
-                                            eprintln!("Failed to paste: {}", e);
+                                        if let Err(_e) = focused_textarea.paste_from_clipboard() {
+                                            // eprintln!("Failed to paste: {}", _e);
                                         } else {
                                             focused_textarea.update_scroll();
                                             needs_redraw = true;
@@ -1753,7 +1800,12 @@ pub fn run() -> Result<()> {
                             let delta_time = (now - last_frame_time).as_secs_f32();
                             last_frame_time = now;
 
-                            {
+                            // Update caret blink state for all editable controls and
+                            // track whether any of them are currently focused. While
+                            // a control is focused we keep `needs_redraw` true so
+                            // that the event loop continues to request redraws and
+                            // the caret can blink at a steady rate.
+                            let any_focused_editable = {
                                 let mut viewport_ir_lock = viewport_ir.lock().unwrap();
                                 for input_box in viewport_ir_lock.input_boxes.iter_mut() {
                                     input_box.update_blink(delta_time);
@@ -1763,14 +1815,19 @@ pub fn run() -> Result<()> {
                                     textarea.update_blink(delta_time);
                                 }
 
-                                // Request continuous redraw for cursor blinking while any input or textarea is focused.
-                                if viewport_ir_lock.input_boxes.iter().any(|ib| ib.focused)
-                                    || viewport_ir_lock.text_areas.iter().any(|ta| ta.focused)
-                                {
-                                    needs_redraw = true;
-                                    window.request_redraw();
-                                }
-                            } // Release viewport_ir lock
+                                viewport_ir_lock
+                                    .input_boxes
+                                    .iter()
+                                    .any(|ib| ib.focused)
+                                    || viewport_ir_lock
+                                        .text_areas
+                                        .iter()
+                                        .any(|ta| ta.focused)
+                            }; // Release viewport_ir lock
+
+                            if any_focused_editable {
+                                needs_redraw = true;
+                            }
 
                             // Render sample UI elements in viewport zone with local coordinates.
                             let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
@@ -2153,18 +2210,24 @@ pub fn run() -> Result<()> {
                         surf.end_frame(frame, canvas).ok();
 
                         // Clear flags after rendering.
-                        // TODO: Re-enable focused input tracking when we add text inputs
+                        // Keep requesting redraws while any text input or text area
+                        // has focus so the caret blink animation remains smooth.
                         if should_render_full {
-                            needs_redraw = false;
-                            /*
-                            let any_focused_input = {
+                            let any_focused_editable = {
                                 let viewport_ir_lock = viewport_ir.lock().unwrap();
-                                viewport_ir_lock.input_boxes.iter().any(|ib| ib.focused)
+                                viewport_ir_lock
+                                    .input_boxes
+                                    .iter()
+                                    .any(|ib| ib.focused)
+                                    || viewport_ir_lock
+                                        .text_areas
+                                        .iter()
+                                        .any(|ta| ta.focused)
                             };
-                            if !any_focused_input {
+
+                            if !any_focused_editable {
                                 needs_redraw = false;
                             }
-                            */
                         }
                         needs_background_redraw = false;
                     }

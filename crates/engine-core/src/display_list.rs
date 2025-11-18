@@ -110,6 +110,14 @@ pub enum Command {
         z: i32,
         transform: Transform2D,
     },
+    /// Hyperlink with text, optional underline, and click target.
+    DrawHyperlink {
+        hyperlink: Hyperlink,
+        z: i32,
+        transform: Transform2D,
+        /// Unique ID for this hyperlink instance (for hit testing)
+        id: u64,
+    },
     PushClip(ClipRect),
     PopClip,
     PushTransform(Transform2D),
@@ -133,7 +141,8 @@ impl Command {
             Command::HitRegionRoundedRect { z, .. } => Some(*z),
             Command::HitRegionEllipse { z, .. } => Some(*z),
             Command::DrawImage { z, .. } => Some(*z),
-             Command::DrawSvg { z, .. } => Some(*z),
+            Command::DrawSvg { z, .. } => Some(*z),
+            Command::DrawHyperlink { z, .. } => Some(*z),
             _ => None,
         }
     }

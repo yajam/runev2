@@ -33,6 +33,7 @@ pub enum HitKind {
     Path,
     BoxShadow,
     HitRegion,
+    Hyperlink,
 }
 
 /// Public geometry snapshot of a hit element.
@@ -46,6 +47,7 @@ pub enum HitShape {
     PathBBox { rect: Rect },
     Text,
     BoxShadow { rrect: RoundedRect },
+    Hyperlink { rect: Rect, url: String },
 }
 
 /// Preprocessed hit-test item built from a display list command.
@@ -70,6 +72,7 @@ enum HitData {
     PathBBox(Rect),
     Text(TextRun),
     BoxShadow { rrect: RoundedRect },
+    Hyperlink { rect: Rect, url: String },
 }
 
 #[derive(Clone, Debug)]
@@ -214,6 +217,39 @@ impl HitIndex {
                         kind: HitKind::Text,
                         transform: *transform,
                         data: HitData::Text(run.clone()),
+                        clips: clips.clone(),
+                        region_id: None,
+                    });
+                    next_id += 1;
+                }
+                Command::DrawHyperlink {
+                    hyperlink,
+                    z,
+                    transform,
+                    ..
+                } => {
+                    // Estimate bounding box for hyperlink text
+                    // Use a simple heuristic: ~0.6 * font_size per character width
+                    let char_width = hyperlink.size * 0.6;
+                    let text_width = hyperlink.text.len() as f32 * char_width;
+                    let text_height = hyperlink.size * 1.2; // Include descenders
+
+                    let rect = Rect {
+                        x: hyperlink.pos[0],
+                        y: hyperlink.pos[1] - hyperlink.size, // Baseline to top
+                        w: text_width,
+                        h: text_height,
+                    };
+
+                    items.push(HitItem {
+                        id: next_id,
+                        z: *z,
+                        kind: HitKind::Hyperlink,
+                        transform: *transform,
+                        data: HitData::Hyperlink {
+                            rect,
+                            url: hyperlink.url.clone(),
+                        },
                         clips: clips.clone(),
                         region_id: None,
                     });
@@ -406,6 +442,10 @@ impl HitIndex {
                     HitData::PathBBox(r) => HitShape::PathBBox { rect: *r },
                     HitData::Text(_) => HitShape::Text,
                     HitData::BoxShadow { rrect } => HitShape::BoxShadow { rrect: *rrect },
+                    HitData::Hyperlink { rect, url } => HitShape::Hyperlink {
+                        rect: *rect,
+                        url: url.clone(),
+                    },
                 },
                 transform: it.transform,
                 region_id: it.region_id,
@@ -489,6 +529,7 @@ fn hit_item_contains(item: &HitItem, world: [f32; 2]) -> bool {
         HitData::PathBBox(rect) => point_in_rect_local(world, &item.transform, *rect),
         HitData::Text(_run) => false, // Text hit testing not yet implemented
         HitData::BoxShadow { rrect } => point_in_rounded_rect_local(world, &item.transform, *rrect),
+        HitData::Hyperlink { rect, .. } => point_in_rect_local(world, &item.transform, *rect),
     }
 }
 
@@ -797,6 +838,22 @@ fn compute_locals(item: &HitItem, world: [f32; 2]) -> (Option<[f32; 2]>, Option<
                 },
                 if r.h.abs() > 1e-6 {
                     (local[1] / r.h).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
+            ];
+            (Some(local), Some(uv))
+        }
+        HitData::Hyperlink { rect, .. } => {
+            let local = [p[0] - rect.x, p[1] - rect.y];
+            let uv = [
+                if rect.w.abs() > 1e-6 {
+                    (local[0] / rect.w).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
+                if rect.h.abs() > 1e-6 {
+                    (local[1] / rect.h).clamp(0.0, 1.0)
                 } else {
                     0.0
                 },

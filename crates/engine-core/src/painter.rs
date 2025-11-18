@@ -229,6 +229,23 @@ impl Painter {
         });
     }
 
+    /// Draw a hyperlink with text, optional underline, and a URL target.
+    /// Uses ID 0 for hit testing - use `hyperlink_with_id` for custom IDs.
+    pub fn hyperlink(&mut self, hyperlink: Hyperlink, z: i32) {
+        self.hyperlink_with_id(hyperlink, z, 0);
+    }
+
+    /// Draw a hyperlink with an explicit ID for hit testing.
+    pub fn hyperlink_with_id(&mut self, hyperlink: Hyperlink, z: i32, id: u64) {
+        let t = self.current_transform();
+        self.list.commands.push(Command::DrawHyperlink {
+            hyperlink,
+            z,
+            transform: t,
+            id,
+        });
+    }
+
     /// Get a reference to the display list (for hit testing before finishing)
     pub fn display_list(&self) -> &DisplayList {
         &self.list

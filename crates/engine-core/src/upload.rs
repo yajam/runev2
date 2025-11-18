@@ -889,31 +889,95 @@ pub fn upload_display_list_unified(
     let mut image_draws: Vec<ExtractedImageDraw> = Vec::new();
     let mut svg_draws: Vec<ExtractedSvgDraw> = Vec::new();
 
-    // Track current transform stack for text extraction
+    // Track transform stack for completeness, but note that draw commands
+    // already carry fully-composed world transforms. For unified upload we
+    // treat the per-command transform as authoritative and use the stack
+    // only to mirror the current state (kept for potential future use).
     let mut transform_stack: Vec<Transform2D> = vec![Transform2D::identity()];
-    let mut current_transform = Transform2D::identity();
+    let mut _current_transform = Transform2D::identity();
 
     for cmd in &list.commands {
         match cmd {
             // Handle transform stack
             Command::PushTransform(t) => {
-                current_transform = current_transform.concat(*t);
-                transform_stack.push(current_transform);
+                // `t` is already the composed world transform at this stack depth.
+                _current_transform = *t;
+                transform_stack.push(_current_transform);
             }
             Command::PopTransform => {
                 transform_stack.pop();
-                current_transform = transform_stack.last().copied().unwrap_or(Transform2D::identity());
+                _current_transform = transform_stack
+                    .last()
+                    .copied()
+                    .unwrap_or(Transform2D::identity());
             }
 
             // Extract text commands
             Command::DrawText { run, z, transform, .. } => {
-                // Apply both the command transform and the current transform stack
-                let final_transform = current_transform.concat(*transform);
+                // Text draws already carry the full world transform.
+                let final_transform = *transform;
                 text_draws.push(ExtractedTextDraw {
                     run: run.clone(),
                     z: *z,
                     transform: final_transform,
                 });
+            }
+
+            // Extract hyperlink as text + optional underline
+            Command::DrawHyperlink { hyperlink, z, transform, .. } => {
+                // Hyperlink commands also carry their full world transform.
+                let final_transform = *transform;
+
+                // Extract hyperlink text as a text draw
+                let text_run = TextRun {
+                    text: hyperlink.text.clone(),
+                    pos: hyperlink.pos,
+                    size: hyperlink.size,
+                    color: hyperlink.color,
+                };
+                text_draws.push(ExtractedTextDraw {
+                    run: text_run,
+                    z: *z,
+                    transform: final_transform,
+                });
+
+                // Draw underline if enabled
+                if hyperlink.underline {
+                    let underline_color = hyperlink.underline_color.unwrap_or(hyperlink.color);
+                    let color = [underline_color.r, underline_color.g, underline_color.b, underline_color.a];
+
+                    // Estimate text width for underline (simple heuristic).
+                    // Use trimmed character count so trailing spaces don't extend the line,
+                    // and bias noticeably narrow so the underline never exceeds the text.
+                    let trimmed = hyperlink.text.trim_end();
+                    let char_count = trimmed.chars().count() as f32;
+                    let char_width = hyperlink.size * 0.50;
+                    let mut text_width = char_count * char_width;
+                    // Inset a bit from both left and right edges so the line
+                    // is visually shorter than the glyph run.
+                    let inset = hyperlink.size * 0.20;
+                    if text_width > inset * 2.0 {
+                        text_width -= inset * 2.0;
+                    }
+
+                    // Underline is a thin rect slightly below the baseline.
+                    // `hyperlink.pos[1]` is the baseline Y coordinate; place the
+                    // underline about ~10% of the font size below it.
+                    let underline_thickness = (hyperlink.size * 0.08).max(1.0);
+                    let underline_offset = hyperlink.size * 0.10; // Slightly closer to glyphs
+
+                    let underline_rect = Rect {
+                        x: hyperlink.pos[0] + inset,
+                        y: hyperlink.pos[1] + underline_offset,
+                        w: text_width,
+                        h: underline_thickness,
+                    };
+
+                    let (v, i) = rect_to_verts(underline_rect, color, final_transform, *z as f32);
+                    let base = vertices.len() as u16;
+                    vertices.extend_from_slice(&v);
+                    indices.extend(i.iter().map(|idx| base + idx));
+                }
             }
 
             // Process solid geometry commands
@@ -924,7 +988,8 @@ pub fn upload_display_list_unified(
                 z,
                 ..
             } => {
-                let final_transform = current_transform.concat(*transform);
+                // Rect draws already carry the full world transform.
+                let final_transform = *transform;
                 match brush {
                     Brush::Solid(col) => {
                         let color = [col.r, col.g, col.b, col.a];
@@ -970,7 +1035,7 @@ pub fn upload_display_list_unified(
                 z,
                 ..
             } => {
-                let final_transform = current_transform.concat(*transform);
+                let final_transform = *transform;
                 if let Brush::Solid(col) = brush {
                     let color = [col.r, col.g, col.b, col.a];
                     push_rounded_rect(
@@ -991,7 +1056,7 @@ pub fn upload_display_list_unified(
                 z,
                 ..
             } => {
-                let final_transform = current_transform.concat(*transform);
+                let final_transform = *transform;
                 if let Brush::Solid(col) = brush {
                     let color = [col.r, col.g, col.b, col.a];
                     push_rect_stroke(
@@ -1013,7 +1078,7 @@ pub fn upload_display_list_unified(
                 z,
                 ..
             } => {
-                let final_transform = current_transform.concat(*transform);
+                let final_transform = *transform;
                 if let Brush::Solid(col) = brush {
                     let color = [col.r, col.g, col.b, col.a];
                     push_rounded_rect_stroke(
@@ -1035,7 +1100,7 @@ pub fn upload_display_list_unified(
                 z,
                 ..
             } => {
-                let final_transform = current_transform.concat(*transform);
+                let final_transform = *transform;
                 match brush {
                     Brush::Solid(col) => {
                         let color = [col.r, col.g, col.b, col.a];
@@ -1089,7 +1154,7 @@ pub fn upload_display_list_unified(
                 z,
                 ..
             } => {
-                let final_transform = current_transform.concat(*transform);
+                let final_transform = *transform;
                 let col = [color.r, color.g, color.b, color.a];
                 tessellate_path_fill(
                     &mut vertices,
@@ -1108,7 +1173,7 @@ pub fn upload_display_list_unified(
                 z,
                 ..
             } => {
-                let final_transform = current_transform.concat(*transform);
+                let final_transform = *transform;
                 let col = [color.r, color.g, color.b, color.a];
                 tessellate_path_stroke(
                     &mut vertices,
@@ -1127,8 +1192,8 @@ pub fn upload_display_list_unified(
                 z,
                 transform,
             } => {
-                // Apply current transform stack and the command transform to the image origin.
-                let final_transform = current_transform.concat(*transform);
+                // Apply the command's world transform to the image origin.
+                let final_transform = *transform;
                 let world_origin = apply_transform(*origin, final_transform);
                 image_draws.push(ExtractedImageDraw {
                     path: path.clone(),
@@ -1145,8 +1210,8 @@ pub fn upload_display_list_unified(
                 z,
                 transform,
             } => {
-                // Apply current transform stack and the command transform to the SVG origin.
-                let final_transform = current_transform.concat(*transform);
+                // Apply the command's world transform to the SVG origin.
+                let final_transform = *transform;
                 let world_origin = apply_transform(*origin, final_transform);
                 svg_draws.push(ExtractedSvgDraw {
                     path: path.clone(),

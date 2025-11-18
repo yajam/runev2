@@ -313,6 +313,28 @@ impl Canvas {
         }
     }
 
+    /// Draw a hyperlink with text, optional underline, and URL target.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use rune_surface::Canvas;
+    /// # use engine_core::{ColorLinPremul, Hyperlink};
+    /// # let mut canvas: Canvas = todo!();
+    /// let link = Hyperlink {
+    ///     text: "Click me".to_string(),
+    ///     pos: [10.0, 20.0],
+    ///     size: 16.0,
+    ///     color: ColorLinPremul::from_srgba_u8([0, 122, 255, 255]),
+    ///     url: "https://example.com".to_string(),
+    ///     underline: true,
+    ///     underline_color: None,
+    /// };
+    /// canvas.draw_hyperlink(link, 10);
+    /// ```
+    pub fn draw_hyperlink(&mut self, hyperlink: engine_core::Hyperlink, z: i32) {
+        self.painter.hyperlink(hyperlink, z);
+    }
+
     /// Queue an SVG to be rasterized and drawn at origin, scaled to fit within max_size.
     /// Captures the current transform from the painter's transform stack.
     /// Optional style parameter allows overriding fill, stroke, and stroke-width.

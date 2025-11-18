@@ -86,6 +86,10 @@ fn main() -> Result<()> {
         || std::env::args().any(|a| a == "--scene=images" || a == "--images")
     {
         Box::new(scenes::images::ImagesScene::default())
+    } else if scene_env.as_deref() == Some("hyperlinks")
+        || std::env::args().any(|a| a == "--scene=hyperlinks" || a == "--hyperlinks")
+    {
+        Box::new(scenes::hyperlinks::HyperlinksScene::default())
     } else if scene_env.as_deref() == Some("svg")
         || std::env::args().any(|a| a == "--scene=svg" || a == "--svg" || a == "--scene=svg-geom")
     {
@@ -438,10 +442,10 @@ fn main() -> Result<()> {
 
                             // Rasterize text runs from the unified scene
                             let mut glyph_draws = Vec::new();
-                            eprintln!("🔍 Text draws in unified_scene: {}", unified_scene.text_draws.len());
+                            // eprintln!("🔍 Text draws in unified_scene: {}", unified_scene.text_draws.len());
                             if let Some(provider) = text_providers.as_ref().map(|(rgb, _, _)| &**rgb) {
                                 for text_draw in &unified_scene.text_draws {
-                                    eprintln!("  📝 Processing text: '{}' at z={}", text_draw.run.text, text_draw.z);
+                                    // eprintln!("  📝 Processing text: '{}' at z={}", text_draw.run.text, text_draw.z);
                                     // Apply transform to text position
                                     let transformed_pos = [
                                         text_draw.run.pos[0] + text_draw.transform.m[4],
@@ -450,7 +454,7 @@ fn main() -> Result<()> {
 
                                     // Rasterize the text run
                                     let glyphs = provider.rasterize_run(&text_draw.run);
-                                    eprintln!("    ✏️  Rasterized {} glyphs", glyphs.len());
+                                    // eprintln!("    ✏️  Rasterized {} glyphs", glyphs.len());
 
                                     // Add each glyph with its position, color, and z-index
                                     for glyph in glyphs {
@@ -463,9 +467,9 @@ fn main() -> Result<()> {
                                     }
                                 }
                             } else {
-                                eprintln!("⚠️  No text provider available!");
+                                // eprintln!("⚠️  No text provider available!");
                             }
-                            eprintln!("🔍 Total glyph_draws: {}", glyph_draws.len());
+                            // eprintln!("🔍 Total glyph_draws: {}", glyph_draws.len());
 
                             // Convert image and SVG draws to the format expected by render_unified
                             let image_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)> =

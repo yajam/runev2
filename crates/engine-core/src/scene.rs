@@ -142,3 +142,24 @@ pub struct Path {
     pub cmds: Vec<PathCmd>,
     pub fill_rule: FillRule,
 }
+
+// --- Hyperlink ---
+
+/// Hyperlink element combining text, optional underline, and a URL target.
+#[derive(Clone, Debug)]
+pub struct Hyperlink {
+    /// The text content to display
+    pub text: String,
+    /// Position of the hyperlink (baseline-left of text)
+    pub pos: [f32; 2],
+    /// Font size in pixels
+    pub size: f32,
+    /// Text color (premultiplied linear)
+    pub color: ColorLinPremul,
+    /// Target URL
+    pub url: String,
+    /// Whether to show an underline decoration (default: true)
+    pub underline: bool,
+    /// Underline color (if None, uses text color)
+    pub underline_color: Option<ColorLinPremul>,
+}

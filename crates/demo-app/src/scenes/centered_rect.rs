@@ -157,6 +157,9 @@ impl CenteredRectScene {
                 HitShape::PathBBox { rect } => {
                     painter.stroke_rect(*rect, Stroke { width: 2.0 }, highlight.clone(), 10);
                 }
+                HitShape::Hyperlink { rect, .. } => {
+                    painter.stroke_rect(*rect, Stroke { width: 2.0 }, highlight.clone(), 10);
+                }
                 HitShape::Text | HitShape::BoxShadow { .. } => {}
             }
         }

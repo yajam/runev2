@@ -2175,12 +2175,12 @@ impl PassManager {
             }
             
             // Group text by z-index for proper depth rendering
-            eprintln!("🎨 render_unified received {} glyph_draws", glyph_draws.len());
+            // eprintln!("🎨 render_unified received {} glyph_draws", glyph_draws.len());
             let mut text_by_z: std::collections::HashMap<i32, Vec<(usize, [f32; 2], &crate::text::RasterizedGlyph, &crate::ColorLinPremul)>> = std::collections::HashMap::new();
             for (idx, (origin, glyph, color, z)) in glyph_draws.iter().enumerate() {
                 text_by_z.entry(*z).or_insert_with(Vec::new).push((idx, *origin, glyph, color));
             }
-            eprintln!("🎨 Grouped text into {} z-index groups", text_by_z.len());
+            // eprintln!("🎨 Grouped text into {} z-index groups", text_by_z.len());
 
             // Prepare text rendering data before render pass
             let mut text_groups = if !glyph_draws.is_empty() {
@@ -2215,7 +2215,7 @@ impl PassManager {
                 // Process each z-index group
                 for (z_index, glyphs) in text_by_z.iter() {
                     let mut vertices: Vec<TextQuadVtx> = Vec::new();
-                    eprintln!("      🔠 Processing z={} with {} glyphs", z_index, glyphs.len());
+                    // eprintln!("      🔠 Processing z={} with {} glyphs", z_index, glyphs.len());
 
                     let mut local_idx = 0;
                     for (_idx, origin, glyph, color) in glyphs.iter() {
@@ -2223,8 +2223,8 @@ impl PassManager {
                     let w = mask.width;
                     let h = mask.height;
                     if local_idx == 0 {
-                        eprintln!("        🔤 First glyph: origin=[{:.1}, {:.1}], size=[{}, {}], color=[{:.3}, {:.3}, {:.3}, {:.3}]",
-                            origin[0], origin[1], w, h, color.r, color.g, color.b, color.a);
+                        // eprintln!("        🔤 First glyph: origin=[{:.1}, {:.1}], size=[{}, {}], color=[{:.3}, {:.3}, {:.3}, {:.3}]",
+                        //     origin[0], origin[1], w, h, color.r, color.g, color.b, color.a);
                     }
                     local_idx += 1;
 
@@ -2265,8 +2265,8 @@ impl PassManager {
                     let v1 = (atlas_cursor_y + h) as f32 / 4096.0;
 
                     if local_idx == 1 {
-                        eprintln!("        📐 Atlas pos: cursor=({}, {}), uv=[{:.4}, {:.4}] to [{:.4}, {:.4}]",
-                            atlas_cursor_x, atlas_cursor_y, u0, v0, u1, v1);
+                        // eprintln!("        📐 Atlas pos: cursor=({}, {}), uv=[{:.4}, {:.4}] to [{:.4}, {:.4}]",
+                        //     atlas_cursor_x, atlas_cursor_y, u0, v0, u1, v1);
                     }
 
                     vertices.extend_from_slice(&[
@@ -2302,7 +2302,7 @@ impl PassManager {
                 }
 
                 // Create buffers and bind groups for each text group
-                eprintln!("🔧 all_text_groups.len() = {}", all_text_groups.len());
+                // eprintln!("🔧 all_text_groups.len() = {}", all_text_groups.len());
                 let mut text_resources: Vec<(
                     i32,
                     wgpu::Buffer,
@@ -2312,11 +2312,11 @@ impl PassManager {
                     wgpu::Buffer,
                 )> = Vec::new();
                 for (z_index, vertices) in all_text_groups {
-                    eprintln!(
-                        "  🛠️  Creating resources for z={}, vertices={}",
-                        z_index,
-                        vertices.len()
-                    );
+                    // eprintln!(
+                    //     "  🛠️  Creating resources for z={}, vertices={}",
+                    //     z_index,
+                    //     vertices.len()
+                    // );
                     let quad_count = vertices.len() / 4;
                     let mut indices: Vec<u16> = Vec::with_capacity(quad_count * 6);
                     for i in 0..quad_count {
@@ -2352,7 +2352,7 @@ impl PassManager {
 
                     // Create z bind group for this text group
                     // Pass z_index as float directly - shader will convert to depth
-                    eprintln!("    💎 z={} (passing as z-index to shader)", z_index);
+                    // eprintln!("    💎 z={} (passing as z-index to shader)", z_index);
                     let (z_bg, z_buf) = self.create_group_z_bind_group(z_index as f32, queue);
 
                     text_resources.push((z_index, vbuf, ibuf, indices.len() as u32, z_bg, z_buf));
@@ -2496,13 +2496,13 @@ impl PassManager {
             });
             
             // Render solids first (they're already sorted by z-index in the scene)
-            eprintln!("🔵 DIRECT PATH: Rendering {} solid vertices", scene.vertices);
+            // eprintln!("🔵 DIRECT PATH: Rendering {} solid vertices", scene.vertices);
             self.solid_direct.record(&mut pass, &vp_bg_direct, scene);
 
             // Render text glyphs within the same pass (already sorted by z-index)
-            eprintln!("📊 text_groups.len() = {}", text_groups.len());
-            for (z_index, vbuf, ibuf, index_count, z_bg, _z_buf) in text_groups.iter() {
-                eprintln!("  🎯 Rendering text group at z={} with {} indices", z_index, index_count);
+            // eprintln!("📊 text_groups.len() = {}", text_groups.len());
+            for (_z_index, vbuf, ibuf, index_count, z_bg, _z_buf) in text_groups.iter() {
+                // eprintln!("  🎯 Rendering text group at z={} with {} indices", z_index, index_count);
                 if *index_count > 0 {
                     pass.set_pipeline(&self.text.pipeline);
                     pass.set_bind_group(0, &vp_bg_text, &[]);
@@ -2514,7 +2514,7 @@ impl PassManager {
                         wgpu::IndexFormat::Uint16,
                     );
                     pass.draw_indexed(0..*index_count, 0, 0..1);
-                    eprintln!("  ✅ Drew {} indices for z={}", index_count, z_index);
+                    // eprintln!("  ✅ Drew {} indices for z={}", index_count, z_index);
                 }
             }
 
@@ -2532,7 +2532,7 @@ impl PassManager {
 
             // NOW drop the pass - all rendering complete
             drop(pass);
-            eprintln!("✨ Render pass completed successfully (DIRECT)");
+            // eprintln!("✨ Render pass completed successfully (DIRECT)");
             return;
         }
 
@@ -2541,9 +2541,9 @@ impl PassManager {
         
         // Pre-fetch (and lazily load) all image views before render pass (to avoid mutable borrow conflicts)
         let mut image_views_off: Vec<(wgpu::TextureView, [f32; 2], [f32; 2], f32)> = Vec::new();
-        eprintln!("🔍 Pre-fetching {} images for unified offscreen render", image_draws.len());
+        // eprintln!("🔍 Pre-fetching {} images for unified offscreen render", image_draws.len());
         for (path, origin, size, z) in image_draws.iter() {
-            eprintln!("  📦 Image at z={}: {:?}", z, path.file_name().unwrap_or_default());
+            // eprintln!("  📦 Image at z={}: {:?}", z, path.file_name().unwrap_or_default());
             let tex_opt = if let Some(view) =
                 self.try_get_image_view(std::path::Path::new(path))
             {
@@ -2927,13 +2927,13 @@ impl PassManager {
         });
         
         // Render solids first
-        eprintln!("🟢 OFFSCREEN PATH: Rendering {} solid vertices", scene.vertices);
+        // eprintln!("🟢 OFFSCREEN PATH: Rendering {} solid vertices", scene.vertices);
         self.solid_offscreen.record(&mut pass, &vp_bg_off, scene);
 
         // Render text glyphs within the same pass (already sorted by z-index)
-        eprintln!("📊 text_groups_off.len() = {}", text_groups_off.len());
-        for (z_index, vbuf, ibuf, index_count, z_bg, _z_buf) in text_groups_off.iter() {
-            eprintln!("  🎯 Rendering text group at z={} with {} indices (OFFSCREEN)", z_index, index_count);
+        // eprintln!("📊 text_groups_off.len() = {}", text_groups_off.len());
+        for (_z_index, vbuf, ibuf, index_count, z_bg, _z_buf) in text_groups_off.iter() {
+            // eprintln!("  🎯 Rendering text group at z={} with {} indices (OFFSCREEN)", z_index, index_count);
             if *index_count > 0 {
                 pass.set_pipeline(&self.text_offscreen.pipeline);
                 pass.set_bind_group(0, &vp_bg_text_off, &[]);
@@ -2945,22 +2945,22 @@ impl PassManager {
                     wgpu::IndexFormat::Uint16,
                 );
                 pass.draw_indexed(0..*index_count, 0, 0..1);
-                eprintln!("  ✅ Drew {} indices for z={} (OFFSCREEN)", index_count, z_index);
+                // eprintln!("  ✅ Drew {} indices for z={} (OFFSCREEN)", index_count, z_index);
             }
         }
         
         // Render images within same pass (offscreen image pipeline)
-        eprintln!("📷 image_resources_off.len() = {}", image_resources_off.len());
-        for (i, (vbuf, ibuf, vp_bg_img, z_bg_img, tex_bg, _z_buf_img)) in image_resources_off.iter().enumerate() {
-            eprintln!("  🖼️ Rendering image {} (OFFSCREEN)", i);
+        // eprintln!("📷 image_resources_off.len() = {}", image_resources_off.len());
+        for (_i, (vbuf, ibuf, vp_bg_img, z_bg_img, tex_bg, _z_buf_img)) in image_resources_off.iter().enumerate() {
+            // eprintln!("  🖼️ Rendering image {} (OFFSCREEN)", i);
             self.image_offscreen
                 .record(&mut pass, vp_bg_img, z_bg_img, tex_bg, vbuf, ibuf, 6);
         }
 
         // Render SVGs within same pass (offscreen image pipeline)
-        eprintln!("🎨 svg_resources_off.len() = {}", svg_resources_off.len());
-        for (i, (vbuf, ibuf, vp_bg_svg, z_bg_svg, tex_bg, _z_buf_svg)) in svg_resources_off.iter().enumerate() {
-            eprintln!("  🎨 Rendering SVG {} (OFFSCREEN)", i);
+        // eprintln!("🎨 svg_resources_off.len() = {}", svg_resources_off.len());
+        for (_i, (vbuf, ibuf, vp_bg_svg, z_bg_svg, tex_bg, _z_buf_svg)) in svg_resources_off.iter().enumerate() {
+            // eprintln!("  🎨 Rendering SVG {} (OFFSCREEN)", i);
             self.image_offscreen
                 .record(&mut pass, vp_bg_svg, z_bg_svg, tex_bg, vbuf, ibuf, 6);
         }

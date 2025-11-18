@@ -52,6 +52,7 @@ pub struct ViewportContent {
     pub(crate) selects: Vec<SelectData>,
     pub(crate) date_pickers: Vec<DatePickerData>,
     images: Vec<ImageData>,
+    links: Vec<elements::Link>,
     wrapped_paragraphs: Vec<WrappedParagraph>,
     col1_x: f32,
     multiline_y: f32,
@@ -90,7 +91,7 @@ pub struct WrappedParagraph {
 #[derive(Clone)]
 pub struct SelectData {
     pub rect: Rect,
-    pub label: &'static str,
+    pub label: String,
     pub label_size: f32,
     pub label_color: ColorLinPremul,
     pub open: bool,
@@ -126,6 +127,8 @@ impl ViewportContent {
         let button_y = 180.0f32;
         let radio_y = 240.0f32;
         let input_y = 290.0f32;
+        // Place hyperlinks just below the subtitle (subtitle_y = 80.0)
+        let link_y = 110.0f32;
         let textarea_y = 380.0f32;
         let image_y = 520.0f32;  // Moved images up to be visible initially
         let select_y = 640.0f32;  // Moved select down below images
@@ -251,6 +254,29 @@ impl ViewportContent {
             ),
         ];
 
+        let links = vec![
+            elements::Link::new(
+                "Visit Rust Homepage",
+                "https://www.rust-lang.org",
+                [col1_x, link_y],
+                16.0,
+            ),
+            elements::Link::new(
+                "Learn More",
+                "https://doc.rust-lang.org",
+                [col1_x + 200.0, link_y],
+                16.0,
+            )
+            .with_color(ColorLinPremul::from_srgba_u8([150, 200, 255, 255])),
+            elements::Link::new(
+                "GitHub",
+                "https://github.com",
+                [col1_x + 350.0, link_y],
+                16.0,
+            )
+            .with_underline(false),
+        ];
+
         let text_areas = vec![elements::TextArea::new(
             Rect {
                 x: col1_x,
@@ -272,7 +298,7 @@ impl ViewportContent {
                 w: 200.0,
                 h: 36.0,
             },
-            label: "Select an option",
+            label: "Option 1".to_string(), // Initialize with first selected option
             label_size: 16.0,
             label_color: ColorLinPremul::from_srgba_u8([240, 240, 240, 255]),
             open: false, // Set to true for testing
@@ -408,6 +434,7 @@ impl ViewportContent {
             selects,
             date_pickers,
             images,
+            links,
             wrapped_paragraphs,
             col1_x,
             multiline_y,
@@ -439,7 +466,7 @@ impl ViewportContent {
         // Do NOT divide by scale_factor here, as that causes double-scaling issues.
         let _sf = scale_factor; // Keep parameter for future use if needed
         let title_size = 22.0;
-        let subtitle_size = 18.0;
+        let subtitle_size = 16.0;
         let test_line_size = 20.0;
 
         // Basic text content with headers, subtitles, and test lines.
@@ -469,7 +496,7 @@ impl ViewportContent {
 
         // Bright cyan test line
         canvas.draw_text_run(
-            [col1_x, 350.0],
+            [col1_x, 360.0],
             "TEST: This should be BRIGHT CYAN".to_string(),
             test_line_size,
             ColorLinPremul::rgba(0, 255, 255, 255),
@@ -511,6 +538,11 @@ impl ViewportContent {
         // Render input boxes with z-index 50
         for input in self.input_boxes.iter_mut() {
             input.render(canvas, 50, provider);
+        }
+
+        // Render links with z-index 55
+        for link in &self.links {
+            link.render(canvas, 55);
         }
 
         // Render text areas with z-index 60

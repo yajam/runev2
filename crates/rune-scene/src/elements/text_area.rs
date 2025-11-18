@@ -271,6 +271,9 @@ impl TextArea {
             };
             (new_cursor, RtSelection::collapsed(new_cursor))
         });
+        // Text edits change the visual X position; reset preferred column
+        // so the next vertical movement recomputes it from the new offset.
+        self.preferred_x = None;
     }
 
     pub fn delete_before_cursor(&mut self) {
@@ -298,6 +301,8 @@ impl TextArea {
             };
             (new_cursor, RtSelection::collapsed(new_cursor))
         });
+        // Horizontal position may have changed after delete; recompute on next up/down.
+        self.preferred_x = None;
     }
 
     pub fn delete_after_cursor(&mut self) {
@@ -325,6 +330,8 @@ impl TextArea {
             };
             (new_cursor, RtSelection::collapsed(new_cursor))
         });
+        // Horizontal position may have changed after delete; recompute on next up/down.
+        self.preferred_x = None;
     }
 
     pub fn move_cursor_left(&mut self) {
@@ -489,6 +496,7 @@ impl TextArea {
         };
         self.rt_selection = RtSelection::new(0, max);
         self.cursor_position = max;
+        self.preferred_x = None;
         self.reset_cursor_blink();
     }
 
@@ -501,6 +509,8 @@ impl TextArea {
             let active = new_selection.active().min(max);
             self.rt_selection = RtSelection::new(anchor, active);
             self.cursor_position = active;
+            // Horizontal selection movement changes the active column.
+            self.preferred_x = None;
             self.reset_cursor_blink();
         }
     }
@@ -515,30 +525,40 @@ impl TextArea {
             let active = new_selection.active().min(max);
             self.rt_selection = RtSelection::new(anchor, active);
             self.cursor_position = active;
+            // Horizontal selection movement changes the active column.
+            self.preferred_x = None;
             self.reset_cursor_blink();
         }
     }
 
     pub fn extend_selection_up(&mut self) {
         if let Some(layout) = self.rt_layout.as_ref() {
-            let new_selection = layout.extend_selection(&self.rt_selection, |offset| {
-                let (new_pos, _) = layout.move_cursor_up(offset, None);
-                new_pos
-            });
+            // Use vertical selection helper so we track a stable X column
+            // while extending the selection across multiple lines.
+            let (new_selection, new_x) = layout.extend_selection_vertical(
+                &self.rt_selection,
+                |offset, x| layout.move_cursor_up(offset, x),
+                self.preferred_x,
+            );
             self.rt_selection = new_selection;
             self.cursor_position = new_selection.active();
+            self.preferred_x = Some(new_x);
             self.reset_cursor_blink();
         }
     }
 
     pub fn extend_selection_down(&mut self) {
         if let Some(layout) = self.rt_layout.as_ref() {
-            let new_selection = layout.extend_selection(&self.rt_selection, |offset| {
-                let (new_pos, _) = layout.move_cursor_down(offset, None);
-                new_pos
-            });
+            // Use vertical selection helper so we track a stable X column
+            // while extending the selection across multiple lines.
+            let (new_selection, new_x) = layout.extend_selection_vertical(
+                &self.rt_selection,
+                |offset, x| layout.move_cursor_down(offset, x),
+                self.preferred_x,
+            );
             self.rt_selection = new_selection;
             self.cursor_position = new_selection.active();
+            self.preferred_x = Some(new_x);
             self.reset_cursor_blink();
         }
     }
@@ -552,6 +572,7 @@ impl TextArea {
             let active = new_active.min(max);
             self.rt_selection = RtSelection::new(anchor, active);
             self.cursor_position = active;
+            self.preferred_x = None;
             self.reset_cursor_blink();
         }
     }
@@ -565,6 +586,7 @@ impl TextArea {
             let active = new_active.min(max);
             self.rt_selection = RtSelection::new(anchor, active);
             self.cursor_position = active;
+            self.preferred_x = None;
             self.reset_cursor_blink();
         }
     }
@@ -606,6 +628,7 @@ impl TextArea {
         let anchor = self.rt_selection.anchor().min(max);
         self.rt_selection = RtSelection::new(anchor, 0);
         self.cursor_position = 0;
+        self.preferred_x = None;
         self.reset_cursor_blink();
     }
 
@@ -618,6 +641,7 @@ impl TextArea {
         let anchor = self.rt_selection.anchor().min(max);
         self.rt_selection = RtSelection::new(anchor, max);
         self.cursor_position = max;
+        self.preferred_x = None;
         self.reset_cursor_blink();
     }
 
@@ -776,6 +800,7 @@ impl TextArea {
                 }
                 self.cursor_position = new_cursor.min(self.text.len());
                 self.rt_selection = RtSelection::collapsed(self.cursor_position);
+                self.preferred_x = None;
                 self.reset_cursor_blink();
                 Ok(())
             }
@@ -821,6 +846,7 @@ impl TextArea {
                 }
                 self.cursor_position = new_cursor.min(self.text.len());
                 self.rt_selection = RtSelection::collapsed(self.cursor_position);
+                self.preferred_x = None;
                 self.reset_cursor_blink();
                 Ok(())
             }
@@ -858,6 +884,7 @@ impl TextArea {
             let active = new_selection.active().min(max);
             self.rt_selection = RtSelection::new(anchor, active);
             self.cursor_position = new_cursor.min(max);
+            self.preferred_x = None;
             self.reset_cursor_blink();
             true
         } else {
@@ -895,6 +922,7 @@ impl TextArea {
             let active = new_selection.active().min(max);
             self.rt_selection = RtSelection::new(anchor, active);
             self.cursor_position = new_cursor.min(max);
+            self.preferred_x = None;
             self.reset_cursor_blink();
             true
         } else {

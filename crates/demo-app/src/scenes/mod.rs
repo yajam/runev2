@@ -46,6 +46,7 @@ pub trait Scene {
 pub mod centered_rect;
 pub mod circle;
 pub mod default;
+pub mod hyperlinks;
 pub mod images;
 pub mod linear;
 pub mod overlay;

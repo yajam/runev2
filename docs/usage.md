@@ -5,6 +5,7 @@ This document describes what the current engine supports and how to use it in yo
 ## Overview
 
 - Crates
+
   - `engine-core`: GPU device/surface helpers, scene and display list types, upload path, passes, compositor, hit testing.
   - `engine-shaders`: WGSL shader modules used by the passes (filled by the build).
   - `demo-app`: A small winit + wgpu application demonstrating backgrounds, shapes, shadows, and input events.
@@ -18,6 +19,7 @@ This document describes what the current engine supports and how to use it in yo
 
 - Core types: `Rect`, `RoundedRect`, `RoundedRadii`, `Brush`, `Stroke`, `TextRun`, `Transform2D`.
 - Display list commands (see `crates/engine-core/src/display_list.rs:10`):
+
   - `DrawRect`, `DrawRoundedRect`, `DrawEllipse`, `DrawText`
   - `StrokeRect`, `StrokeRoundedRect`
   - `FillPath` (solid), `StrokePath` (width only; round cap/join)
@@ -26,6 +28,7 @@ This document describes what the current engine supports and how to use it in yo
   - `PushTransform`/`PopTransform` with `Transform2D`
 
 - Brushes (see `crates/engine-core/src/scene.rs:44`):
+
   - `Brush::Solid(ColorLinPremul)`
   - `Brush::LinearGradient { start, end, stops }` (structure defined; currently used in rect/ellipse upload helpers)
   - `Brush::RadialGradient { center, radius, stops }` (ellipse path)
@@ -39,6 +42,7 @@ This document describes what the current engine supports and how to use it in yo
 ## Upload and Rendering
 
 - Upload CPU geometry to GPU buffers:
+
   - `let gpu_scene = engine_core::upload_display_list(allocator, &queue, &dl)?;`
   - Returns `GpuScene` with vertex/index buffers used by renderers.
   - Lyon tessellation tolerance can be tuned via `LYON_TOLERANCE` (default `0.1`).
@@ -108,7 +112,7 @@ fn on_click(&mut self, _pos: [f32;2], hit: Option<&HitResult>) -> Option<Display
         if h.region_id == Some(42) || h.region_id == Some(u32::MAX) {
             // Close overlay using normalized zone UVs (0..1, y-down)
             if let Some(uv) = h.local_uv {
-                eprintln!("clicked in zone at uv={:?}", uv);
+                // eprintln!("clicked in zone at uv={:?}", uv);
             }
             // ... mutate scene state and rebuild DisplayList
         }
@@ -118,6 +122,7 @@ fn on_click(&mut self, _pos: [f32;2], hit: Option<&HitResult>) -> Option<Display
 ```
 
 Notes:
+
 - `local_uv` origin is the zone’s top-left, with Y increasing downwards.
 - For ellipses, `local_uv` is normalized to the ellipse’s bounding box.
 
@@ -165,12 +170,14 @@ Notes:
 ## Quick Start Snippets
 
 - Build and upload:
+
   - `let mut p = Painter::begin_frame(Viewport { width, height });`
   - `p.rounded_rect(rrect, Brush::Solid(color), z);`
   - `let dl = p.finish();`
   - `let gpu = upload_display_list(allocator, &queue, &dl)?;`
 
 - Render with passes:
+
   - `let mut passes = PassManager::new(device, surface_format);`
   - `passes.render_frame_with_intermediate(&mut encoder, allocator, &surface_view, width, height, &gpu, clear, /*direct*/ false, &queue);`
 
@@ -190,6 +197,7 @@ If you need deeper integration help or want new primitives/passes added, open a 
 Two ways to draw text
 
 - Manual mask route
+
   - Build subpixel mask: `engine_core::grayscale_to_subpixel_rgb(width, height, &gray, SubpixelOrientation::RGB)` → `SubpixelMask`.
   - Draw mask: `PassManager::draw_text_mask(encoder, target_view, width, height, origin_xy, &mask, color, &queue)`.
 
@@ -234,6 +242,7 @@ passes.render_frame_and_text(
 ```
 
 Notes
+
 - The shader expects premultiplied linear text color. Use `ColorLinPremul::from_srgba_u8` to create it from sRGB bytes.
 - Use `SubpixelOrientation::BGR` for displays with BGR subpixel layout.
 - If you only have a grayscale mask, convert it with `grayscale_to_rgb_equal`.
@@ -272,4 +281,4 @@ Enabling the patched fontdue provider
   - `Font::rasterize_rgb8_indexed(glyph_index, px) -> (u32, u32, Vec<u8>)` yielding RGBA8 RGB coverage
   - `Font::rasterize_rgb16_indexed(glyph_index, px) -> Option<(u32, u32, Vec<u8>)>` yielding RGBA16 (if supported)
 - Env toggles in the demo: `DEMO_FONT=/path/to/font.ttf`, `DEMO_SUBPIXEL_OFFSET=0.33`, `DEMO_SNAP_X=1`.
- - Additional demo env: `DEMO_TEXT_SIZE=48` to set the initial size for the text demo.
+- Additional demo env: `DEMO_TEXT_SIZE=48` to set the initial size for the text demo.
