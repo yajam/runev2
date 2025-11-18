@@ -3424,7 +3424,9 @@ impl PassManager {
         
         // Pre-fetch (and lazily load) all image views before render pass (to avoid mutable borrow conflicts)
         let mut image_views_off: Vec<(wgpu::TextureView, [f32; 2], [f32; 2], f32)> = Vec::new();
+        eprintln!("🔍 Pre-fetching {} images for unified offscreen render", image_draws.len());
         for (path, origin, size, z) in image_draws.iter() {
+            eprintln!("  📦 Image at z={}: {:?}", z, path.file_name().unwrap_or_default());
             let tex_opt = if let Some(view) =
                 self.try_get_image_view(std::path::Path::new(path))
             {
@@ -3808,13 +3810,17 @@ impl PassManager {
         }
         
         // Render images within same pass (offscreen image pipeline)
-        for (vbuf, ibuf, vp_bg_img, z_bg_img, tex_bg, _z_buf_img) in image_resources_off.iter() {
+        eprintln!("📷 image_resources_off.len() = {}", image_resources_off.len());
+        for (i, (vbuf, ibuf, vp_bg_img, z_bg_img, tex_bg, _z_buf_img)) in image_resources_off.iter().enumerate() {
+            eprintln!("  🖼️ Rendering image {} (OFFSCREEN)", i);
             self.image_offscreen
                 .record(&mut pass, vp_bg_img, z_bg_img, tex_bg, vbuf, ibuf, 6);
         }
 
         // Render SVGs within same pass (offscreen image pipeline)
-        for (vbuf, ibuf, vp_bg_svg, z_bg_svg, tex_bg, _z_buf_svg) in svg_resources_off.iter() {
+        eprintln!("🎨 svg_resources_off.len() = {}", svg_resources_off.len());
+        for (i, (vbuf, ibuf, vp_bg_svg, z_bg_svg, tex_bg, _z_buf_svg)) in svg_resources_off.iter().enumerate() {
+            eprintln!("  🎨 Rendering SVG {} (OFFSCREEN)", i);
             self.image_offscreen
                 .record(&mut pass, vp_bg_svg, z_bg_svg, tex_bg, vbuf, ibuf, 6);
         }

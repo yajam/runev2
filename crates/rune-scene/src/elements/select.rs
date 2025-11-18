@@ -112,9 +112,20 @@ impl Select {
             },
         };
 
-        // Overlay background with slight transparency
-        let overlay_bg = Color::rgba(35, 42, 61, 255);
+        // Overlay background - solid, opaque background for better visibility
+        let overlay_bg = Color::rgba(30, 35, 50, 255);
         canvas.rounded_rect(overlay_rrect, Brush::Solid(overlay_bg), z);
+
+        // Add a subtle shadow/border effect for depth
+        let shadow_color = Color::rgba(0, 0, 0, 100);
+        shapes::draw_rounded_rectangle(
+            canvas,
+            overlay_rrect,
+            None,
+            Some(4.0),
+            Some(Brush::Solid(shadow_color)),
+            z - 1,
+        );
 
         // Overlay border
         let overlay_border = Color::rgba(80, 90, 110, 255);

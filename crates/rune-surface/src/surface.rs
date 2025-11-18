@@ -393,7 +393,9 @@ impl RuneSurface {
             // they will be scaled by PassManager via logical_pixels/dpi.
             let mut prepared_images: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)> =
                 Vec::new();
+            eprintln!("🎬 Processing {} canvas.image_draws", image_draws.len());
             for (path, origin, size, fit, z, transform) in image_draws.iter() {
+                eprintln!("  🖼️ Image {:?} at z={}", path.file_name().unwrap_or_default(), z);
                 if let Some((tex_view, img_w, img_h)) =
                     self.pass.try_get_image_view(std::path::Path::new(path))
                 {
@@ -407,14 +409,17 @@ impl RuneSurface {
                         *fit,
                     );
                     prepared_images.push((path.clone(), render_origin, render_size, *z));
+                    eprintln!("    ✅ Image loaded and added to prepared_images");
                 } else {
                     // Request async load if not ready
+                    eprintln!("    ⏳ Image not ready, requesting async load");
                     if !self.pass.is_image_ready(std::path::Path::new(path)) {
                         self.pass.request_image_load(std::path::Path::new(path));
                         let _ = self.image_loader_tx.send(path.clone());
                     }
                 }
             }
+            eprintln!("📦 Prepared {} images for rendering", prepared_images.len());
 
             // Merge glyphs supplied explicitly via Canvas (draw_text_run/draw_text_direct)
             // with text runs extracted from the display list for unified text rendering.
