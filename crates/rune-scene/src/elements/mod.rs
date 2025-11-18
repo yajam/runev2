@@ -5,6 +5,7 @@ pub mod button;
 pub mod caret;
 pub mod caret_renderer;
 pub mod checkbox;
+pub mod date_picker;
 pub mod image;
 pub mod input_box;
 pub mod label;
@@ -17,6 +18,7 @@ pub mod text_area;
 
 pub use button::Button;
 pub use checkbox::Checkbox;
+pub use date_picker::DatePicker;
 pub use image::{ImageBox, ImageFit};
 pub use input_box::InputBox;
 pub use label::Label;

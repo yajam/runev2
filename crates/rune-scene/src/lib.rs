@@ -320,6 +320,9 @@ pub fn run() -> Result<()> {
                     }
                     WindowEvent::MouseInput { state, button, .. } => {
                         // Enable hit testing for toolbar and devtools buttons
+                        // Track if toolbar button was clicked to prevent double-handling
+                        let mut clicked_toolbar_button = false;
+
                         if button == winit::event::MouseButton::Left
                             && state == winit::event::ElementState::Pressed
                         {
@@ -328,8 +331,11 @@ pub fn run() -> Result<()> {
                                 let logical_y = cursor_y / scale_factor;
 
                                 // Perform hit test for toolbar and devtools buttons
+                                eprintln!("🖱️ Click at logical ({}, {})", logical_x, logical_y);
                                 if let Some(ref index) = hit_index {
+                                    eprintln!("   Hit index exists");
                                     if let Some(hit) = index.topmost_at([logical_x, logical_y]) {
+                                        eprintln!("   Hit found: region_id={:?}, z={}", hit.region_id, hit.z);
                                         if let Some(region_id) = hit.region_id {
                                             if region_id == TOGGLE_BUTTON_REGION_ID {
                                                 let logical_width =
@@ -342,26 +348,32 @@ pub fn run() -> Result<()> {
                                                 );
                                                 *sidebar_visible.lock().unwrap() =
                                                     zone_manager.is_sidebar_visible();
+                                                clicked_toolbar_button = true;
                                                 needs_redraw = true;
                                                 window.request_redraw();
                                             } else if region_id == DEVTOOLS_BUTTON_REGION_ID {
                                                 zone_manager.toggle_devtools();
-                                                *devtools_visible.lock().unwrap() =
-                                                    zone_manager.is_devtools_visible();
+                                                let visible = zone_manager.is_devtools_visible();
+                                                eprintln!("🔧 DevTools toggled: visible = {}", visible);
+                                                *devtools_visible.lock().unwrap() = visible;
+                                                clicked_toolbar_button = true;
                                                 needs_redraw = true;
                                                 window.request_redraw();
                                             } else if region_id == DEVTOOLS_CLOSE_BUTTON_REGION_ID {
                                                 zone_manager.toggle_devtools();
                                                 *devtools_visible.lock().unwrap() =
                                                     zone_manager.is_devtools_visible();
+                                                clicked_toolbar_button = true;
                                                 needs_redraw = true;
                                                 window.request_redraw();
                                             } else if region_id == DEVTOOLS_ELEMENTS_TAB_REGION_ID {
                                                 zone_manager.devtools.set_active_tab(DevToolsTab::Elements);
+                                                clicked_toolbar_button = true;
                                                 needs_redraw = true;
                                                 window.request_redraw();
                                             } else if region_id == DEVTOOLS_CONSOLE_TAB_REGION_ID {
                                                 zone_manager.devtools.set_active_tab(DevToolsTab::Console);
+                                                clicked_toolbar_button = true;
                                                 needs_redraw = true;
                                                 window.request_redraw();
                                             }
@@ -416,10 +428,195 @@ pub fn run() -> Result<()> {
                                 let viewport_local_y = logical_y - viewport_rect.y
                                     + zone_manager.viewport.scroll_offset;
 
+                                // FIRST PRIORITY: Check open date picker/select popups to block clicks to elements below
+                                let mut clicked_popup = false;
+                                for datepicker in viewport_ir_lock.date_pickers.iter_mut() {
+                                    if datepicker.open {
+                                        use elements::date_picker::PickerMode;
+
+                                        let popup_width = 280.0;
+                                        let popup_height = match datepicker.picker_mode {
+                                            PickerMode::Days => 334.0,
+                                            PickerMode::Months => 280.0,
+                                            PickerMode::Years => 240.0,
+                                        };
+                                        let header_height = 40.0;
+                                        let popup_x = datepicker.rect.x;
+                                        let popup_y = datepicker.rect.y - popup_height - 4.0;
+
+                                        let in_popup = viewport_local_x >= popup_x
+                                            && viewport_local_x <= popup_x + popup_width
+                                            && viewport_local_y >= popup_y
+                                            && viewport_local_y <= popup_y + popup_height;
+
+                                        if in_popup {
+                                            clicked_popup = true;
+                                            let header_click = viewport_local_y >= popup_y && viewport_local_y <= popup_y + header_height;
+
+                                            if header_click {
+                                                let arrow_size = 16.0;
+                                                let prev_arrow_x = popup_x + 12.0;
+                                                let next_arrow_x = popup_x + popup_width - arrow_size - 12.0;
+                                                let arrow_y = popup_y + (header_height - arrow_size) * 0.5;
+
+                                                if viewport_local_x >= prev_arrow_x && viewport_local_x <= prev_arrow_x + arrow_size
+                                                    && viewport_local_y >= arrow_y && viewport_local_y <= arrow_y + arrow_size {
+                                                    match datepicker.picker_mode {
+                                                        PickerMode::Days => {
+                                                            if datepicker.current_view_month == 1 {
+                                                                datepicker.current_view_month = 12;
+                                                                datepicker.current_view_year -= 1;
+                                                            } else { datepicker.current_view_month -= 1; }
+                                                        }
+                                                        PickerMode::Months => { datepicker.current_view_year -= 1; }
+                                                        PickerMode::Years => { datepicker.current_view_year -= 9; }
+                                                    }
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                    break;
+                                                }
+
+                                                if viewport_local_x >= next_arrow_x && viewport_local_x <= next_arrow_x + arrow_size
+                                                    && viewport_local_y >= arrow_y && viewport_local_y <= arrow_y + arrow_size {
+                                                    match datepicker.picker_mode {
+                                                        PickerMode::Days => {
+                                                            if datepicker.current_view_month == 12 {
+                                                                datepicker.current_view_month = 1;
+                                                                datepicker.current_view_year += 1;
+                                                            } else { datepicker.current_view_month += 1; }
+                                                        }
+                                                        PickerMode::Months => { datepicker.current_view_year += 1; }
+                                                        PickerMode::Years => { datepicker.current_view_year += 9; }
+                                                    }
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                    break;
+                                                }
+
+                                                let left_arrow_end = popup_x + 40.0;
+                                                let right_arrow_start = popup_x + popup_width - 40.0;
+                                                if viewport_local_x > left_arrow_end && viewport_local_x < right_arrow_start {
+                                                    match datepicker.picker_mode {
+                                                        PickerMode::Days => { datepicker.picker_mode = PickerMode::Years; needs_redraw = true; window.request_redraw(); break; }
+                                                        PickerMode::Months => { datepicker.picker_mode = PickerMode::Years; needs_redraw = true; window.request_redraw(); break; }
+                                                        PickerMode::Years => {}
+                                                    }
+                                                }
+                                            }
+
+                                            match datepicker.picker_mode {
+                                                PickerMode::Days => {
+                                                    let day_cell_size = 36.0;
+                                                    let button_height = 36.0;
+                                                    let button_margin = 8.0;
+                                                    let grid_start_x = 10.0;
+                                                    let grid_start_y = header_height + 35.0;
+                                                    let cell_local_x = viewport_local_x - popup_x - grid_start_x;
+                                                    let cell_local_y = viewport_local_y - popup_y - grid_start_y;
+
+                                                    if cell_local_x >= 0.0 && cell_local_y >= 0.0 {
+                                                        let col = (cell_local_x / day_cell_size) as usize;
+                                                        let row = (cell_local_y / day_cell_size) as usize;
+                                                        if col < 7 && row < 6 {
+                                                            let days_in_month = crate::viewport_ir::days_in_month(datepicker.current_view_year, datepicker.current_view_month);
+                                                            let first_day = crate::viewport_ir::first_day_of_month(datepicker.current_view_year, datepicker.current_view_month);
+                                                            let cell_index = row * 7 + col;
+                                                            if cell_index >= first_day as usize {
+                                                                let day = (cell_index - first_day as usize + 1) as u32;
+                                                                if day <= days_in_month {
+                                                                    datepicker.selected_date = Some((datepicker.current_view_year, datepicker.current_view_month, day));
+                                                                    datepicker.open = false;
+                                                                    datepicker.picker_mode = PickerMode::Days;
+                                                                    needs_redraw = true;
+                                                                    window.request_redraw();
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    let buttons_y = popup_y + popup_height - button_height - button_margin;
+                                                    let button_width = (popup_width - button_margin * 3.0) * 0.5;
+                                                    let today_button_x = popup_x + button_margin;
+                                                    if viewport_local_x >= today_button_x && viewport_local_x <= today_button_x + button_width
+                                                        && viewport_local_y >= buttons_y && viewport_local_y <= buttons_y + button_height {
+                                                        datepicker.selected_date = Some((2025, 11, 18));
+                                                        datepicker.current_view_month = 11;
+                                                        datepicker.current_view_year = 2025;
+                                                        datepicker.open = false;
+                                                        datepicker.picker_mode = PickerMode::Days;
+                                                        needs_redraw = true;
+                                                        window.request_redraw();
+                                                        break;
+                                                    }
+
+                                                    let clear_button_x = popup_x + button_margin * 2.0 + button_width;
+                                                    if viewport_local_x >= clear_button_x && viewport_local_x <= clear_button_x + button_width
+                                                        && viewport_local_y >= buttons_y && viewport_local_y <= buttons_y + button_height {
+                                                        datepicker.selected_date = None;
+                                                        datepicker.open = false;
+                                                        datepicker.picker_mode = PickerMode::Days;
+                                                        needs_redraw = true;
+                                                        window.request_redraw();
+                                                        break;
+                                                    }
+                                                }
+                                                PickerMode::Months => {
+                                                    let month_cell_width = (popup_width - 32.0) / 3.0;
+                                                    let month_cell_height = 45.0;
+                                                    let grid_padding = 16.0;
+                                                    let grid_start_x = grid_padding;
+                                                    let grid_start_y = header_height + grid_padding;
+                                                    let cell_local_x = viewport_local_x - popup_x - grid_start_x;
+                                                    let cell_local_y = viewport_local_y - popup_y - grid_start_y;
+
+                                                    if cell_local_x >= 0.0 && cell_local_y >= 0.0 {
+                                                        let col = (cell_local_x / month_cell_width) as usize;
+                                                        let row = (cell_local_y / month_cell_height) as usize;
+                                                        if col < 3 && row < 4 {
+                                                            let month = (row * 3 + col + 1) as u32;
+                                                            datepicker.current_view_month = month;
+                                                            datepicker.picker_mode = PickerMode::Days;
+                                                            needs_redraw = true;
+                                                            window.request_redraw();
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                PickerMode::Years => {
+                                                    let year_cell_size = 70.0;
+                                                    let grid_padding = 16.0;
+                                                    let grid_start_x = grid_padding;
+                                                    let grid_start_y = header_height + grid_padding;
+                                                    let cell_local_x = viewport_local_x - popup_x - grid_start_x;
+                                                    let cell_local_y = viewport_local_y - popup_y - grid_start_y;
+
+                                                    if cell_local_x >= 0.0 && cell_local_y >= 0.0 {
+                                                        let col = (cell_local_x / year_cell_size) as usize;
+                                                        let row = (cell_local_y / year_cell_size) as usize;
+                                                        if col < 3 && row < 3 {
+                                                            let idx = row * 3 + col;
+                                                            let start_year = datepicker.current_view_year - 4;
+                                                            let year = start_year + idx as u32;
+                                                            datepicker.current_view_year = year;
+                                                            datepicker.picker_mode = PickerMode::Months;
+                                                            needs_redraw = true;
+                                                            window.request_redraw();
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+
                                 let mut clicked_input = false;
-                                for (idx, input_box) in
-                                    viewport_ir_lock.input_boxes.iter_mut().enumerate()
-                                {
+                                if !clicked_popup {
+                                    for (idx, input_box) in
+                                        viewport_ir_lock.input_boxes.iter_mut().enumerate()
+                                    {
                                     let in_bounds = viewport_local_x >= input_box.rect.x
                                         && viewport_local_x <= input_box.rect.x + input_box.rect.w
                                         && viewport_local_y >= input_box.rect.y
@@ -460,11 +657,12 @@ pub fn run() -> Result<()> {
                                         window.request_redraw();
                                         break;
                                     }
+                                    }
                                 }
 
                                 // Check if click is on a text area
                                 let mut clicked_textarea = false;
-                                if !clicked_input {
+                                if !clicked_input && !clicked_popup {
                                     for (idx, textarea) in
                                         viewport_ir_lock.text_areas.iter_mut().enumerate()
                                     {
@@ -629,12 +827,15 @@ pub fn run() -> Result<()> {
                                     }
                                 }
 
+                                // Old duplicate date picker check removed - now handled at the beginning
+
                                 // Check if click is on a select dropdown (adjust for viewport transform and scroll)
                                 let mut clicked_select = false;
                                 if !clicked_input
                                     && !clicked_textarea
                                     && !clicked_checkbox
                                     && !clicked_radio
+                                    && !clicked_popup
                                 {
                                     for (idx, select) in
                                         viewport_ir_lock.selects.iter_mut().enumerate()
@@ -676,12 +877,226 @@ pub fn run() -> Result<()> {
                                     }
                                 }
 
-                                // If clicked outside all input boxes, text areas, checkboxes, radios, and selects, unfocus all
+                                // Check if click is on a date picker input field (not popup - that's handled earlier)
                                 if !clicked_input
                                     && !clicked_textarea
                                     && !clicked_checkbox
                                     && !clicked_radio
                                     && !clicked_select
+                                    && !clicked_popup
+                                {
+                                    for (idx, datepicker) in
+                                        viewport_ir_lock.date_pickers.iter_mut().enumerate()
+                                    {
+                                        // Skip popup interaction check - already handled earlier to prevent click-through
+                                        // Only check if click is on the date picker input field itself
+                                        if false { // Disabled popup check
+                                            let popup_width = 280.0;
+                                            let popup_height = 334.0; // Reduced: only need 5 rows max
+                                            let header_height = 40.0;
+                                            let day_cell_size = 36.0;
+                                            let button_height = 36.0;
+                                            let button_margin = 8.0;
+                                            let grid_start_x = 10.0;
+                                            let grid_start_y = header_height + 35.0;
+
+                                            let popup_x = datepicker.rect.x;
+                                            let popup_y = datepicker.rect.y - popup_height - 4.0; // Position above
+
+                                            let in_popup = viewport_local_x >= popup_x
+                                                && viewport_local_x <= popup_x + popup_width
+                                                && viewport_local_y >= popup_y
+                                                && viewport_local_y <= popup_y + popup_height;
+
+                                            if in_popup {
+                                                clicked_popup = true;
+
+                                                // Check for navigation arrows
+                                                let arrow_size = 16.0;
+                                                let prev_arrow_x = popup_x + 12.0;
+                                                let next_arrow_x = popup_x + popup_width - arrow_size - 12.0;
+                                                let arrow_y = popup_y + (header_height - arrow_size) * 0.5;
+
+                                                // Previous month arrow
+                                                if viewport_local_x >= prev_arrow_x
+                                                    && viewport_local_x <= prev_arrow_x + arrow_size
+                                                    && viewport_local_y >= arrow_y
+                                                    && viewport_local_y <= arrow_y + arrow_size
+                                                {
+                                                    // Go to previous month
+                                                    if datepicker.current_view_month == 1 {
+                                                        datepicker.current_view_month = 12;
+                                                        datepicker.current_view_year -= 1;
+                                                    } else {
+                                                        datepicker.current_view_month -= 1;
+                                                    }
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                    break;
+                                                }
+
+                                                // Next month arrow
+                                                if viewport_local_x >= next_arrow_x
+                                                    && viewport_local_x <= next_arrow_x + arrow_size
+                                                    && viewport_local_y >= arrow_y
+                                                    && viewport_local_y <= arrow_y + arrow_size
+                                                {
+                                                    // Go to next month
+                                                    if datepicker.current_view_month == 12 {
+                                                        datepicker.current_view_month = 1;
+                                                        datepicker.current_view_year += 1;
+                                                    } else {
+                                                        datepicker.current_view_month += 1;
+                                                    }
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                    break;
+                                                }
+
+                                                // Check for day cell clicks
+                                                let cell_local_x = viewport_local_x - popup_x - grid_start_x;
+                                                let cell_local_y = viewport_local_y - popup_y - grid_start_y;
+
+                                                if cell_local_x >= 0.0 && cell_local_y >= 0.0 {
+                                                    let col = (cell_local_x / day_cell_size) as usize;
+                                                    let row = (cell_local_y / day_cell_size) as usize;
+
+                                                    if col < 7 && row < 6 {
+                                                        // Calculate day number
+                                                        let days_in_month = crate::viewport_ir::days_in_month(
+                                                            datepicker.current_view_year,
+                                                            datepicker.current_view_month,
+                                                        );
+                                                        let first_day = crate::viewport_ir::first_day_of_month(
+                                                            datepicker.current_view_year,
+                                                            datepicker.current_view_month,
+                                                        );
+
+                                                        let cell_index = row * 7 + col;
+                                                        if cell_index >= first_day as usize {
+                                                            let day = (cell_index - first_day as usize + 1) as u32;
+                                                            if day <= days_in_month {
+                                                                // Select this date
+                                                                datepicker.selected_date = Some((
+                                                                    datepicker.current_view_year,
+                                                                    datepicker.current_view_month,
+                                                                    day,
+                                                                ));
+                                                                datepicker.open = false; // Close popup after selection
+                                                                needs_redraw = true;
+                                                                window.request_redraw();
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                // Check for Today and Clear buttons
+                                                let buttons_y = popup_y + popup_height - button_height - button_margin;
+                                                let button_width = (popup_width - button_margin * 3.0) * 0.5;
+
+                                                // Today button (left)
+                                                let today_button_x = popup_x + button_margin;
+                                                if viewport_local_x >= today_button_x
+                                                    && viewport_local_x <= today_button_x + button_width
+                                                    && viewport_local_y >= buttons_y
+                                                    && viewport_local_y <= buttons_y + button_height
+                                                {
+                                                    // Set to today's date (using a fixed date for demo)
+                                                    // In production, you'd use chrono or time crate
+                                                    datepicker.selected_date = Some((2025, 11, 18)); // Example: Nov 18, 2025
+                                                    datepicker.current_view_month = 11;
+                                                    datepicker.current_view_year = 2025;
+                                                    datepicker.open = false;
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                    break;
+                                                }
+
+                                                // Clear button (right)
+                                                let clear_button_x = popup_x + button_margin * 2.0 + button_width;
+                                                if viewport_local_x >= clear_button_x
+                                                    && viewport_local_x <= clear_button_x + button_width
+                                                    && viewport_local_y >= buttons_y
+                                                    && viewport_local_y <= buttons_y + button_height
+                                                {
+                                                    // Clear the selected date
+                                                    datepicker.selected_date = None;
+                                                    datepicker.open = false;
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                    break;
+                                                }
+
+                                                // Click was in popup but not on a specific element
+                                                break;
+                                            }
+                                        }
+
+                                        // Check if click is on the date picker input field itself
+                                        let in_bounds = viewport_local_x >= datepicker.rect.x
+                                            && viewport_local_x <= datepicker.rect.x + datepicker.rect.w
+                                            && viewport_local_y >= datepicker.rect.y
+                                            && viewport_local_y <= datepicker.rect.y + datepicker.rect.h;
+
+                                        if in_bounds {
+                                            // Toggle the date picker popup
+                                            datepicker.open = !datepicker.open;
+
+                                            // If opening with no selected date, set current view to today (Nov 18, 2025 demo date)
+                                            if datepicker.open && datepicker.selected_date.is_none() {
+                                                datepicker.current_view_month = 11; // November
+                                                datepicker.current_view_year = 2025;
+                                            }
+
+                                            // Reset to Days mode when opening
+                                            if datepicker.open {
+                                                datepicker.picker_mode = elements::date_picker::PickerMode::Days;
+                                            }
+
+                                            // Clear focus from all other UI elements
+                                            for cb in viewport_ir_lock.checkboxes.iter_mut() {
+                                                cb.focused = false;
+                                            }
+                                            for input in viewport_ir_lock.input_boxes.iter_mut() {
+                                                input.focused = false;
+                                            }
+                                            for ta in viewport_ir_lock.text_areas.iter_mut() {
+                                                ta.focused = false;
+                                            }
+                                            for r in viewport_ir_lock.radios.iter_mut() {
+                                                r.focused = false;
+                                            }
+                                            for s in viewport_ir_lock.selects.iter_mut() {
+                                                s.focused = false;
+                                                s.open = false; // Close all select dropdowns
+                                            }
+                                            for (i, dp) in viewport_ir_lock.date_pickers.iter_mut().enumerate() {
+                                                dp.focused = false;
+                                                // Close all other date pickers to prevent z-index occlusion
+                                                if i != idx {
+                                                    dp.open = false;
+                                                }
+                                            }
+
+                                            // Set focus on clicked date picker
+                                            viewport_ir_lock.date_pickers[idx].focused = true;
+
+                                            clicked_popup = true;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                // If clicked outside all input boxes, text areas, checkboxes, radios, selects, and date pickers, unfocus all
+                                if !clicked_input
+                                    && !clicked_textarea
+                                    && !clicked_checkbox
+                                    && !clicked_radio
+                                    && !clicked_select
+                                    && !clicked_popup
                                 {
                                     for input_box in viewport_ir_lock.input_boxes.iter_mut() {
                                         if input_box.focused {
@@ -719,71 +1134,28 @@ pub fn run() -> Result<()> {
                                             window.request_redraw();
                                         }
                                     }
+                                    for datepicker in viewport_ir_lock.date_pickers.iter_mut() {
+                                        if datepicker.focused || datepicker.open {
+                                            datepicker.focused = false;
+                                            datepicker.open = false;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
                                 }
 
                                 // Perform hit test using the stored hit index
-                                // Only if we didn't click on an input box, text area, checkbox, radio, or select
+                                // Only if we didn't click on an input box, text area, checkbox, radio, select, date picker, or toolbar button
                                 if !clicked_input
                                     && !clicked_textarea
                                     && !clicked_checkbox
                                     && !clicked_radio
                                     && !clicked_select
+                                    && !clicked_popup
+                                    && !clicked_toolbar_button
                                 {
-                                    if let Some(ref index) = hit_index {
-                                        if let Some(hit) = index.topmost_at([logical_x, logical_y])
-                                        {
-                                            if let Some(region_id) = hit.region_id {
-                                                if region_id == TOGGLE_BUTTON_REGION_ID {
-                                                    let logical_width =
-                                                        (size.width as f32 / scale_factor) as u32;
-                                                    let logical_height =
-                                                        (size.height as f32 / scale_factor) as u32;
-                                                    zone_manager.toggle_sidebar(
-                                                        logical_width,
-                                                        logical_height,
-                                                    );
-                                                    *sidebar_visible.lock().unwrap() =
-                                                        zone_manager.is_sidebar_visible();
-                                                    needs_redraw = true;
-                                                    window.request_redraw();
-                                                } else if region_id == DEVTOOLS_BUTTON_REGION_ID {
-                                                    zone_manager.toggle_devtools();
-                                                    *devtools_visible.lock().unwrap() =
-                                                        zone_manager.is_devtools_visible();
-                                                    needs_redraw = true;
-                                                    window.request_redraw();
-                                                } else if region_id
-                                                    == DEVTOOLS_CLOSE_BUTTON_REGION_ID
-                                                {
-                                                    zone_manager.toggle_devtools();
-                                                    *devtools_visible.lock().unwrap() =
-                                                        zone_manager.is_devtools_visible();
-                                                    needs_redraw = true;
-                                                    window.request_redraw();
-                                                } else if region_id
-                                                    == DEVTOOLS_ELEMENTS_TAB_REGION_ID
-                                                {
-                                                    zone_manager
-                                                        .devtools
-                                                        .set_active_tab(DevToolsTab::Elements);
-                                                    *devtools_active_tab.lock().unwrap() =
-                                                        DevToolsTab::Elements;
-                                                    needs_redraw = true;
-                                                    window.request_redraw();
-                                                } else if region_id
-                                                    == DEVTOOLS_CONSOLE_TAB_REGION_ID
-                                                {
-                                                    zone_manager
-                                                        .devtools
-                                                        .set_active_tab(DevToolsTab::Console);
-                                                    *devtools_active_tab.lock().unwrap() =
-                                                        DevToolsTab::Console;
-                                                    needs_redraw = true;
-                                                    window.request_redraw();
-                                                }
-                                            }
-                                        }
-                                    }
+                                    // Toolbar buttons are now handled in the first block above
+                                    // This block is only for other hit regions (if any are added in the future)
                                 }
                             }
                         }
@@ -793,17 +1165,81 @@ pub fn run() -> Result<()> {
 
                         let mut viewport_ir_lock = viewport_ir.lock().unwrap();
 
-                        // Baseline single-line InputBox editing path for viewport_ir:
-                        // keyboard events are translated into InputBox editing methods
-                        // (insert_char, delete_before_cursor, cursor movement, etc.).
-                        // Phase 0 keeps this wiring as the source of truth while
-                        // allowing InputBox to internally toggle its TextLayout backend.
-                        // Find the focused input box
-                        if let Some(focused_input) = viewport_ir_lock
+                        // Check if any date picker is open and handle arrow keys for navigation
+                        let open_datepicker = viewport_ir_lock
+                            .date_pickers
+                            .iter_mut()
+                            .find(|dp| dp.open);
+
+                        if let Some(datepicker) = open_datepicker {
+                            if event.state == winit::event::ElementState::Pressed {
+                                use elements::date_picker::PickerMode;
+
+                                match event.physical_key {
+                                    PhysicalKey::Code(KeyCode::ArrowLeft) => {
+                                        // Navigate backward (previous month/year/decade)
+                                        match datepicker.picker_mode {
+                                            PickerMode::Days => {
+                                                if datepicker.current_view_month == 1 {
+                                                    datepicker.current_view_month = 12;
+                                                    datepicker.current_view_year -= 1;
+                                                } else {
+                                                    datepicker.current_view_month -= 1;
+                                                }
+                                            }
+                                            PickerMode::Months => {
+                                                datepicker.current_view_year -= 1;
+                                            }
+                                            PickerMode::Years => {
+                                                datepicker.current_view_year -= 9;
+                                            }
+                                        }
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::ArrowRight) => {
+                                        // Navigate forward (next month/year/decade)
+                                        match datepicker.picker_mode {
+                                            PickerMode::Days => {
+                                                if datepicker.current_view_month == 12 {
+                                                    datepicker.current_view_month = 1;
+                                                    datepicker.current_view_year += 1;
+                                                } else {
+                                                    datepicker.current_view_month += 1;
+                                                }
+                                            }
+                                            PickerMode::Months => {
+                                                datepicker.current_view_year += 1;
+                                            }
+                                            PickerMode::Years => {
+                                                datepicker.current_view_year += 9;
+                                            }
+                                        }
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Escape) => {
+                                        // Close the date picker on Escape
+                                        datepicker.open = false;
+                                        datepicker.picker_mode = PickerMode::Days;
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    _ => {
+                                        // Other keys are not handled for date picker
+                                    }
+                                }
+                            }
+                        } else if let Some(focused_input) = viewport_ir_lock
                             .input_boxes
                             .iter_mut()
                             .find(|ib| ib.focused)
                         {
+                            // Baseline single-line InputBox editing path for viewport_ir:
+                            // keyboard events are translated into InputBox editing methods
+                            // (insert_char, delete_before_cursor, cursor movement, etc.).
+                            // Phase 0 keeps this wiring as the source of truth while
+                            // allowing InputBox to internally toggle its TextLayout backend.
                             if event.state == winit::event::ElementState::Pressed {
                                 let has_cmd = modifiers_state.contains(ModifiersState::SUPER);
                                 let has_ctrl = modifiers_state.contains(ModifiersState::CONTROL);
@@ -1450,7 +1886,8 @@ pub fn run() -> Result<()> {
                         // Render devtools chrome and hit regions when devtools is visible.
                         // All visuals go through the unified Canvas path so they share the
                         // same coordinate system and z-ordering as the rest of the scene.
-                        if should_render_full && zone_manager.is_devtools_visible() {
+                        let devtools_visible = zone_manager.is_devtools_visible();
+                        if should_render_full && devtools_visible {
                             let devtools_rect = zone_manager.layout.get_zone(ZoneId::DevTools);
                             canvas.push_transform(Transform2D::translate(
                                 devtools_rect.x,

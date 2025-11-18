@@ -3,6 +3,45 @@
 use crate::elements;
 use engine_core::{Brush, ColorLinPremul, Rect};
 
+/// Get the number of days in a given month/year
+pub fn days_in_month(year: u32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            // Leap year calculation
+            if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 30, // Fallback
+    }
+}
+
+/// Get the first day of the month (0 = Sunday, 1 = Monday, etc.)
+/// This is a simplified version - in production you'd use a proper date library
+pub fn first_day_of_month(year: u32, month: u32) -> u32 {
+    // Simplified Zeller's congruence algorithm
+    let adjusted_month = if month < 3 {
+        month + 12
+    } else {
+        month
+    };
+    let adjusted_year = if month < 3 { year - 1 } else { year };
+
+    let q = 1; // First day of month
+    let m = adjusted_month;
+    let k = adjusted_year % 100;
+    let j = adjusted_year / 100;
+
+    let h = (q + ((13 * (m + 1)) / 5) + k + (k / 4) + (j / 4) - (2 * j)) % 7;
+
+    // Convert from Zeller (0=Saturday) to standard (0=Sunday)
+    ((h + 6) % 7) as u32
+}
+
 /// Phase 0: Just a solid background to verify rendering pipeline works
 pub struct ViewportContent {
     buttons: Vec<elements::Button>,
@@ -11,6 +50,7 @@ pub struct ViewportContent {
     pub(crate) input_boxes: Vec<elements::InputBox>,
     pub(crate) text_areas: Vec<elements::TextArea>,
     pub(crate) selects: Vec<SelectData>,
+    pub(crate) date_pickers: Vec<DatePickerData>,
     images: Vec<ImageData>,
     wrapped_paragraphs: Vec<WrappedParagraph>,
     col1_x: f32,
@@ -66,6 +106,19 @@ pub struct ImageData {
     pub tint: ColorLinPremul,
 }
 
+#[derive(Clone)]
+pub struct DatePickerData {
+    pub rect: Rect,
+    pub label_size: f32,
+    pub label_color: ColorLinPremul,
+    pub open: bool,
+    pub focused: bool,
+    pub selected_date: Option<(u32, u32, u32)>,
+    pub current_view_month: u32,
+    pub current_view_year: u32,
+    pub picker_mode: elements::date_picker::PickerMode,
+}
+
 impl ViewportContent {
     pub fn new() -> Self {
         let col1_x = 40.0f32;
@@ -76,6 +129,7 @@ impl ViewportContent {
         let textarea_y = 380.0f32;
         let image_y = 520.0f32;  // Moved images up to be visible initially
         let select_y = 640.0f32;  // Moved select down below images
+        let datepicker_y = 700.0f32;  // Date picker after select
         let multiline_y = 780.0f32;
 
         let checkboxes = vec![
@@ -233,6 +287,41 @@ impl ViewportContent {
             selected_index: Some(0),
         }];
 
+        let date_pickers = vec![
+            DatePickerData {
+                rect: Rect {
+                    x: col1_x,
+                    y: datepicker_y,
+                    w: 200.0,
+                    h: 36.0,
+                },
+                label_size: 16.0,
+                label_color: ColorLinPremul::from_srgba_u8([240, 240, 240, 255]),
+                open: false,
+                focused: false,
+                selected_date: Some((2025, 3, 15)), // Example: March 15, 2025
+                current_view_month: 3,
+                current_view_year: 2025,
+                picker_mode: elements::date_picker::PickerMode::Days,
+            },
+            DatePickerData {
+                rect: Rect {
+                    x: col1_x + 220.0,
+                    y: datepicker_y,
+                    w: 200.0,
+                    h: 36.0,
+                },
+                label_size: 16.0,
+                label_color: ColorLinPremul::from_srgba_u8([240, 240, 240, 255]),
+                open: false,
+                focused: false,
+                selected_date: None, // No date selected
+                current_view_month: 11, // Default to current month (November 2025 demo date)
+                current_view_year: 2025,
+                picker_mode: elements::date_picker::PickerMode::Days,
+            },
+        ];
+
         let images = vec![
             ImageData {
                 rect: Rect {
@@ -317,6 +406,7 @@ impl ViewportContent {
             input_boxes,
             text_areas,
             selects,
+            date_pickers,
             images,
             wrapped_paragraphs,
             col1_x,
@@ -443,6 +533,22 @@ impl ViewportContent {
             select.render(canvas, 70);
         }
 
+        // Render date pickers with z-index 80 (closed state only)
+        for date_picker_data in &self.date_pickers {
+            let date_picker = elements::DatePicker {
+                rect: date_picker_data.rect,
+                label_size: date_picker_data.label_size,
+                label_color: date_picker_data.label_color,
+                open: false, // Render closed state first
+                focused: date_picker_data.focused,
+                selected_date: date_picker_data.selected_date,
+                current_view_month: date_picker_data.current_view_month,
+                current_view_year: date_picker_data.current_view_year,
+                picker_mode: date_picker_data.picker_mode,
+            };
+            date_picker.render(canvas, 80);
+        }
+
         // Render images with z-index 90
         for image_data in &self.images {
             let image = elements::ImageBox {
@@ -512,6 +618,24 @@ impl ViewportContent {
                     selected_index: select_data.selected_index,
                 };
                 select.render(canvas, 8000);
+            }
+        }
+
+        // Render date picker calendar popups when open (same high z-index as selects)
+        for date_picker_data in &self.date_pickers {
+            if date_picker_data.open {
+                let date_picker = elements::DatePicker {
+                    rect: date_picker_data.rect,
+                    label_size: date_picker_data.label_size,
+                    label_color: date_picker_data.label_color,
+                    open: date_picker_data.open,
+                    focused: date_picker_data.focused,
+                    selected_date: date_picker_data.selected_date,
+                    current_view_month: date_picker_data.current_view_month,
+                    current_view_year: date_picker_data.current_view_year,
+                    picker_mode: date_picker_data.picker_mode,
+                };
+                date_picker.render(canvas, 8000);
             }
         }
 
