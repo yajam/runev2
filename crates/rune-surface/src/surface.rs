@@ -337,9 +337,6 @@ impl RuneSurface {
         // Sort display list by z-index to ensure proper layering
         list.sort_by_z();
 
-        // Upload geometry to GPU
-        let scene = upload_display_list(&mut self.allocator, &self.queue, &list)?;
-
         // Create target view
         let view = frame
             .texture
@@ -374,6 +371,13 @@ impl RuneSurface {
         if self.use_unified_rendering {
             // Unified rendering path: render solids + text + images + SVGs
             // together via PassManager::render_unified for consistent z-depth.
+
+            // Extract unified scene data (solids + text/image/svg draws) from the display list.
+            let unified_scene = engine_core::upload_display_list_unified(
+                &mut self.allocator,
+                &self.queue,
+                &list,
+            )?;
 
             // Sort SVG draws by z-index
             let mut svg_draws = canvas.svg_draws.clone();
@@ -412,12 +416,93 @@ impl RuneSurface {
                 }
             }
 
-            eprintln!(
-                "🧪 RuneSurface unified: glyphs={}, images={}, svgs={}",
-                canvas.glyph_draws.len(),
-                prepared_images.len(),
-                svg_draws.len()
-            );
+            // Merge glyphs supplied explicitly via Canvas (draw_text_run/draw_text_direct)
+            // with text runs extracted from the display list for unified text rendering.
+            let mut glyph_draws = canvas.glyph_draws.clone();
+
+            if let Some(ref provider) = canvas.text_provider {
+                // Reuse the logical pixel scale used by PassManager for solids so
+                // text aligns with other geometry.
+                let logical_scale = if self.logical_pixels {
+                    let s = if self.dpi_scale.is_finite() && self.dpi_scale > 0.0 {
+                        self.dpi_scale
+                    } else {
+                        1.0
+                    };
+                    let u = if self.ui_scale.is_finite() && self.ui_scale > 0.0 {
+                        self.ui_scale
+                    } else {
+                        1.0
+                    };
+                    (s * u).max(0.0001)
+                } else {
+                    1.0
+                };
+
+                let sf = if self.dpi_scale.is_finite() && self.dpi_scale > 0.0 {
+                    self.dpi_scale
+                } else {
+                    1.0
+                };
+                let snap = |v: f32| -> f32 { (v * sf).round() / sf };
+
+                for text_draw in &unified_scene.text_draws {
+                    let run = &text_draw.run;
+                    let [a, b, c, d, e, f] = text_draw.transform.m;
+
+                    // Apply full affine transform (scale + translate) to the run origin
+                    let rx = a * run.pos[0] + c * run.pos[1] + e;
+                    let ry = b * run.pos[0] + d * run.pos[1] + f;
+
+                    // Infer uniform scale from the linear part of the transform
+                    let sx = (a * a + b * b).sqrt();
+                    let sy = (c * c + d * d).sqrt();
+                    let mut s = if sx.is_finite() && sy.is_finite() {
+                        if sx > 0.0 && sy > 0.0 {
+                            (sx + sy) * 0.5
+                        } else {
+                            sx.max(sy).max(1.0)
+                        }
+                    } else {
+                        1.0
+                    };
+                    if !s.is_finite() || s <= 0.0 {
+                        s = 1.0;
+                    }
+                    s *= logical_scale;
+
+                    let scaled_size = (run.size * s).max(1.0);
+                    let run_for_provider = engine_core::TextRun {
+                        text: run.text.clone(),
+                        pos: [0.0, 0.0],
+                        size: scaled_size,
+                        color: run.color,
+                    };
+
+                    // Convert origin to physical pixels if logical mode is enabled
+                    let rx_px = rx * logical_scale;
+                    let ry_px = ry * logical_scale;
+                    let run_origin_x = snap(rx_px);
+
+                    let baseline_y = if let Some(m) = provider.line_metrics(scaled_size) {
+                        let asc = m.ascent;
+                        snap(ry_px + asc) - asc
+                    } else {
+                        snap(ry_px)
+                    };
+
+                    // Rasterize glyphs for this run and push into glyph_draws
+                    let glyphs = engine_core::rasterize_run_cached(provider.as_ref(), &run_for_provider);
+                    for g in glyphs.iter() {
+                        let mut origin = [run_origin_x + g.offset[0], baseline_y + g.offset[1]];
+                        if scaled_size <= 15.0 {
+                            origin[0] = snap(origin[0]);
+                            origin[1] = snap(origin[1]);
+                        }
+                        glyph_draws.push((origin, g.clone(), run.color, text_draw.z));
+                    }
+                }
+            }
 
             // Unified solids + text/images/SVGs pass
             self.pass.render_unified(
@@ -426,8 +511,8 @@ impl RuneSurface {
                 &view,
                 width,
                 height,
-                &scene,
-                &canvas.glyph_draws,
+                &unified_scene.gpu_scene,
+                &glyph_draws,
                 &svg_draws,
                 &prepared_images,
                 clear_wgpu,
@@ -437,6 +522,9 @@ impl RuneSurface {
             );
         } else {
             // Legacy path: Separate passes for each draw type
+
+            // Upload geometry to GPU for the legacy path
+            let scene = upload_display_list(&mut self.allocator, &self.queue, &list)?;
             
             // Render solids (text is now handled separately via glyph_draws for simplicity)
             if self.use_intermediate {

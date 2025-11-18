@@ -146,45 +146,60 @@ impl Canvas {
                 b * origin[0] + d * origin[1] + f,
             ];
 
-            // Apply DPI scaling to both size and position
-            let scaled_size = size_px * self.dpi_scale;
-            let scaled_origin = [
-                transformed_origin[0] * self.dpi_scale,
-                transformed_origin[1] * self.dpi_scale,
-            ];
+            // DPI scale for converting logical to device coordinates
+            let sf = if self.dpi_scale.is_finite() && self.dpi_scale > 0.0 {
+                self.dpi_scale
+            } else {
+                1.0
+            };
 
-            // Current effective clip rect in device coordinates, if any.
-            let current_clip = self.clip_stack.last().cloned().unwrap_or(None);
+            // Rasterize at device pixel size (logical size * DPI scale) to match
+            // unified rendering behavior and ensure sharp text on high-DPI displays
+            let device_size = size_px * sf;
 
             let run = TextRun {
                 text,
                 pos: [0.0, 0.0],
-                size: scaled_size,
+                size: device_size,
                 color,
             };
 
             // Rasterize glyphs, using a shared cache to avoid
             // re-rasterizing identical text every frame.
             let glyphs = engine_core::rasterize_run_cached(provider.as_ref(), &run);
+            // Current effective clip rect in device coordinates, if any.
+            let current_clip = self.clip_stack.last().cloned().unwrap_or(None);
+
+            // Pixel snapping function to align subpixel masks to physical pixels
+            let snap = |v: f32| -> f32 { (v * sf).round() / sf };
+
+            // Convert transformed origin to device pixels and snap for subpixel alignment
+            let origin_device_x = snap(transformed_origin[0] * sf);
+            let origin_device_y = snap(transformed_origin[1] * sf);
+
             for g in glyphs.iter() {
-                let glyph_origin = [
-                    scaled_origin[0] + g.offset[0],
-                    scaled_origin[1] + g.offset[1],
+                // Glyph offsets are in device pixels from rasterization
+                // Store origins in DEVICE PIXELS to match surface.rs unified rendering behavior
+                let glyph_origin_device = [
+                    origin_device_x + g.offset[0],
+                    origin_device_y + g.offset[1],
                 ];
 
                 if let Some(clip) = current_clip {
                     // Clip glyph to the current rect in device coordinates.
-                    if let Some((clipped_mask, clipped_origin)) =
-                        clip_glyph_to_rect(&g.mask, glyph_origin, clip)
+                    if let Some((clipped_mask, clipped_origin_device)) =
+                        clip_glyph_to_rect(&g.mask, glyph_origin_device, clip)
                     {
                         let clipped = RasterizedGlyph {
                             offset: [0.0, 0.0],
                             mask: clipped_mask,
                         };
-                        self.glyph_draws.push((clipped_origin, clipped, color, z));
+                        self.glyph_draws
+                            .push((clipped_origin_device, clipped, color, z));
                     }
                 } else {
-                    self.glyph_draws.push((glyph_origin, g.clone(), color, z));
+                    self.glyph_draws
+                        .push((glyph_origin_device, g.clone(), color, z));
                 }
             }
         } else {
@@ -220,44 +235,59 @@ impl Canvas {
             b * origin[0] + d * origin[1] + f,
         ];
 
-        // Apply DPI scaling to both size and position
-        let scaled_size = size_px * self.dpi_scale;
-        let scaled_origin = [
-            transformed_origin[0] * self.dpi_scale,
-            transformed_origin[1] * self.dpi_scale,
-        ];
-
         // Current effective clip rect in device coordinates, if any.
         let current_clip = self.clip_stack.last().cloned().unwrap_or(None);
+
+        // DPI scale for converting logical to device coordinates
+        let sf = if self.dpi_scale.is_finite() && self.dpi_scale > 0.0 {
+            self.dpi_scale
+        } else {
+            1.0
+        };
+
+        // Rasterize at device pixel size (logical size * DPI scale)
+        let device_size = size_px * sf;
 
         let run = TextRun {
             text: text.to_string(),
             pos: [0.0, 0.0],
-            size: scaled_size,
+            size: device_size,
             color,
         };
 
         // Rasterize glyphs, using the shared cache to avoid
         // re-rasterizing identical text every frame.
         let glyphs = engine_core::rasterize_run_cached(provider, &run);
+
+        // Pixel snapping function to align subpixel masks to physical pixels
+        let snap = |v: f32| -> f32 { (v * sf).round() / sf };
+
+        // Convert transformed origin to device pixels and snap for subpixel alignment
+        let origin_device_x = snap(transformed_origin[0] * sf);
+        let origin_device_y = snap(transformed_origin[1] * sf);
+
         for g in glyphs.iter() {
-            let glyph_origin = [
-                scaled_origin[0] + g.offset[0],
-                scaled_origin[1] + g.offset[1],
+            // Glyph offsets are in device pixels from rasterization
+            // Store origins in DEVICE PIXELS to match surface.rs unified rendering behavior
+            let glyph_origin_device = [
+                origin_device_x + g.offset[0],
+                origin_device_y + g.offset[1],
             ];
 
             if let Some(clip) = current_clip {
-                if let Some((clipped_mask, clipped_origin)) =
-                    clip_glyph_to_rect(&g.mask, glyph_origin, clip)
+                if let Some((clipped_mask, clipped_origin_device)) =
+                    clip_glyph_to_rect(&g.mask, glyph_origin_device, clip)
                 {
                     let clipped = RasterizedGlyph {
                         offset: [0.0, 0.0],
                         mask: clipped_mask,
                     };
-                    self.glyph_draws.push((clipped_origin, clipped, color, z));
+                    self.glyph_draws
+                        .push((clipped_origin_device, clipped, color, z));
                 }
             } else {
-                self.glyph_draws.push((glyph_origin, g.clone(), color, z));
+                self.glyph_draws
+                    .push((glyph_origin_device, g.clone(), color, z));
             }
         }
     }

@@ -692,7 +692,7 @@ impl ShadowCompositeRenderer {
 pub struct TextRenderer {
     pub pipeline: wgpu::RenderPipeline,
     vp_bgl: wgpu::BindGroupLayout,
-    z_bgl: wgpu::BindGroupLayout,
+    _z_bgl: wgpu::BindGroupLayout,
     pub tex_bgl: wgpu::BindGroupLayout,
     pub sampler: wgpu::Sampler,
     pub color_buffer: wgpu::Buffer,
@@ -838,7 +838,7 @@ impl TextRenderer {
         Self {
             pipeline,
             vp_bgl,
-            z_bgl,
+            _z_bgl: z_bgl,
             tex_bgl,
             sampler,
             color_buffer,
@@ -904,7 +904,7 @@ impl TextRenderer {
 pub struct ImageRenderer {
     pipeline: wgpu::RenderPipeline,
     vp_bgl: wgpu::BindGroupLayout,
-    z_bgl: wgpu::BindGroupLayout,
+    _z_bgl: wgpu::BindGroupLayout,
     tex_bgl: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
 }
@@ -1037,7 +1037,7 @@ impl ImageRenderer {
         Self {
             pipeline,
             vp_bgl,
-            z_bgl,
+            _z_bgl: z_bgl,
             tex_bgl,
             sampler,
         }

@@ -3,7 +3,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::allocator::{BufKey, OwnedBuffer, RenderAllocator};
 use crate::display_list::{Command, DisplayList};
-use crate::scene::{Brush, FillRule, Path, PathCmd, Rect, RoundedRect, Stroke, Transform2D, TextRun, ColorLinPremul};
+use crate::scene::{Brush, FillRule, Path, PathCmd, Rect, RoundedRect, Stroke, Transform2D, TextRun};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
