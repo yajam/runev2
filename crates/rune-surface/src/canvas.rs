@@ -153,14 +153,11 @@ impl Canvas {
                 1.0
             };
 
-            // Rasterize at device pixel size (logical size * DPI scale) to match
-            // unified rendering behavior and ensure sharp text on high-DPI displays
-            let device_size = size_px * sf;
-
+            // Rasterize at logical size - PassManager handles DPI scaling when rendering
             let run = TextRun {
                 text,
                 pos: [0.0, 0.0],
-                size: device_size,
+                size: size_px,
                 color,
             };
 
@@ -170,19 +167,18 @@ impl Canvas {
             // Current effective clip rect in device coordinates, if any.
             let current_clip = self.clip_stack.last().cloned().unwrap_or(None);
 
-            // Pixel snapping function to align subpixel masks to physical pixels
-            let snap = |v: f32| -> f32 { (v * sf).round() / sf };
-
-            // Convert transformed origin to device pixels and snap for subpixel alignment
-            let origin_device_x = snap(transformed_origin[0] * sf);
-            let origin_device_y = snap(transformed_origin[1] * sf);
-
             for g in glyphs.iter() {
-                // Glyph offsets are in device pixels from rasterization
-                // Store origins in DEVICE PIXELS to match surface.rs unified rendering behavior
+                // Glyph offsets are in logical pixels (from rasterization at logical size)
+                // Store origins in LOGICAL PIXELS for local coordinate system
+                let glyph_origin_logical = [
+                    transformed_origin[0] + g.offset[0],
+                    transformed_origin[1] + g.offset[1],
+                ];
+
+                // For clipping, convert to device pixels
                 let glyph_origin_device = [
-                    origin_device_x + g.offset[0],
-                    origin_device_y + g.offset[1],
+                    glyph_origin_logical[0] * sf,
+                    glyph_origin_logical[1] * sf,
                 ];
 
                 if let Some(clip) = current_clip {
@@ -194,12 +190,17 @@ impl Canvas {
                             offset: [0.0, 0.0],
                             mask: clipped_mask,
                         };
+                        // Convert clipped origin back to logical coordinates
+                        let clipped_origin_logical = [
+                            clipped_origin_device[0] / sf,
+                            clipped_origin_device[1] / sf,
+                        ];
                         self.glyph_draws
-                            .push((clipped_origin_device, clipped, color, z));
+                            .push((clipped_origin_logical, clipped, color, z));
                     }
                 } else {
                     self.glyph_draws
-                        .push((glyph_origin_device, g.clone(), color, z));
+                        .push((glyph_origin_logical, g.clone(), color, z));
                 }
             }
         } else {
@@ -245,13 +246,11 @@ impl Canvas {
             1.0
         };
 
-        // Rasterize at device pixel size (logical size * DPI scale)
-        let device_size = size_px * sf;
-
+        // Rasterize at logical size - PassManager handles DPI scaling when rendering
         let run = TextRun {
             text: text.to_string(),
             pos: [0.0, 0.0],
-            size: device_size,
+            size: size_px,
             color,
         };
 
@@ -259,19 +258,18 @@ impl Canvas {
         // re-rasterizing identical text every frame.
         let glyphs = engine_core::rasterize_run_cached(provider, &run);
 
-        // Pixel snapping function to align subpixel masks to physical pixels
-        let snap = |v: f32| -> f32 { (v * sf).round() / sf };
-
-        // Convert transformed origin to device pixels and snap for subpixel alignment
-        let origin_device_x = snap(transformed_origin[0] * sf);
-        let origin_device_y = snap(transformed_origin[1] * sf);
-
         for g in glyphs.iter() {
-            // Glyph offsets are in device pixels from rasterization
-            // Store origins in DEVICE PIXELS to match surface.rs unified rendering behavior
+            // Glyph offsets are in logical pixels (from rasterization at logical size)
+            // Store origins in LOGICAL PIXELS for local coordinate system
+            let glyph_origin_logical = [
+                transformed_origin[0] + g.offset[0],
+                transformed_origin[1] + g.offset[1],
+            ];
+
+            // For clipping, convert to device pixels
             let glyph_origin_device = [
-                origin_device_x + g.offset[0],
-                origin_device_y + g.offset[1],
+                glyph_origin_logical[0] * sf,
+                glyph_origin_logical[1] * sf,
             ];
 
             if let Some(clip) = current_clip {
@@ -282,12 +280,17 @@ impl Canvas {
                         offset: [0.0, 0.0],
                         mask: clipped_mask,
                     };
+                    // Convert clipped origin back to logical coordinates
+                    let clipped_origin_logical = [
+                        clipped_origin_device[0] / sf,
+                        clipped_origin_device[1] / sf,
+                    ];
                     self.glyph_draws
-                        .push((clipped_origin_device, clipped, color, z));
+                        .push((clipped_origin_logical, clipped, color, z));
                 }
             } else {
                 self.glyph_draws
-                    .push((glyph_origin_device, g.clone(), color, z));
+                    .push((glyph_origin_logical, g.clone(), color, z));
             }
         }
     }
