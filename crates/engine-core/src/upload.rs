@@ -126,12 +126,17 @@ fn push_ellipse(
     center: [f32; 2],
     radii: [f32; 2],
     color: [f32; 4],
+    z: f32,
     t: Transform2D,
 ) {
     let segs = 64u32;
     let base = vertices.len() as u16;
     let c = apply_transform(center, t);
-    vertices.push(Vertex { pos: c, color, z_index: 0.0 });
+    vertices.push(Vertex {
+        pos: c,
+        color,
+        z_index: z,
+    });
 
     for i in 0..segs {
         let theta = (i as f32) / (segs as f32) * std::f32::consts::TAU;
@@ -140,7 +145,11 @@ fn push_ellipse(
             center[1] + radii[1] * theta.sin(),
         ];
         let p = apply_transform(p, t);
-        vertices.push(Vertex { pos: p, color, z_index: 0.0 });
+        vertices.push(Vertex {
+            pos: p,
+            color,
+            z_index: z,
+        });
     }
     for i in 0..segs {
         let i0 = base;
@@ -156,6 +165,7 @@ fn push_ellipse_radial_gradient(
     center: [f32; 2],
     radii: [f32; 2],
     stops: &[(f32, [f32; 4])],
+    z: f32,
     t: Transform2D,
 ) {
     if stops.len() < 2 {
@@ -170,7 +180,7 @@ fn push_ellipse_radial_gradient(
     vertices.push(Vertex {
         pos: cpos,
         color: s[0].1,
-        z_index: 0.0,
+        z_index: z,
     });
 
     // First ring
@@ -188,7 +198,7 @@ fn push_ellipse_radial_gradient(
         vertices.push(Vertex {
             pos: p,
             color: prev_color,
-            z_index: 0.0,
+            z_index: z,
         });
     }
     // Connect center to first ring if needed
@@ -214,7 +224,7 @@ fn push_ellipse_radial_gradient(
             vertices.push(Vertex {
                 pos: p,
                 color: ccur,
-                z_index: 0.0,
+                z_index: z,
             });
         }
         // stitch prev ring to current ring
@@ -234,6 +244,7 @@ fn tessellate_path_fill(
     indices: &mut Vec<u16>,
     path: &Path,
     color: [f32; 4],
+    z: f32,
     t: Transform2D,
 ) {
     use lyon_geom::point;
@@ -310,7 +321,11 @@ fn tessellate_path_fill(
     let base = vertices.len() as u16;
     for p in &geom.vertices {
         let tp = apply_transform(*p, t);
-        vertices.push(Vertex { pos: tp, color, z_index: 0.0 });
+        vertices.push(Vertex {
+            pos: tp,
+            color,
+            z_index: z,
+        });
     }
     indices.extend(geom.indices.iter().map(|i| base + *i));
 }
@@ -321,6 +336,7 @@ fn tessellate_path_stroke(
     path: &Path,
     stroke: Stroke,
     color: [f32; 4],
+    z: f32,
     t: Transform2D,
 ) {
     use lyon_geom::point;
@@ -398,7 +414,11 @@ fn tessellate_path_stroke(
     let base = vertices.len() as u16;
     for p in &geom.vertices {
         let tp = apply_transform(*p, t);
-        vertices.push(Vertex { pos: tp, color, z_index: 0.0 });
+        vertices.push(Vertex {
+            pos: tp,
+            color,
+            z_index: z,
+        });
     }
     indices.extend(geom.indices.iter().map(|i| base + *i));
 }
@@ -508,11 +528,12 @@ fn push_rounded_rect(
     indices: &mut Vec<u16>,
     rrect: RoundedRect,
     color: [f32; 4],
+    z: f32,
     t: Transform2D,
 ) {
     // Delegate to lyon's robust tessellator via our generic path fill
     let path = rounded_rect_to_path(rrect);
-    tessellate_path_fill(vertices, indices, &path, color, t);
+    tessellate_path_fill(vertices, indices, &path, color, z, t);
 }
 
 fn push_rect_stroke(
@@ -521,6 +542,7 @@ fn push_rect_stroke(
     rect: Rect,
     stroke: Stroke,
     color: [f32; 4],
+    z: f32,
     t: Transform2D,
 ) {
     let w = stroke.width.max(0.0);
@@ -544,14 +566,14 @@ fn push_rect_stroke(
 
     let base = vertices.len() as u16;
     vertices.extend_from_slice(&[
-        Vertex { pos: o0, color, z_index: 0.0 }, // 0
-        Vertex { pos: o1, color, z_index: 0.0 }, // 1
-        Vertex { pos: o2, color, z_index: 0.0 }, // 2
-        Vertex { pos: o3, color, z_index: 0.0 }, // 3
-        Vertex { pos: i0, color, z_index: 0.0 }, // 4
-        Vertex { pos: i1, color, z_index: 0.0 }, // 5
-        Vertex { pos: i2, color, z_index: 0.0 }, // 6
-        Vertex { pos: i3, color, z_index: 0.0 }, // 7
+        Vertex { pos: o0, color, z_index: z }, // 0
+        Vertex { pos: o1, color, z_index: z }, // 1
+        Vertex { pos: o2, color, z_index: z }, // 2
+        Vertex { pos: o3, color, z_index: z }, // 3
+        Vertex { pos: i0, color, z_index: z }, // 4
+        Vertex { pos: i1, color, z_index: z }, // 5
+        Vertex { pos: i2, color, z_index: z }, // 6
+        Vertex { pos: i3, color, z_index: z }, // 7
     ]);
     // Build ring from quads on each edge
     let idx: [u16; 24] = [
@@ -570,6 +592,7 @@ fn push_rounded_rect_stroke(
     rrect: RoundedRect,
     stroke: Stroke,
     color: [f32; 4],
+    z: f32,
     t: Transform2D,
 ) {
     let w = stroke.width.max(0.0);
@@ -577,7 +600,15 @@ fn push_rounded_rect_stroke(
         return;
     }
     let path = rounded_rect_to_path(rrect);
-    tessellate_path_stroke(vertices, indices, &path, Stroke { width: w }, color, t);
+    tessellate_path_stroke(
+        vertices,
+        indices,
+        &path,
+        Stroke { width: w },
+        color,
+        z,
+        t,
+    );
 }
 
 pub fn upload_display_list(
@@ -646,11 +677,19 @@ pub fn upload_display_list(
                 rrect,
                 brush,
                 transform,
+                z,
                 ..
             } => {
                 if let Brush::Solid(col) = brush {
                     let color = [col.r, col.g, col.b, col.a];
-                    push_rounded_rect(&mut vertices, &mut indices, *rrect, color, *transform);
+                    push_rounded_rect(
+                        &mut vertices,
+                        &mut indices,
+                        *rrect,
+                        color,
+                        *z as f32,
+                        *transform,
+                    );
                 }
             }
             Command::StrokeRect {
@@ -658,6 +697,7 @@ pub fn upload_display_list(
                 stroke,
                 brush,
                 transform,
+                z,
                 ..
             } => {
                 if let Brush::Solid(col) = brush {
@@ -668,6 +708,7 @@ pub fn upload_display_list(
                         *rect,
                         *stroke,
                         color,
+                        *z as f32,
                         *transform,
                     );
                 }
@@ -677,6 +718,7 @@ pub fn upload_display_list(
                 stroke,
                 brush,
                 transform,
+                z,
                 ..
             } => {
                 if let Brush::Solid(col) = brush {
@@ -687,6 +729,7 @@ pub fn upload_display_list(
                         *rrect,
                         *stroke,
                         color,
+                        *z as f32,
                         *transform,
                     );
                 }
@@ -696,6 +739,7 @@ pub fn upload_display_list(
                 radii,
                 brush,
                 transform,
+                z,
                 ..
             } => match brush {
                 Brush::Solid(col) => {
@@ -706,6 +750,7 @@ pub fn upload_display_list(
                         *center,
                         *radii,
                         color,
+                        *z as f32,
                         *transform,
                     );
                 }
@@ -735,6 +780,7 @@ pub fn upload_display_list(
                         *center,
                         *radii,
                         &packed,
+                        *z as f32,
                         *transform,
                     );
                 }
@@ -744,20 +790,37 @@ pub fn upload_display_list(
                 path,
                 color,
                 transform,
+                z,
                 ..
             } => {
                 let col = [color.r, color.g, color.b, color.a];
-                tessellate_path_fill(&mut vertices, &mut indices, path, col, *transform);
+                tessellate_path_fill(
+                    &mut vertices,
+                    &mut indices,
+                    path,
+                    col,
+                    *z as f32,
+                    *transform,
+                );
             }
             Command::StrokePath {
                 path,
                 stroke,
                 color,
                 transform,
+                z,
                 ..
             } => {
                 let col = [color.r, color.g, color.b, color.a];
-                tessellate_path_stroke(&mut vertices, &mut indices, path, *stroke, col, *transform);
+                tessellate_path_stroke(
+                    &mut vertices,
+                    &mut indices,
+                    path,
+                    *stroke,
+                    col,
+                    *z as f32,
+                    *transform,
+                );
             }
             // BoxShadow commands are handled by PassManager as a separate pipeline.
             Command::BoxShadow { .. } => {}
@@ -904,12 +967,20 @@ pub fn upload_display_list_unified(
                 rrect,
                 brush,
                 transform,
+                z,
                 ..
             } => {
                 let final_transform = current_transform.concat(*transform);
                 if let Brush::Solid(col) = brush {
                     let color = [col.r, col.g, col.b, col.a];
-                    push_rounded_rect(&mut vertices, &mut indices, *rrect, color, final_transform);
+                    push_rounded_rect(
+                        &mut vertices,
+                        &mut indices,
+                        *rrect,
+                        color,
+                        *z as f32,
+                        final_transform,
+                    );
                 }
             }
             Command::StrokeRect {
@@ -917,6 +988,7 @@ pub fn upload_display_list_unified(
                 stroke,
                 brush,
                 transform,
+                z,
                 ..
             } => {
                 let final_transform = current_transform.concat(*transform);
@@ -928,6 +1000,7 @@ pub fn upload_display_list_unified(
                         *rect,
                         *stroke,
                         color,
+                        *z as f32,
                         final_transform,
                     );
                 }
@@ -937,6 +1010,7 @@ pub fn upload_display_list_unified(
                 stroke,
                 brush,
                 transform,
+                z,
                 ..
             } => {
                 let final_transform = current_transform.concat(*transform);
@@ -948,6 +1022,7 @@ pub fn upload_display_list_unified(
                         *rrect,
                         *stroke,
                         color,
+                        *z as f32,
                         final_transform,
                     );
                 }
@@ -957,6 +1032,7 @@ pub fn upload_display_list_unified(
                 radii,
                 brush,
                 transform,
+                z,
                 ..
             } => {
                 let final_transform = current_transform.concat(*transform);
@@ -969,6 +1045,7 @@ pub fn upload_display_list_unified(
                             *center,
                             *radii,
                             color,
+                            *z as f32,
                             final_transform,
                         );
                     }
@@ -998,6 +1075,7 @@ pub fn upload_display_list_unified(
                             *center,
                             *radii,
                             &packed,
+                            *z as f32,
                             final_transform,
                         );
                     }
@@ -1008,22 +1086,39 @@ pub fn upload_display_list_unified(
                 path,
                 color,
                 transform,
+                z,
                 ..
             } => {
                 let final_transform = current_transform.concat(*transform);
                 let col = [color.r, color.g, color.b, color.a];
-                tessellate_path_fill(&mut vertices, &mut indices, path, col, final_transform);
+                tessellate_path_fill(
+                    &mut vertices,
+                    &mut indices,
+                    path,
+                    col,
+                    *z as f32,
+                    final_transform,
+                );
             }
             Command::StrokePath {
                 path,
                 stroke,
                 color,
                 transform,
+                z,
                 ..
             } => {
                 let final_transform = current_transform.concat(*transform);
                 let col = [color.r, color.g, color.b, color.a];
-                tessellate_path_stroke(&mut vertices, &mut indices, path, *stroke, col, final_transform);
+                tessellate_path_stroke(
+                    &mut vertices,
+                    &mut indices,
+                    path,
+                    *stroke,
+                    col,
+                    *z as f32,
+                    final_transform,
+                );
             }
             Command::DrawImage {
                 path,

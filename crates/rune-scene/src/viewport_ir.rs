@@ -444,28 +444,6 @@ impl ViewportContent {
             select.render(canvas, 70);
         }
 
-        // Render select dropdown overlays LAST with high z-index (8000)
-        // This ensures they appear above ALL viewport content including images and multi-line text
-        // Note: z-index valid range is [-10000, 10000], so we use 8000 to stay within limits
-        // The dropdown overlay itself will be at z + 1000 = 9000
-        for select_data in &self.selects {
-            if select_data.open {
-                let select = elements::Select {
-                    rect: select_data.rect,
-                    label: select_data.label.to_string(),
-                    label_size: select_data.label_size,
-                    label_color: select_data.label_color,
-                    open: select_data.open,
-                    focused: select_data.focused,
-                    options: select_data.options.clone(),
-                    selected_index: select_data.selected_index,
-                };
-                // Render the entire select (which will render the overlay) at z=8000
-                // The dropdown overlay itself will be at z + 1000 = 9000
-                select.render(canvas, 8000);
-            }
-        }
-
         // Render images with z-index 90
         for image_data in &self.images {
             let image = elements::ImageBox {
@@ -516,6 +494,27 @@ impl ViewportContent {
         } else {
             0.0
         };
+
+        // Render select dropdown overlays after all primary content with a very high z-index.
+        // This guarantees the dropdown and its options appear above images and wrapped text,
+        // even if a non-unified rendering path is used where draw order still matters.
+        // Note: z-index valid range is [-10000, 10000], so we use 8000 here;
+        // the dropdown overlay itself will be at z + 1000 = 9000.
+        for select_data in &self.selects {
+            if select_data.open {
+                let select = elements::Select {
+                    rect: select_data.rect,
+                    label: select_data.label.to_string(),
+                    label_size: select_data.label_size,
+                    label_color: select_data.label_color,
+                    open: select_data.open,
+                    focused: select_data.focused,
+                    options: select_data.options.clone(),
+                    selected_index: select_data.selected_index,
+                };
+                select.render(canvas, 8000);
+            }
+        }
 
         // Calculate total content height
         let multiline_bottom = self.multiline_y + multiline_height;
