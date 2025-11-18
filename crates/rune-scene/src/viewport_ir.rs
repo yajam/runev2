@@ -325,7 +325,6 @@ impl ViewportContent {
     }
 
     /// Render viewport content to canvas
-    /// Phase 1: Background + basic text from the legacy viewport_ir_old demo.
     pub fn render(
         &mut self,
         canvas: &mut rune_surface::Canvas,
@@ -353,7 +352,7 @@ impl ViewportContent {
         let subtitle_size = 18.0;
         let test_line_size = 20.0;
 
-        // Basic text content: reuse the header/subtitle/test lines from viewport_ir_old.
+        // Basic text content with headers, subtitles, and test lines.
         // Coordinates are viewport-local and assume the viewport origin has already been
         // translated by the caller to the correct zone.
         let col1_x = 40.0f32;

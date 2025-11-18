@@ -82,19 +82,6 @@ fn main() -> Result<()> {
         || std::env::args().any(|a| a == "--scene=zones" || a == "--zones")
     {
         Box::new(scenes::zones::ZonesScene::default())
-    } else if scene_env.as_deref() == Some("text")
-        || std::env::args()
-            .any(|a| a == "--scene=text" || a == "--text" || a == "--scene=text-demo")
-    {
-        Box::new(scenes::text_demo::TextDemoScene::default())
-    } else if scene_env.as_deref() == Some("harfrust-text")
-        || std::env::args().any(|a| a == "--scene=harfrust-text" || a == "--harfrust-text")
-    {
-        Box::new(scenes::harfrust_text::HarfrustTextScene::default())
-    } else if scene_env.as_deref() == Some("cosmic-direct")
-        || std::env::args().any(|a| a == "--scene=cosmic-direct" || a == "--cosmic-direct")
-    {
-        Box::new(scenes::cosmic_direct::CosmicDirectScene::default())
     } else if scene_env.as_deref() == Some("images")
         || std::env::args().any(|a| a == "--scene=images" || a == "--images")
     {
@@ -124,19 +111,6 @@ fn main() -> Result<()> {
         width: size.width,
         height: size.height,
     });
-    let queue = engine.queue();
-    let mut gpu_scene_opt = match scene.kind() {
-        SceneKind::Geometry => {
-            let dl = dlist_opt
-                .as_ref()
-                .expect("geometry scene should provide DisplayList");
-            Some(
-                engine_core::upload_display_list(engine.allocator_mut(), &queue, dl)
-                    .expect("upload failed"),
-            )
-        }
-        SceneKind::FullscreenBackground => None,
-    };
     // Build initial hit-test index if the scene is geometry-based
     let mut hit_index_opt: Option<engine_core::HitIndex> = match (&scene.kind(), &dlist_opt) {
         (SceneKind::Geometry, Some(dl)) => Some(engine_core::HitIndex::build(dl)),
@@ -147,11 +121,7 @@ fn main() -> Result<()> {
     passes.set_logical_pixels(true);
     passes.set_ui_scale(1.0);
     passes.set_scale_factor(scale_factor);
-    let mut bypass = std::env::var("BYPASS_COMPOSITOR")
-        .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-    // Enable intermediate texture for Vello-style smooth resizing
+    // Unified rendering uses intermediate texture by default for smooth resizing
     let use_intermediate = std::env::var("USE_INTERMEDIATE")
         .ok()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -162,7 +132,6 @@ fn main() -> Result<()> {
         passes.ensure_intermediate_texture(engine.allocator_mut(), size.width, size.height);
     }
 
-    let mut needs_reupload = false;
     let mut hovered_id: Option<usize> = None;
     let mut pressed_id: Option<usize> = None;
     let mut last_cursor_pos: [f32; 2] = [0.0, 0.0];
@@ -319,7 +288,6 @@ fn main() -> Result<()> {
                         // Intermediate texture will be reallocated in RedrawRequested if size changed
                     }
                 }
-                needs_reupload = true;
             }
         }
         // Map mouse moves to hit-test queries
@@ -354,7 +322,6 @@ fn main() -> Result<()> {
                             }
                             _ => None,
                         };
-                        needs_reupload = true;
                         window.request_redraw();
                     }
                 }
@@ -369,7 +336,6 @@ fn main() -> Result<()> {
                                 }
                                 _ => None,
                             };
-                            needs_reupload = true;
                             window.request_redraw();
                         }
                     }
@@ -395,7 +361,6 @@ fn main() -> Result<()> {
                                 }
                                 _ => None,
                             };
-                            needs_reupload = true;
                             window.request_redraw();
                         }
                     }
@@ -414,7 +379,6 @@ fn main() -> Result<()> {
                                         }
                                         _ => None,
                                     };
-                                    needs_reupload = true;
                                     window.request_redraw();
                                 }
                             }
@@ -433,7 +397,6 @@ fn main() -> Result<()> {
                                 }
                                 _ => None,
                             };
-                            needs_reupload = true;
                             window.request_redraw();
                         }
                     }
@@ -454,8 +417,8 @@ fn main() -> Result<()> {
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("clear-encoder"),
                         });
-                // Background will be rendered as clear color in offscreen buffer
-                // Always upload the current display list for unified rendering
+
+                // Always use unified rendering - upload the current display list
                 let unified_scene_opt = if let (SceneKind::Geometry, Some(dl)) = (scene.kind(), dlist_opt.as_ref()) {
                     let q2 = engine.queue();
                     // Use unified upload to extract all element types
@@ -467,20 +430,9 @@ fn main() -> Result<()> {
                     None
                 };
 
-                if needs_reupload {
-                    if let (SceneKind::Geometry, Some(dl)) = (scene.kind(), dlist_opt.as_ref()) {
-                        let q2 = engine.queue();
-                        // Keep legacy gpu_scene for backward compatibility
-                        gpu_scene_opt = Some(
-                            engine_core::upload_display_list(engine.allocator_mut(), &q2, dl)
-                                .expect("upload failed on resize"),
-                        );
-                    }
-                    needs_reupload = false;
-                }
                 match scene.kind() {
                     SceneKind::Geometry => {
-                        // Check for unified rendering path first
+                        // Always use unified rendering path
                         if let Some(unified_scene) = unified_scene_opt.as_ref() {
                             let queue = engine.queue();
 
@@ -547,120 +499,6 @@ fn main() -> Result<()> {
                                 &queue,
                                 false,  // preserve_surface
                             );
-                        } else if let Some(gpu_scene) = gpu_scene_opt.as_ref() {
-                            // Fallback to legacy rendering path
-                            let queue = engine.queue();
-                            if use_intermediate {
-                                if let (Some(dl), Some(provider)) = (
-                                    dlist_opt.as_ref(),
-                                    text_providers.as_ref().map(|(rgb, _, _)| &**rgb),
-                                ) {
-                                    passes.render_frame_with_intermediate_and_text(
-                                        &mut encoder,
-                                        engine.allocator_mut(),
-                                        &view,
-                                        size.width,
-                                        size.height,
-                                        gpu_scene,
-                                        wgpu::Color {
-                                            r: 0x0b as f64 / 255.0,
-                                            g: 0x12 as f64 / 255.0,
-                                            b: 0x20 as f64 / 255.0,
-                                            a: 1.0,
-                                        },
-                                        &queue,
-                                        dl,
-                                        provider as &dyn engine_core::TextProvider,
-                                    );
-                                } else {
-                                    passes.render_frame_with_intermediate(
-                                        &mut encoder,
-                                        engine.allocator_mut(),
-                                        &view,
-                                        size.width,
-                                        size.height,
-                                        gpu_scene,
-                                        wgpu::Color {
-                                            r: 0x0b as f64 / 255.0,
-                                            g: 0x12 as f64 / 255.0,
-                                            b: 0x20 as f64 / 255.0,
-                                            a: 1.0,
-                                        },
-                                        bypass,
-                                        &queue,
-                                        false, // preserve_intermediate - false for demo-app (no resize optimization needed)
-                                    );
-                                }
-                            } else {
-                                if let (Some(dl), Some(provider)) = (
-                                    dlist_opt.as_ref(),
-                                    text_providers.as_ref().map(|(rgb, _, _)| &**rgb),
-                                ) {
-                                    passes.render_frame_and_text(
-                                        &mut encoder,
-                                        engine.allocator_mut(),
-                                        &view,
-                                        size.width,
-                                        size.height,
-                                        gpu_scene,
-                                        wgpu::Color {
-                                            r: 0x0b as f64 / 255.0,
-                                            g: 0x12 as f64 / 255.0,
-                                            b: 0x20 as f64 / 255.0,
-                                            a: 1.0,
-                                        },
-                                        bypass,
-                                        &queue,
-                                        true,
-                                        dl,
-                                        provider as &dyn engine_core::TextProvider,
-                                    );
-                                } else {
-                                    passes.render_frame(
-                                        &mut encoder,
-                                        engine.allocator_mut(),
-                                        &view,
-                                        size.width,
-                                        size.height,
-                                        gpu_scene,
-                                        wgpu::Color {
-                                            r: 0x0b as f64 / 255.0,
-                                            g: 0x12 as f64 / 255.0,
-                                            b: 0x20 as f64 / 255.0,
-                                            a: 1.0,
-                                        },
-                                        bypass,
-                                        &queue,
-                                        true,
-                                    );
-                                }
-                            }
-                            // After solids (and any default text), let the scene optionally paint a text overlay
-                            if let Some((ref rgb, ref bgr, ref gray)) = text_providers {
-                                scene.paint_text_overlay(
-                                    &mut passes,
-                                    &mut encoder,
-                                    &view,
-                                    &queue,
-                                    size.width,
-                                    size.height,
-                                    Some(&**rgb),
-                                    Some(&**bgr),
-                                    Some(&**gray),
-                                );
-                            } else {
-                                scene.paint_text_overlay(
-                                    &mut passes,
-                                    &mut encoder,
-                                    &view,
-                                    &queue,
-                                    size.width,
-                                    size.height,
-                                    None,
-                                    None,
-                                    None,
-                                );
-                            }
                         }
                     }
                     SceneKind::FullscreenBackground => {
@@ -709,7 +547,6 @@ fn main() -> Result<()> {
             Err(_) => {
                 let new_config = make_surface_config(&adapter, &surface, size.width, size.height);
                 surface.configure(&engine.device(), &new_config);
-                needs_reupload = true;
                 // No need to rebuild passes; surface format usually unchanged.
             }
         },
@@ -729,14 +566,10 @@ fn main() -> Result<()> {
             size = window.inner_size();
             let new_config = make_surface_config(&adapter, &surface, size.width, size.height);
             surface.configure(&engine.device(), &new_config);
-            needs_reupload = true;
             window.request_redraw();
         }
         Event::AboutToWait => {
             window.request_redraw();
-            if let Ok(v) = std::env::var("BYPASS_COMPOSITOR") {
-                bypass = v == "1" || v.eq_ignore_ascii_case("true");
-            }
         }
         _ => {}
     })?;

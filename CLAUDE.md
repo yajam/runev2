@@ -17,10 +17,14 @@ cargo build --workspace
 ```bash
 cargo run -p demo-app
 cargo run -p demo-app -- --scene=zones
-cargo run -p demo-app -- --scene=text
 cargo run -p demo-app -- --scene=images
 cargo run -p demo-app -- --scene=overlay
+cargo run -p demo-app -- --scene=shadow
+cargo run -p demo-app -- --scene=linear
+cargo run -p demo-app -- --scene=radial
 ```
+
+Note: Some scenes (text_demo, cosmic_direct, harfrust_text) are currently disabled as they used legacy rendering methods.
 
 **Run rune-scene app:**
 ```bash
@@ -76,16 +80,17 @@ This is a Rust workspace with the following crates:
    let dl = p.finish();
    ```
 
-2. **Upload to GPU**:
+2. **Upload to GPU** (unified path):
    ```rust
-   let gpu_scene = upload_display_list(allocator, &queue, &dl)?;
+   let unified_scene = upload_display_list_unified(allocator, &queue, &dl)?;
    ```
 
-3. **Render via PassManager**:
+3. **Render via PassManager** (unified rendering):
    ```rust
-   passes.render_frame_with_intermediate(&mut encoder, allocator, &surface_view,
-                                         width, height, &gpu_scene, clear_color,
-                                         /*direct*/ false, &queue);
+   passes.render_unified(&mut encoder, allocator, &surface_view,
+                        width, height, &unified_scene.gpu_scene,
+                        &glyph_draws, &svg_draws, &image_draws,
+                        clear_color, /*direct*/ false, &queue, preserve_surface);
    ```
 
 ### Z-Ordering & Depth Buffer
@@ -96,7 +101,7 @@ The engine uses a depth buffer for proper z-layering across all element types:
 - Background always renders at depth 1.0 (furthest back)
 - All pipelines have depth_stencil configurations
 
-**Current status**: Depth buffer infrastructure is complete. Unified rendering (single pass for all element types) is partially implemented but has a critical bug where text/images/SVGs are skipped. See `docs/pass-manager-unified-refactoring-checklist.md` for details.
+**Current status**: Depth buffer infrastructure is complete. Unified rendering is fully implemented and is the only rendering path - all legacy rendering methods have been removed.
 
 ### Hit Testing
 
@@ -136,7 +141,6 @@ Text is rendered with subpixel antialiasing (RGB or BGR orientation). GPU shader
 
 ### Rendering
 - `USE_INTERMEDIATE=1` (default): Enable intermediate texture for smooth resizing
-- `BYPASS_COMPOSITOR=1`: Force direct rendering path for solids
 - `DEBUG_RADIAL=1`: Enable debug visualization for radial backgrounds
 
 ## Important Conventions
@@ -146,10 +150,10 @@ Text is rendered with subpixel antialiasing (RGB or BGR orientation). GPU shader
 - Y axis points down
 - Hit-testing uses device-space pixel positions directly
 
-### Rendering Paths
-- **Direct rendering**: Renders directly to surface (bypass intermediate texture)
-- **Intermediate rendering**: Renders to offscreen texture then blits (smooth resizing)
-- PassManager can be switched between paths via `direct` parameter
+### Rendering Architecture
+- **Unified rendering**: All element types (solids, text, images, SVGs) are rendered in a single depth-sorted pass via `PassManager::render_unified`
+- **Direct vs Intermediate**: Can render directly to surface or via intermediate texture for smooth resizing (controlled by `direct` parameter)
+- All rendering uses depth buffer for proper z-ordering across all element types
 
 ### Text Color Handling
 - Text shaders expect **premultiplied linear color**
@@ -168,17 +172,18 @@ Text is rendered with subpixel antialiasing (RGB or BGR orientation). GPU shader
 - Shader layouts and binding interfaces in `engine-shaders` and `pass_manager` (must match upload shapes and pipeline definitions)
 
 ### Known Issues
-- **Unified rendering bug**: `viewport_ir` renders blank screen with `use_unified_rendering = true`. Root cause: `render_unified()` exits early after rendering solids, skipping text/images/SVGs. See `docs/pass-manager-unified-refactoring-checklist.md` for fix plan.
 - Text hit-testing not implemented (placeholder only)
 - Per-side border widths not implemented
+- Some demo scenes disabled (text_demo, cosmic_direct, harfrust_text) - these used legacy rendering methods and need conversion to unified path
 
 ## Testing Patterns
 
 When making changes to rendering code:
-1. Test with multiple scenes: `zones`, `text`, `images`, `overlay`, `shadow`
-2. Toggle `USE_INTERMEDIATE` and `BYPASS_COMPOSITOR` to test different code paths
+1. Test with multiple scenes: `zones`, `images`, `overlay`, `shadow`, `linear`, `radial`
+2. Toggle `USE_INTERMEDIATE` to test intermediate texture path
 3. Test text rendering with different providers (`DEMO_FREETYPE=1`)
 4. Verify hit-testing with interactive scenes (`zones`, `overlay`)
+5. Test rune-scene app: `cargo run -p rune-scene`
 
 ## Key Documentation Files
 

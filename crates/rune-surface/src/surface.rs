@@ -1,7 +1,4 @@
-use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender, channel};
-use std::thread;
 
 use anyhow::Result;
 
@@ -12,7 +9,6 @@ use engine_core::{
     RenderAllocator,
     Transform2D,
     Viewport,
-    upload_display_list,
     wgpu, // import wgpu from engine-core to keep type identity
 };
 
@@ -24,12 +20,6 @@ fn apply_transform_to_point(point: [f32; 2], transform: Transform2D) -> [f32; 2]
     let x = point[0];
     let y = point[1];
     [a * x + c * y + e, b * x + d * y + f]
-}
-
-/// Message sent from background loader thread
-struct LoadedImageData {
-    path: PathBuf,
-    data: image::RgbaImage,
 }
 
 /// Overlay callback signature: called after main rendering with full PassManager access.
@@ -125,9 +115,6 @@ pub struct RuneSurface {
     /// When true, render solids to an intermediate texture and blit to the surface.
     /// This matches the demo-app default and is often more robust across platforms during resize.
     use_intermediate: bool,
-    /// When true, use unified rendering (Phase 3) for optimal z-ordering across all draw types.
-    /// This renders solids, text, images, and SVGs in a single pass sorted by z-index.
-    use_unified_rendering: bool,
     /// When true, positions are interpreted as logical pixels and scaled by dpi_scale in PassManager.
     logical_pixels: bool,
     /// Current DPI scale factor (e.g., 2.0 on Retina).
@@ -136,9 +123,6 @@ pub struct RuneSurface {
     ui_scale: f32,
     /// Optional overlay callback for post-render passes (e.g., SVG overlays)
     overlay: Option<OverlayCallback>,
-    /// Channel for receiving loaded images from background thread
-    image_loader_tx: Sender<PathBuf>,
-    image_loader_rx: Receiver<LoadedImageData>,
 }
 
 impl RuneSurface {
@@ -151,23 +135,6 @@ impl RuneSurface {
         let pass = PassManager::new(device.clone(), surface_format);
         let allocator = RenderAllocator::new(device.clone());
 
-        // Create channels for async image loading
-        let (load_tx, load_rx) = channel();
-        let (result_tx, result_rx) = channel();
-
-        // Spawn background thread for image loading
-        thread::spawn(move || {
-            while let Ok(path) = load_rx.recv() {
-                match image::open(&path) {
-                    Ok(img) => {
-                        let rgba = img.to_rgba8();
-                        let _ = result_tx.send(LoadedImageData { path, data: rgba });
-                    }
-                    Err(_e) => {}
-                }
-            }
-        });
-
         Self {
             device,
             queue,
@@ -176,13 +143,10 @@ impl RuneSurface {
             direct: false,
             preserve_surface: false,
             use_intermediate: true,
-            use_unified_rendering: false, // Disabled by default - text/image/SVG not yet integrated
             logical_pixels: true,
             dpi_scale: 1.0,
             ui_scale: 1.0,
             overlay: None,
-            image_loader_tx: load_tx,
-            image_loader_rx: result_rx,
         }
     }
 
@@ -220,10 +184,6 @@ impl RuneSurface {
     pub fn set_use_intermediate(&mut self, use_it: bool) {
         self.use_intermediate = use_it;
     }
-    /// Enable or disable unified rendering (Phase 3) for optimal z-ordering.
-    pub fn set_use_unified_rendering(&mut self, use_it: bool) {
-        self.use_unified_rendering = use_it;
-    }
     /// Enable or disable logical pixel interpretation.
     pub fn set_logical_pixels(&mut self, on: bool) {
         self.logical_pixels = on;
@@ -256,51 +216,6 @@ impl RuneSurface {
             .ensure_intermediate_texture(&mut self.allocator, width, height);
     }
 
-    /// Upload a loaded image from background thread to GPU
-    fn upload_loaded_image(&mut self, loaded: LoadedImageData) {
-        let (width, height) = loaded.data.dimensions();
-        let device = self.pass.device();
-
-        let tex = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(&format!("async-image:{}", loaded.path.display())),
-            size: wgpu::Extent3d {
-                width: width.max(1),
-                height: height.max(1),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        self.queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &tex,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &loaded.data,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(width * 4),
-                rows_per_image: Some(height),
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
-
-        // Store in cache
-        self.pass
-            .store_loaded_image(&loaded.path, Arc::new(tex), width, height);
-    }
-
     /// Begin a canvas frame of the given size (in pixels).
     pub fn begin_frame(&self, width: u32, height: u32) -> Canvas {
         let vp = Viewport { width, height };
@@ -319,11 +234,6 @@ impl RuneSurface {
 
     /// Finish the frame by rendering accumulated commands to the provided surface texture.
     pub fn end_frame(&mut self, frame: wgpu::SurfaceTexture, canvas: Canvas) -> Result<()> {
-        // Process any loaded images from background thread
-        while let Ok(loaded) = self.image_loader_rx.try_recv() {
-            self.upload_loaded_image(loaded);
-        }
-
         // Keep passes in sync with DPI/logical settings
         self.pass.set_scale_factor(self.dpi_scale);
         self.pass.set_logical_pixels(self.logical_pixels);
@@ -367,295 +277,157 @@ impl RuneSurface {
         self.pass
             .ensure_depth_texture(&mut self.allocator, width, height);
 
-        // Choose rendering path based on use_unified_rendering flag
-        if self.use_unified_rendering {
-            // Unified rendering path: render solids + text + images + SVGs
-            // together via PassManager::render_unified for consistent z-depth.
+        // Extract unified scene data (solids + text/image/svg draws) from the display list.
+        let unified_scene = engine_core::upload_display_list_unified(
+            &mut self.allocator,
+            &self.queue,
+            &list,
+        )?;
 
-            // Extract unified scene data (solids + text/image/svg draws) from the display list.
-            let unified_scene = engine_core::upload_display_list_unified(
-                &mut self.allocator,
-                &self.queue,
-                &list,
-            )?;
+        // Sort SVG draws by z-index
+        let mut svg_draws = canvas.svg_draws.clone();
+        svg_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
 
-            // Sort SVG draws by z-index
-            let mut svg_draws = canvas.svg_draws.clone();
-            svg_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
+        // Sort image draws by z-index and prepare simplified data (for unified pass)
+        let mut image_draws = canvas.image_draws.clone();
+        image_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
 
-            // Sort image draws by z-index and prepare simplified data (for unified pass)
-            let mut image_draws = canvas.image_draws.clone();
-            image_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
-
-            // Convert image draws to simplified format (path, origin, size, z)
-            // Apply transforms and fit calculations here. We synchronously load images
-            // via PassManager so that they appear on the very first frame, without
-            // requiring a scroll/resize to trigger a second redraw.
-            //
-            // NOTE: Origins in `canvas.image_draws` are already in logical coordinates;
-            // they will be scaled by PassManager via logical_pixels/dpi.
-            let mut prepared_images: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)> =
-                Vec::new();
-            for (path, origin, size, fit, z, transform) in image_draws.iter() {
-                // Synchronously load (or fetch from cache) to ensure the texture
-                // is available for this frame. This mirrors the demo-app unified
-                // path and avoids images only appearing after a later redraw.
-                if let Some((tex_view, img_w, img_h)) =
-                    self.pass.load_image_to_view(std::path::Path::new(path), &self.queue)
-                {
-                    drop(tex_view); // Only need dimensions here
-                    let transformed_origin = apply_transform_to_point(*origin, *transform);
-                    let (render_origin, render_size) = calculate_image_fit(
-                        transformed_origin,
-                        *size,
-                        img_w as f32,
-                        img_h as f32,
-                        *fit,
-                    );
-                    prepared_images.push((path.clone(), render_origin, render_size, *z));
-                }
+        // Convert image draws to simplified format (path, origin, size, z)
+        // Apply transforms and fit calculations here. We synchronously load images
+        // via PassManager so that they appear on the very first frame, without
+        // requiring a scroll/resize to trigger a second redraw.
+        //
+        // NOTE: Origins in `canvas.image_draws` are already in logical coordinates;
+        // they will be scaled by PassManager via logical_pixels/dpi.
+        let mut prepared_images: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)> =
+            Vec::new();
+        for (path, origin, size, fit, z, transform) in image_draws.iter() {
+            // Synchronously load (or fetch from cache) to ensure the texture
+            // is available for this frame. This mirrors the demo-app unified
+            // path and avoids images only appearing after a later redraw.
+            if let Some((tex_view, img_w, img_h)) =
+                self.pass.load_image_to_view(std::path::Path::new(path), &self.queue)
+            {
+                drop(tex_view); // Only need dimensions here
+                let transformed_origin = apply_transform_to_point(*origin, *transform);
+                let (render_origin, render_size) = calculate_image_fit(
+                    transformed_origin,
+                    *size,
+                    img_w as f32,
+                    img_h as f32,
+                    *fit,
+                );
+                prepared_images.push((path.clone(), render_origin, render_size, *z));
             }
+        }
 
-            // Merge glyphs supplied explicitly via Canvas (draw_text_run/draw_text_direct)
-            // with text runs extracted from the display list for unified text rendering.
-            let mut glyph_draws = canvas.glyph_draws.clone();
+        // Merge glyphs supplied explicitly via Canvas (draw_text_run/draw_text_direct)
+        // with text runs extracted from the display list for unified text rendering.
+        let mut glyph_draws = canvas.glyph_draws.clone();
 
-            if let Some(ref provider) = canvas.text_provider {
-                // Reuse the logical pixel scale used by PassManager for solids so
-                // text aligns with other geometry.
-                let logical_scale = if self.logical_pixels {
-                    let s = if self.dpi_scale.is_finite() && self.dpi_scale > 0.0 {
-                        self.dpi_scale
-                    } else {
-                        1.0
-                    };
-                    let u = if self.ui_scale.is_finite() && self.ui_scale > 0.0 {
-                        self.ui_scale
-                    } else {
-                        1.0
-                    };
-                    (s * u).max(0.0001)
-                } else {
-                    1.0
-                };
-
-                let sf = if self.dpi_scale.is_finite() && self.dpi_scale > 0.0 {
+        if let Some(ref provider) = canvas.text_provider {
+            // Reuse the logical pixel scale used by PassManager for solids so
+            // text aligns with other geometry.
+            let logical_scale = if self.logical_pixels {
+                let s = if self.dpi_scale.is_finite() && self.dpi_scale > 0.0 {
                     self.dpi_scale
                 } else {
                     1.0
                 };
-                let snap = |v: f32| -> f32 { (v * sf).round() / sf };
-
-                for text_draw in &unified_scene.text_draws {
-                    let run = &text_draw.run;
-                    let [a, b, c, d, e, f] = text_draw.transform.m;
-
-                    // Apply full affine transform (scale + translate) to the run origin
-                    let rx = a * run.pos[0] + c * run.pos[1] + e;
-                    let ry = b * run.pos[0] + d * run.pos[1] + f;
-
-                    // Infer uniform scale from the linear part of the transform
-                    let sx = (a * a + b * b).sqrt();
-                    let sy = (c * c + d * d).sqrt();
-                    let mut s = if sx.is_finite() && sy.is_finite() {
-                        if sx > 0.0 && sy > 0.0 {
-                            (sx + sy) * 0.5
-                        } else {
-                            sx.max(sy).max(1.0)
-                        }
-                    } else {
-                        1.0
-                    };
-                    if !s.is_finite() || s <= 0.0 {
-                        s = 1.0;
-                    }
-                    s *= logical_scale;
-
-                    let scaled_size = (run.size * s).max(1.0);
-                    let run_for_provider = engine_core::TextRun {
-                        text: run.text.clone(),
-                        pos: [0.0, 0.0],
-                        size: scaled_size,
-                        color: run.color,
-                    };
-
-                    // Convert origin to physical pixels if logical mode is enabled
-                    let rx_px = rx * logical_scale;
-                    let ry_px = ry * logical_scale;
-                    let run_origin_x = snap(rx_px);
-
-                    let baseline_y = if let Some(m) = provider.line_metrics(scaled_size) {
-                        let asc = m.ascent;
-                        snap(ry_px + asc) - asc
-                    } else {
-                        snap(ry_px)
-                    };
-
-                    // Rasterize glyphs for this run and push into glyph_draws
-                    let glyphs = engine_core::rasterize_run_cached(provider.as_ref(), &run_for_provider);
-                    for g in glyphs.iter() {
-                        let mut origin = [run_origin_x + g.offset[0], baseline_y + g.offset[1]];
-                        if scaled_size <= 15.0 {
-                            origin[0] = snap(origin[0]);
-                            origin[1] = snap(origin[1]);
-                        }
-                        glyph_draws.push((origin, g.clone(), run.color, text_draw.z));
-                    }
-                }
-            }
-
-            // Unified solids + text/images/SVGs pass
-            self.pass.render_unified(
-                &mut encoder,
-                &mut self.allocator,
-                &view,
-                width,
-                height,
-                &unified_scene.gpu_scene,
-                &glyph_draws,
-                &svg_draws,
-                &prepared_images,
-                clear_wgpu,
-                self.direct,
-                &self.queue,
-                self.preserve_surface,
-            );
-        } else {
-            // Legacy path: Separate passes for each draw type
-
-            // Upload geometry to GPU for the legacy path
-            let scene = upload_display_list(&mut self.allocator, &self.queue, &list)?;
-            
-            // Render solids (text is now handled separately via glyph_draws for simplicity)
-            if self.use_intermediate {
-                self.pass.render_frame_with_intermediate(
-                    &mut encoder,
-                    &mut self.allocator,
-                    &view,
-                    width,
-                    height,
-                    &scene,
-                    clear_wgpu,
-                    self.direct,
-                    &self.queue,
-                    self.preserve_surface, // Preserve intermediate texture if requested
-                );
-            } else {
-                self.pass.render_frame(
-                    &mut encoder,
-                    &mut self.allocator,
-                    &view,
-                    width,
-                    height,
-                    &scene,
-                    clear_wgpu,
-                    self.direct,
-                    &self.queue,
-                    self.preserve_surface,
-                );
-            }
-
-            // Draw all glyph masks in a single batched call (critical for performance!)
-            if !canvas.glyph_draws.is_empty() {
-                let batch: Vec<_> = canvas
-                    .glyph_draws
-                    .iter()
-                    .map(|(origin, glyph, color, _z)| {
-                        // origin already includes glyph.offset from when it was added to glyph_draws
-                        (glyph.mask.clone(), *origin, *color)
-                    })
-                    .collect();
-
-                self.pass
-                    .draw_text_mask(&mut encoder, &view, width, height, &batch, &self.queue, -1000.0);
-            }
-
-            // Sort SVG draws by z-index to respect layering
-            let mut svg_draws = canvas.svg_draws.clone();
-            svg_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
-
-            // Rasterize and draw any queued SVGs
-            for (path, origin, max_size, style, _z, transform) in svg_draws.iter() {
-                // Apply transform to origin
-                let transformed_origin = apply_transform_to_point(*origin, *transform);
-
-                // First get 1x size
-                if let Some((_view1x, w1, h1)) = self.pass.rasterize_svg_to_view(
-                    std::path::Path::new(path),
-                    1.0,
-                    *style,
-                    &self.queue,
-                ) {
-                    let base_w = w1.max(1) as f32;
-                    let base_h = h1.max(1) as f32;
-                    let scale = (max_size[0] / base_w).min(max_size[1] / base_h).max(0.0);
-                    let (view_scaled, sw, sh) = if let Some((v, w, h)) = self
-                        .pass
-                        .rasterize_svg_to_view(std::path::Path::new(path), scale, *style, &self.queue)
-                    {
-                        (v, w as f32, h as f32)
-                    } else {
-                        continue;
-                    };
-                    // Draw at transformed origin with scaled size
-                    self.pass.draw_image_quad(
-                        &mut encoder,
-                        &view,
-                        transformed_origin,
-                        [sw, sh],
-                        &view_scaled,
-                        &self.queue,
-                        width,
-                        height,
-                    );
-                }
-            }
-
-            // Sort image draws by z-index to respect layering
-            let mut image_draws = canvas.image_draws.clone();
-            image_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
-
-            // Draw any queued raster images
-            for (path, origin, size, fit, _z, transform) in image_draws.iter() {
-                // Try to get the image from cache (non-blocking)
-                if let Some((tex_view, img_w, img_h)) =
-                    self.pass.try_get_image_view(std::path::Path::new(path))
-                {
-                    // Apply transform to origin
-                    let transformed_origin = apply_transform_to_point(*origin, *transform);
-
-                    // Image is ready - calculate actual render size and position based on fit mode
-                    let (render_origin, render_size) = calculate_image_fit(
-                        transformed_origin,
-                        *size,
-                        img_w as f32,
-                        img_h as f32,
-                        *fit,
-                    );
-
-                    self.pass.draw_image_quad(
-                        &mut encoder,
-                        &view,
-                        render_origin,
-                        render_size,
-                        &tex_view,
-                        &self.queue,
-                        width,
-                        height,
-                    );
+                let u = if self.ui_scale.is_finite() && self.ui_scale > 0.0 {
+                    self.ui_scale
                 } else {
-                    // Image not ready - request async load if not already loading
-                    if !self.pass.is_image_ready(std::path::Path::new(path)) {
-                        self.pass.request_image_load(std::path::Path::new(path));
-                        let _ = self.image_loader_tx.send(path.clone());
+                    1.0
+                };
+                (s * u).max(0.0001)
+            } else {
+                1.0
+            };
+
+            let sf = if self.dpi_scale.is_finite() && self.dpi_scale > 0.0 {
+                self.dpi_scale
+            } else {
+                1.0
+            };
+            let snap = |v: f32| -> f32 { (v * sf).round() / sf };
+
+            for text_draw in &unified_scene.text_draws {
+                let run = &text_draw.run;
+                let [a, b, c, d, e, f] = text_draw.transform.m;
+
+                // Apply full affine transform (scale + translate) to the run origin
+                let rx = a * run.pos[0] + c * run.pos[1] + e;
+                let ry = b * run.pos[0] + d * run.pos[1] + f;
+
+                // Infer uniform scale from the linear part of the transform
+                let sx = (a * a + b * b).sqrt();
+                let sy = (c * c + d * d).sqrt();
+                let mut s = if sx.is_finite() && sy.is_finite() {
+                    if sx > 0.0 && sy > 0.0 {
+                        (sx + sy) * 0.5
+                    } else {
+                        sx.max(sy).max(1.0)
                     }
-                    // Image will appear on next frame after background load completes
+                } else {
+                    1.0
+                };
+                if !s.is_finite() || s <= 0.0 {
+                    s = 1.0;
+                }
+                s *= logical_scale;
+
+                let scaled_size = (run.size * s).max(1.0);
+                let run_for_provider = engine_core::TextRun {
+                    text: run.text.clone(),
+                    pos: [0.0, 0.0],
+                    size: scaled_size,
+                    color: run.color,
+                };
+
+                // Convert origin to physical pixels if logical mode is enabled
+                let rx_px = rx * logical_scale;
+                let ry_px = ry * logical_scale;
+                let run_origin_x = snap(rx_px);
+
+                let baseline_y = if let Some(m) = provider.line_metrics(scaled_size) {
+                    let asc = m.ascent;
+                    snap(ry_px + asc) - asc
+                } else {
+                    snap(ry_px)
+                };
+
+                // Rasterize glyphs for this run and push into glyph_draws
+                let glyphs = engine_core::rasterize_run_cached(provider.as_ref(), &run_for_provider);
+                for g in glyphs.iter() {
+                    let mut origin = [run_origin_x + g.offset[0], baseline_y + g.offset[1]];
+                    if scaled_size <= 15.0 {
+                        origin[0] = snap(origin[0]);
+                        origin[1] = snap(origin[1]);
+                    }
+                    glyph_draws.push((origin, g.clone(), run.color, text_draw.z));
                 }
             }
         }
 
+        // Unified solids + text/images/SVGs pass
+        self.pass.render_unified(
+            &mut encoder,
+            &mut self.allocator,
+            &view,
+            width,
+            height,
+            &unified_scene.gpu_scene,
+            &glyph_draws,
+            &svg_draws,
+            &prepared_images,
+            clear_wgpu,
+            self.direct,
+            &self.queue,
+            self.preserve_surface,
+        );
+
         // Call overlay callback last so overlays (e.g., devtools, debug UI)
-        // are guaranteed to draw above SVGs and raster images.
+        // are guaranteed to draw above all other content.
         if let Some(ref mut overlay_fn) = self.overlay {
             overlay_fn(
                 &mut self.pass,

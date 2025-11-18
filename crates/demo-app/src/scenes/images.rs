@@ -679,17 +679,4 @@ impl Scene for ImagesScene {
         }
     }
 
-    fn paint_text_overlay(
-        &self,
-        _passes: &mut PassManager,
-        _encoder: &mut wgpu::CommandEncoder,
-        _surface_view: &wgpu::TextureView,
-        _queue: &wgpu::Queue,
-        _width: u32,
-        _height: u32,
-        _provider_rgb: Option<&dyn engine_core::TextProvider>,
-        _provider_bgr: Option<&dyn engine_core::TextProvider>,
-        _provider_gray: Option<&dyn engine_core::TextProvider>,
-    ) {
-    }
 }

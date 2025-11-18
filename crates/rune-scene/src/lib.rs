@@ -105,8 +105,7 @@ pub fn run() -> Result<()> {
         config.format,
     );
     surf.set_use_intermediate(true);
-    // Enable unified rendering (Phase 3) for optimal z-ordering
-    surf.set_use_unified_rendering(true);
+    // Unified rendering (Phase 3) is now the only rendering path
     // Keep direct=false so PassManager uses the offscreen unified path.
     surf.set_logical_pixels(true);
     surf.set_dpi_scale(scale_factor);
