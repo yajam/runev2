@@ -6,11 +6,11 @@ use engine_core::{Brush, ColorLinPremul, Rect};
 /// Phase 0: Just a solid background to verify rendering pipeline works
 pub struct ViewportContent {
     buttons: Vec<elements::Button>,
-    checkboxes: Vec<CheckboxData>,
-    radios: Vec<RadioData>,
-    input_boxes: Vec<elements::InputBox>,
-    text_areas: Vec<elements::TextArea>,
-    selects: Vec<SelectData>,
+    pub(crate) checkboxes: Vec<CheckboxData>,
+    pub(crate) radios: Vec<RadioData>,
+    pub(crate) input_boxes: Vec<elements::InputBox>,
+    pub(crate) text_areas: Vec<elements::TextArea>,
+    pub(crate) selects: Vec<SelectData>,
     images: Vec<ImageData>,
     wrapped_paragraphs: Vec<WrappedParagraph>,
     col1_x: f32,

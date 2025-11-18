@@ -18,10 +18,20 @@ use zones::{
 };
 
 /// Render zone backgrounds and borders (viewport, toolbar, sidebar).
+///
+/// Z-index strategy:
+/// - Viewport + sidebar chrome use a low z so UI widgets rendered later
+///   (checkboxes, text, etc.) appear above their own backgrounds.
+/// - Toolbar background/border use a very high z so scrolling viewport
+///   content never appears on top of the toolbar; it visually passes
+///   “under” the toolbar as you scroll.
 fn render_zones(canvas: &mut rune_surface::Canvas, zone_manager: &ZoneManager) {
-    const Z: i32 = 0;
-
     for zone_id in [ZoneId::Viewport, ZoneId::Toolbar, ZoneId::Sidebar] {
+        let z = match zone_id {
+            ZoneId::Toolbar => 9000,
+            _ => 0,
+        };
+
         let rect = zone_manager.layout.get_zone(zone_id);
         let style = zone_manager.get_style(zone_id);
 
@@ -32,7 +42,7 @@ fn render_zones(canvas: &mut rune_surface::Canvas, zone_manager: &ZoneManager) {
             rect.w,
             rect.h,
             Brush::Solid(style.bg_color),
-            Z,
+            z,
         );
 
         // Border (draw as four rectangles)
@@ -40,7 +50,7 @@ fn render_zones(canvas: &mut rune_surface::Canvas, zone_manager: &ZoneManager) {
         let border_brush = Brush::Solid(style.border_color);
 
         // Top border
-        canvas.fill_rect(rect.x, rect.y, rect.w, bw, border_brush.clone(), Z);
+        canvas.fill_rect(rect.x, rect.y, rect.w, bw, border_brush.clone(), z);
         // Bottom border
         canvas.fill_rect(
             rect.x,
@@ -48,12 +58,12 @@ fn render_zones(canvas: &mut rune_surface::Canvas, zone_manager: &ZoneManager) {
             rect.w,
             bw,
             border_brush.clone(),
-            Z,
+            z,
         );
         // Left border
-        canvas.fill_rect(rect.x, rect.y, bw, rect.h, border_brush.clone(), Z);
+        canvas.fill_rect(rect.x, rect.y, bw, rect.h, border_brush.clone(), z);
         // Right border
-        canvas.fill_rect(rect.x + rect.w - bw, rect.y, bw, rect.h, border_brush, Z);
+        canvas.fill_rect(rect.x + rect.w - bw, rect.y, bw, rect.h, border_brush, z);
     }
 }
 
@@ -230,8 +240,6 @@ pub fn run() -> Result<()> {
                     WindowEvent::CursorMoved { position, .. } => {
                         cursor_position = Some((position.x as f32, position.y as f32));
 
-                        // TODO: Re-enable interaction code as we add UI elements incrementally
-                        /*
                         // Phase 5: Handle mouse drag for selection extension
                         let logical_x = position.x as f32 / scale_factor;
                         let logical_y = position.y as f32 / scale_factor;
@@ -295,7 +303,6 @@ pub fn run() -> Result<()> {
                                 break;
                             }
                         }
-                        */
                     }
                     WindowEvent::MouseWheel { delta, .. } => {
                         // Handle scrolling in viewport
@@ -364,8 +371,6 @@ pub fn run() -> Result<()> {
                                 }
                             }
                         }
-                        // TODO: Re-enable viewport UI element handling as we add them incrementally
-                        /*
                         let mut viewport_ir_lock = viewport_ir.lock().unwrap();
 
                         if button == winit::event::MouseButton::Left
@@ -783,11 +788,8 @@ pub fn run() -> Result<()> {
                                 }
                             }
                         }
-                        */
                     }
                     WindowEvent::KeyboardInput { event, .. } => {
-                        // TODO: Re-enable as we add UI elements incrementally
-                        /*
                         use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 
                         let mut viewport_ir_lock = viewport_ir.lock().unwrap();
@@ -1212,7 +1214,6 @@ pub fn run() -> Result<()> {
                                 }
                             }
                         }
-                        */
                     }
                     WindowEvent::Resized(new_size) => {
                         size = new_size;
@@ -1317,8 +1318,6 @@ pub fn run() -> Result<()> {
                             let delta_time = (now - last_frame_time).as_secs_f32();
                             last_frame_time = now;
 
-                            // TODO: Re-enable cursor blink updates when we add text inputs
-                            /*
                             {
                                 let mut viewport_ir_lock = viewport_ir.lock().unwrap();
                                 for input_box in viewport_ir_lock.input_boxes.iter_mut() {
@@ -1337,7 +1336,6 @@ pub fn run() -> Result<()> {
                                     window.request_redraw();
                                 }
                             } // Release viewport_ir lock
-                            */
 
                             // Render sample UI elements in viewport zone with local coordinates.
                             let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
