@@ -1011,7 +1011,7 @@ impl InputBox {
                         scroll_x: self.scroll_x,
                         scroll_y: 0.0, // No vertical scroll for InputBox
                         color: Color::rgba(63, 130, 246, 80),
-                        z: z + 2,
+                        z: z + 2, // Selection behind text
                     };
 
                     selection_renderer::render_selection(
@@ -1030,7 +1030,7 @@ impl InputBox {
                 self.text_size,
                 self.text_color,
                 provider,
-                z + 1, // Text z-index above box background
+                z + 3, // Text z-index above selection
             );
 
             // Render cursor using shared caret renderer
@@ -1042,7 +1042,7 @@ impl InputBox {
                         scroll_y: 0.0, // No vertical scroll for InputBox
                         color: Color::rgba(63, 130, 246, 255),
                         width: 1.5,
-                        z: z + 3,
+                        z: z + 4, // Caret on top of text
                     };
 
                     caret_renderer::render_caret(
@@ -1063,7 +1063,7 @@ impl InputBox {
                     self.text_size,
                     Color::rgba(120, 120, 130, 255),
                     provider,
-                    z + 1, // Placeholder z-index above box background
+                    z + 3, // Placeholder z-index matches text
                 );
             }
 
@@ -1080,7 +1080,7 @@ impl InputBox {
                 };
                 caret.cmds.push(PathCmd::MoveTo([cx, cy0]));
                 caret.cmds.push(PathCmd::LineTo([cx, cy1]));
-                canvas.stroke_path(caret, 1.5, Color::rgba(63, 130, 246, 255), z + 3);
+                canvas.stroke_path(caret, 1.5, Color::rgba(63, 130, 246, 255), z + 4);
             }
         }
 

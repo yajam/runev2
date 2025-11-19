@@ -150,10 +150,8 @@ fn global_glyph_run_cache() -> &'static GlyphRunCache {
     GLYPH_RUN_CACHE.get_or_init(|| GlyphRunCache::new(2048))
 }
 
-/// Convert an 8-bit grayscale coverage mask to an RGB subpixel coverage mask.
-/// A very lightweight 3-tap kernel is used to distribute coverage among subpixels.
-/// - For RGB orientation, left/center/right contributions map to R/G/B respectively.
-/// - For BGR orientation, mapping is mirrored.
+/// Convert an 8-bit grayscale coverage mask to an RGB subpixel mask.
+/// Uses a gentle subpixel shift for improved clarity on small text.
 pub fn grayscale_to_subpixel_rgb(
     width: u32,
     height: u32,
@@ -164,8 +162,9 @@ pub fn grayscale_to_subpixel_rgb(
     let h = height as usize;
     assert_eq!(gray.len(), w * h);
     let mut out = vec![0u8; w * h * 4];
-    // Approximate sampling at x-1/3, x, x+1/3 via linear interpolation between neighbors.
-    // This tends to show clearer differences between RGB and BGR orientations.
+
+    // Gentle subpixel rendering: slight horizontal shift per channel
+    // Much lighter than the original 3-tap kernel to avoid blurring
     for y in 0..h {
         for x in 0..w {
             let c0 = gray[y * w + x] as f32 / 255.0;
@@ -179,21 +178,21 @@ pub fn grayscale_to_subpixel_rgb(
             } else {
                 c0
             };
-            let sample_left = (2.0 / 3.0) * c0 + (1.0 / 3.0) * cl;
+
+            // Very light blending (10% neighbor influence instead of 33%)
+            let sample_left = 0.9 * c0 + 0.1 * cl;
             let sample_center = c0;
-            let sample_right = (2.0 / 3.0) * c0 + (1.0 / 3.0) * cr;
+            let sample_right = 0.9 * c0 + 0.1 * cr;
+
             let (r_cov, g_cov, b_cov) = match orientation {
                 SubpixelOrientation::RGB => (sample_left, sample_center, sample_right),
                 SubpixelOrientation::BGR => (sample_right, sample_center, sample_left),
             };
-            let (r, g, b) = match orientation {
-                SubpixelOrientation::RGB => (r_cov, g_cov, b_cov),
-                SubpixelOrientation::BGR => (b_cov, g_cov, r_cov),
-            };
+
             let i = (y * w + x) * 4;
-            out[i + 0] = (r * 255.0 + 0.5) as u8;
-            out[i + 1] = (g * 255.0 + 0.5) as u8;
-            out[i + 2] = (b * 255.0 + 0.5) as u8;
+            out[i + 0] = (r_cov * 255.0 + 0.5) as u8;
+            out[i + 1] = (g_cov * 255.0 + 0.5) as u8;
+            out[i + 2] = (b_cov * 255.0 + 0.5) as u8;
             out[i + 3] = 0u8; // alpha unused; output premul alpha computed in shader
         }
     }

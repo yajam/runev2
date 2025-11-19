@@ -24,11 +24,7 @@ pub fn days_in_month(year: u32, month: u32) -> u32 {
 /// This is a simplified version - in production you'd use a proper date library
 pub fn first_day_of_month(year: u32, month: u32) -> u32 {
     // Simplified Zeller's congruence algorithm
-    let adjusted_month = if month < 3 {
-        month + 12
-    } else {
-        month
-    };
+    let adjusted_month = if month < 3 { month + 12 } else { month };
     let adjusted_year = if month < 3 { year - 1 } else { year };
 
     let q = 1; // First day of month
@@ -130,9 +126,9 @@ impl ViewportContent {
         // Place hyperlinks just below the subtitle (subtitle_y = 80.0)
         let link_y = 110.0f32;
         let textarea_y = 380.0f32;
-        let image_y = 520.0f32;  // Moved images up to be visible initially
-        let select_y = 640.0f32;  // Moved select down below images
-        let datepicker_y = 700.0f32;  // Date picker after select
+        let image_y = 520.0f32; // Moved images up to be visible initially
+        let select_y = 640.0f32; // Moved select down below images
+        let datepicker_y = 700.0f32; // Date picker after select
         let multiline_y = 780.0f32;
 
         let checkboxes = vec![
@@ -341,7 +337,7 @@ impl ViewportContent {
                 label_color: ColorLinPremul::from_srgba_u8([240, 240, 240, 255]),
                 open: false,
                 focused: false,
-                selected_date: None, // No date selected
+                selected_date: None,    // No date selected
                 current_view_month: 11, // Default to current month (November 2025 demo date)
                 current_view_year: 2025,
                 picker_mode: elements::date_picker::PickerMode::Days,
@@ -466,7 +462,7 @@ impl ViewportContent {
         // Do NOT divide by scale_factor here, as that causes double-scaling issues.
         let _sf = scale_factor; // Keep parameter for future use if needed
         let title_size = 22.0;
-        let subtitle_size = 16.0;
+        let subtitle_size = 12.0;
         let test_line_size = 20.0;
 
         // Basic text content with headers, subtitles, and test lines.

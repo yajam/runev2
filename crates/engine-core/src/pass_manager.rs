@@ -74,6 +74,9 @@ pub struct PassManager {
     #[allow(dead_code)]
     text_mask_atlas_view: wgpu::TextureView,
     text_bind_group: wgpu::BindGroup,
+    // Track atlas region used in previous frame for efficient clearing
+    prev_atlas_max_x: u32,
+    prev_atlas_max_y: u32,
 }
 
 // Vertex structures for unified rendering
@@ -237,6 +240,8 @@ impl PassManager {
             text_mask_atlas,
             text_mask_atlas_view,
             text_bind_group,
+            prev_atlas_max_x: 0,
+            prev_atlas_max_y: 0,
         }
     }
 
@@ -2184,32 +2189,38 @@ impl PassManager {
 
             // Prepare text rendering data before render pass
             let mut text_groups = if !glyph_draws.is_empty() {
-                // Clear the texture atlas before uploading new glyphs to prevent artifacts
-                let clear_size = 4096u32;
-                let clear_data = vec![0u8; (clear_size * clear_size * 4) as usize];
-                queue.write_texture(
-                    wgpu::ImageCopyTexture {
-                        texture: &self.text_mask_atlas,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &clear_data,
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: Some(clear_size * 4),
-                        rows_per_image: Some(clear_size),
-                    },
-                    wgpu::Extent3d {
-                        width: clear_size,
-                        height: clear_size,
-                        depth_or_array_layers: 1,
-                    },
-                );
+                // Clear the atlas region used in the previous frame (efficient partial clear)
+                if self.prev_atlas_max_x > 0 && self.prev_atlas_max_y > 0 {
+                    let clear_width = self.prev_atlas_max_x.min(4096);
+                    let clear_height = self.prev_atlas_max_y.min(4096);
+                    let clear_size = (clear_width * clear_height * 4) as usize;
+                    let clear_data = vec![0u8; clear_size];
+                    queue.write_texture(
+                        wgpu::ImageCopyTexture {
+                            texture: &self.text_mask_atlas,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        &clear_data,
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(clear_width * 4),
+                            rows_per_image: Some(clear_height),
+                        },
+                        wgpu::Extent3d {
+                            width: clear_width,
+                            height: clear_height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                }
 
                 let mut atlas_cursor_x = 0u32;
                 let mut atlas_cursor_y = 0u32;
                 let mut next_row_height = 0u32;
+                let mut atlas_max_x = 0u32;
+                let mut atlas_max_y = 0u32;
                 let mut all_text_groups: Vec<(i32, Vec<TextQuadVtx>)> = Vec::new();
 
                 // Process each z-index group
@@ -2234,6 +2245,10 @@ impl PassManager {
                         next_row_height = 0;
                     }
                     next_row_height = next_row_height.max(h);
+
+                    // Track maximum atlas region used for clearing next frame
+                    atlas_max_x = atlas_max_x.max(atlas_cursor_x + w);
+                    atlas_max_y = atlas_max_y.max(atlas_cursor_y + h);
 
                     queue.write_texture(
                         wgpu::ImageCopyTexture {
@@ -2357,6 +2372,10 @@ impl PassManager {
 
                     text_resources.push((z_index, vbuf, ibuf, indices.len() as u32, z_bg, z_buf));
                 }
+
+                // Store atlas usage for next frame's clearing
+                self.prev_atlas_max_x = atlas_max_x;
+                self.prev_atlas_max_y = atlas_max_y;
 
                 text_resources
             } else {
@@ -2595,32 +2614,39 @@ impl PassManager {
 
         // Prepare text rendering data (same as direct path)
         let mut text_groups_off = if !glyph_draws.is_empty() {
-            // Clear the texture atlas before uploading new glyphs to prevent artifacts
-            let clear_size = 4096u32;
-            let clear_data = vec![0u8; (clear_size * clear_size * 4) as usize];
-            queue.write_texture(
-                wgpu::ImageCopyTexture {
-                    texture: &self.text_mask_atlas,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &clear_data,
-                wgpu::ImageDataLayout {
-                    offset: 0,
-                    bytes_per_row: Some(clear_size * 4),
-                    rows_per_image: Some(clear_size),
-                },
-                wgpu::Extent3d {
-                    width: clear_size,
-                    height: clear_size,
-                    depth_or_array_layers: 1,
-                },
-            );
+            // Clear the atlas region used in the previous frame (efficient partial clear)
+            // Note: Atlas is shared between direct and offscreen paths, so clear here too
+            if self.prev_atlas_max_x > 0 && self.prev_atlas_max_y > 0 {
+                let clear_width = self.prev_atlas_max_x.min(4096);
+                let clear_height = self.prev_atlas_max_y.min(4096);
+                let clear_size = (clear_width * clear_height * 4) as usize;
+                let clear_data = vec![0u8; clear_size];
+                queue.write_texture(
+                    wgpu::ImageCopyTexture {
+                        texture: &self.text_mask_atlas,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &clear_data,
+                    wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(clear_width * 4),
+                        rows_per_image: Some(clear_height),
+                    },
+                    wgpu::Extent3d {
+                        width: clear_width,
+                        height: clear_height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
 
             let mut atlas_cursor_x = 0u32;
             let mut atlas_cursor_y = 0u32;
             let mut next_row_height = 0u32;
+            let mut atlas_max_x = 0u32;
+            let mut atlas_max_y = 0u32;
             let mut all_text_groups: Vec<(i32, Vec<TextQuadVtx>)> = Vec::new();
 
             // Process each z-index group
@@ -2638,6 +2664,10 @@ impl PassManager {
                     next_row_height = 0;
                 }
                 next_row_height = next_row_height.max(h);
+
+                // Track maximum atlas region used for clearing next frame
+                atlas_max_x = atlas_max_x.max(atlas_cursor_x + w);
+                atlas_max_y = atlas_max_y.max(atlas_cursor_y + h);
 
                 queue.write_texture(
                     wgpu::ImageCopyTexture {
@@ -2749,6 +2779,10 @@ impl PassManager {
 
                 text_resources.push((z_index, vbuf, ibuf, indices.len() as u32, z_bg, z_buf));
             }
+
+            // Store atlas usage for next frame's clearing
+            self.prev_atlas_max_x = atlas_max_x;
+            self.prev_atlas_max_y = atlas_max_y;
 
             text_resources
         } else {
