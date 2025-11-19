@@ -44,7 +44,7 @@ impl DevTools {
         ZoneStyle {
             bg_color: ColorLinPremul::from_srgba_u8([40, 50, 70, 255]), // Much brighter to be clearly visible
             border_color: ColorLinPremul::from_srgba_u8([100, 120, 150, 255]), // Very bright border
-            border_width: 3.0,                                          // Even thicker border
+            border_width: 1.0,
         }
     }
 

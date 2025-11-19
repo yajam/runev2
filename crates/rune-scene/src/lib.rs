@@ -2126,9 +2126,12 @@ pub fn run() -> Result<()> {
                                 .with_stroke(elements_color)
                                 .with_stroke_width(2.0);
 
+                            let elements_icon_x = elements_x + 8.0; // Add padding from left edge
+                            let elements_icon_y = elements_y + (tab_height - button_size) / 2.0; // Center vertically
+
                             canvas.draw_svg_styled(
                                 "images/square-mouse-pointer.svg",
-                                [elements_x, elements_y],
+                                [elements_icon_x, elements_icon_y],
                                 [button_size, button_size],
                                 icon_style_elements,
                                 10250,
@@ -2139,9 +2142,12 @@ pub fn run() -> Result<()> {
                                 .with_stroke(console_color)
                                 .with_stroke_width(2.0);
 
+                            let console_icon_x = console_x + 8.0; // Add padding from left edge
+                            let console_icon_y = console_y + (tab_height - button_size) / 2.0; // Center vertically
+
                             canvas.draw_svg_styled(
                                 "images/square-terminal.svg",
-                                [console_x, console_y],
+                                [console_icon_x, console_icon_y],
                                 [button_size, button_size],
                                 icon_style_console,
                                 10250,
@@ -2161,10 +2167,12 @@ pub fn run() -> Result<()> {
                             );
 
                             // Tab labels
+                            let text_y = elements_y + tab_height / 2.0 + 4.0; // Center vertically with slight offset for baseline
+
                             canvas.draw_text_run(
                                 [
-                                    elements_x + button_size + icon_text_gap + 8.0,
-                                    tab_height - 6.0,
+                                    elements_icon_x + button_size + icon_text_gap,
+                                    text_y,
                                 ],
                                 "Elements".to_string(),
                                 11.0,
@@ -2174,8 +2182,8 @@ pub fn run() -> Result<()> {
 
                             canvas.draw_text_run(
                                 [
-                                    console_x + button_size + icon_text_gap + 8.0,
-                                    tab_height - 6.0,
+                                    console_icon_x + button_size + icon_text_gap,
+                                    text_y,
                                 ],
                                 "Console".to_string(),
                                 11.0,
