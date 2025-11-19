@@ -2,8 +2,9 @@ Features
 
 - [ ] Text selection and highlight
 - [x] Datepicker
-- [ ] Hyperlink element
+- [x] Hyperlink element
 - [ ] Box in elements
+- [ ] All elements should take dynamic parameters for styling
 - [ ] Add Rune-ir
 - [ ] Rune-layout using taffy
 - [ ] Address input, forward, backward, refresh implementation in toolbar
@@ -14,6 +15,7 @@ Features
 - [ ] Full svg vector support
 - [ ] Pdf export
 - [ ] Elements, Console and Network implementation in devtools
+- [ ] Light mode
 
 Bugs
 
@@ -25,3 +27,7 @@ Bugs
 Performance
 
 - [ ] Load delay for elements
+
+Improvements
+
+- [ ] Select needs a placeholder

@@ -70,29 +70,71 @@ impl From<SvgStyle> for SvgStyleKey {
 }
 
 /// Bucketed scale factor used for raster cache keys.
+/// Provides more granular buckets to support icons at various sizes while maintaining cache efficiency.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ScaleBucket {
-    X05,
-    X1,
-    X2,
+    X025,  // 0.25x
+    X05,   // 0.5x
+    X075,  // 0.75x
+    X1,    // 1.0x
+    X125,  // 1.25x
+    X15,   // 1.5x
+    X2,    // 2.0x
+    X25,   // 2.5x
+    X3,    // 3.0x
+    X4,    // 4.0x
+    X5,    // 5.0x
+    X6,    // 6.0x
+    X8,    // 8.0x
 }
 
 impl ScaleBucket {
     pub fn from_scale(s: f32) -> Self {
-        if s < 0.75 {
+        // Bucket to nearest scale factor
+        if s < 0.375 {
+            ScaleBucket::X025
+        } else if s < 0.625 {
             ScaleBucket::X05
-        } else if s < 1.5 {
+        } else if s < 0.875 {
+            ScaleBucket::X075
+        } else if s < 1.125 {
             ScaleBucket::X1
-        } else {
+        } else if s < 1.375 {
+            ScaleBucket::X125
+        } else if s < 1.75 {
+            ScaleBucket::X15
+        } else if s < 2.25 {
             ScaleBucket::X2
+        } else if s < 2.75 {
+            ScaleBucket::X25
+        } else if s < 3.5 {
+            ScaleBucket::X3
+        } else if s < 4.5 {
+            ScaleBucket::X4
+        } else if s < 5.5 {
+            ScaleBucket::X5
+        } else if s < 7.0 {
+            ScaleBucket::X6
+        } else {
+            ScaleBucket::X8
         }
     }
 
     pub fn as_f32(self) -> f32 {
         match self {
+            ScaleBucket::X025 => 0.25,
             ScaleBucket::X05 => 0.5,
+            ScaleBucket::X075 => 0.75,
             ScaleBucket::X1 => 1.0,
+            ScaleBucket::X125 => 1.25,
+            ScaleBucket::X15 => 1.5,
             ScaleBucket::X2 => 2.0,
+            ScaleBucket::X25 => 2.5,
+            ScaleBucket::X3 => 3.0,
+            ScaleBucket::X4 => 4.0,
+            ScaleBucket::X5 => 5.0,
+            ScaleBucket::X6 => 6.0,
+            ScaleBucket::X8 => 8.0,
         }
     }
 }
@@ -649,4 +691,66 @@ pub fn svg_intrinsic_size(path: &Path) -> Option<(u32, u32)> {
     let tree = usvg::Tree::from_data(&data, &opt).ok()?;
     let size = tree.size().to_int_size();
     Some((size.width().max(1), size.height().max(1)))
+}
+
+/// Determine if an SVG requires rasterization or can be rendered as vector geometry.
+/// Returns true if the SVG uses features that cannot be expressed analytically
+/// (filters, patterns, masks, gradients, images, text, etc.)
+pub fn svg_requires_rasterization(path: &Path) -> Option<bool> {
+    let data = std::fs::read(path).ok()?;
+    let mut opt = usvg::Options::default();
+    opt.resources_dir = path.parent().map(|p| p.to_path_buf());
+    let tree = usvg::Tree::from_data(&data, &opt).ok()?;
+
+    fn check_node(node: &usvg::Node) -> bool {
+        match node {
+            usvg::Node::Path(p) => {
+                // Check if fill uses non-solid paint (gradients, patterns)
+                if let Some(fill) = p.fill() {
+                    if !matches!(fill.paint(), usvg::Paint::Color(_)) {
+                        return true; // Gradient or pattern fill
+                    }
+                }
+
+                // Check if stroke uses non-solid paint
+                if let Some(stroke) = p.stroke() {
+                    if !matches!(stroke.paint(), usvg::Paint::Color(_)) {
+                        return true; // Gradient or pattern stroke
+                    }
+                }
+
+                // Check subroots (e.g., clipPath definitions)
+                let mut needs_raster = false;
+                node.subroots(|subroot| {
+                    if check_group(subroot) {
+                        needs_raster = true;
+                    }
+                });
+                needs_raster
+            }
+            usvg::Node::Image(_) => {
+                // Embedded images require rasterization
+                true
+            }
+            usvg::Node::Text(_) => {
+                // Text-as-graphics requires rasterization
+                true
+            }
+            usvg::Node::Group(g) => check_group(g),
+        }
+    }
+
+    fn check_group(group: &usvg::Group) -> bool {
+        // Check if group has filters, masks, or other complex features
+        // Note: usvg pre-flattens many attributes, so we check children
+        for child in group.children() {
+            if check_node(&child) {
+                return true;
+            }
+        }
+        false
+    }
+
+    let requires_raster = check_group(tree.root());
+    Some(requires_raster)
 }

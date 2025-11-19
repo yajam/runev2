@@ -186,5 +186,78 @@ fn build_test_dl(viewport: Viewport, test_level: u32) -> DisplayList {
         45,
     );
 
+    // Icon scale test: Display Lucide icons at 12px, 16px, 24px, 48px
+    // to demonstrate vector rendering at various scales
+    let icon_test_y = 400.0;
+
+    // Title for icon scale test
+    painter.text(
+        TextRun {
+            text: "Vector SVG Icons at Multiple Scales:".to_string(),
+            pos: [50.0, icon_test_y - 20.0],
+            size: 16.0,
+            color: ColorLinPremul::from_srgba_u8([80, 80, 80, 255]),
+        },
+        50,
+    );
+
+    let sizes = [12.0, 16.0, 24.0, 48.0];
+    let icons = [
+        "images/search.svg",
+        "images/check.svg",
+        "images/x.svg",
+        "images/chevron-right.svg",
+        "images/circle-x.svg",
+    ];
+
+    let x_offset = 150.0;  // Start after icon name labels
+
+    // Column headers (size labels)
+    for (col_idx, size) in sizes.iter().enumerate() {
+        let col_x = x_offset + (col_idx as f32) * 80.0;
+        painter.text(
+            TextRun {
+                text: format!("{}px", size),
+                pos: [col_x, icon_test_y],
+                size: 12.0,
+                color: ColorLinPremul::from_srgba_u8([100, 100, 100, 255]),
+            },
+            50,
+        );
+    }
+
+    // Draw icons in a grid
+    for (row_idx, icon_path) in icons.iter().enumerate() {
+        let row_y = icon_test_y + 30.0 + (row_idx as f32) * 60.0;
+
+        // Icon name label
+        let icon_name = icon_path.split('/').last().unwrap_or("").replace(".svg", "");
+        painter.text(
+            TextRun {
+                text: icon_name.clone(),
+                pos: [50.0, row_y + 8.0],
+                size: 10.0,
+                color: ColorLinPremul::from_srgba_u8([120, 120, 120, 255]),
+            },
+            50,
+        );
+
+        // Draw icon at each size
+        for (col_idx, size) in sizes.iter().enumerate() {
+            let col_x = x_offset + (col_idx as f32) * 80.0;
+
+            // Center the icon in its cell
+            let icon_x = col_x + (48.0 - size) / 2.0;
+            let icon_y = row_y;
+
+            painter.svg(
+                *icon_path,
+                [icon_x, icon_y],
+                [*size, *size],
+                50,
+            );
+        }
+    }
+
     painter.finish()
 }

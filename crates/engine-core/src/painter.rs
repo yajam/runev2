@@ -126,7 +126,9 @@ impl Painter {
         self.ellipse(center, [radius, radius], brush, z);
     }
 
-    /// Queue an SVG to be rasterized and drawn at origin, scaled to fit within max_size.
+    /// Queue an SVG to be drawn at origin, scaled to fit within max_size.
+    /// Automatically uses vector rendering for simple SVGs (solid fills/strokes only)
+    /// and falls back to rasterization for complex SVGs (gradients, filters, images, text).
     /// The path is interpreted relative to the process working directory.
     pub fn svg<P: Into<PathBuf>>(
         &mut self,
@@ -135,14 +137,45 @@ impl Painter {
         max_size: [f32; 2],
         z: i32,
     ) {
-        let t = self.current_transform();
-        self.list.commands.push(Command::DrawSvg {
-            path: path.into(),
-            origin,
-            max_size,
-            z,
-            transform: t,
-        });
+        let path_buf = path.into();
+        let path_ref = std::path::Path::new(&path_buf);
+
+        // Check if SVG can be rendered as vector geometry
+        let needs_raster = crate::svg::svg_requires_rasterization(path_ref).unwrap_or(true);
+
+        if needs_raster {
+            // Complex SVG: defer to rasterization pipeline
+            let t = self.current_transform();
+            self.list.commands.push(Command::DrawSvg {
+                path: path_buf,
+                origin,
+                max_size,
+                z,
+                transform: t,
+            });
+        } else {
+            // Simple SVG: render as vector geometry immediately
+            // Calculate scale to fit within max_size
+            if let Some((intrinsic_w, intrinsic_h)) = crate::svg::svg_intrinsic_size(path_ref) {
+                let w = intrinsic_w.max(1) as f32;
+                let h = intrinsic_h.max(1) as f32;
+                let scale_x = max_size[0] / w;
+                let scale_y = max_size[1] / h;
+                let scale = scale_x.min(scale_y).max(0.0);
+
+                // Apply transform: current * translate(origin) * scale
+                let current = self.current_transform();
+                let translate_scale = crate::Transform2D {
+                    m: [scale, 0.0, 0.0, scale, origin[0], origin[1]],
+                };
+                let combined = current.concat(translate_scale);
+
+                self.push_transform(combined);
+                // Import SVG geometry directly into the display list
+                let _stats = crate::svg::import_svg_geometry_to_painter(self, path_ref);
+                self.pop_transform();
+            }
+        }
     }
 
     /// Queue a raster image (PNG/JPEG/GIF/WebP) to be drawn at origin with the given pixel size.
