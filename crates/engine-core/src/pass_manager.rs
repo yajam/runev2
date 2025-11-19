@@ -6,7 +6,7 @@ use crate::allocator::{RenderAllocator, TexKey};
 // use crate::display_list::{Command, DisplayList, Viewport};
 use crate::pipeline::{
     BackgroundRenderer, BasicSolidRenderer, Blitter, BlurRenderer, Compositor,
-    ShadowCompositeRenderer, TextRenderer,
+    OverlaySolidRenderer, ShadowCompositeRenderer, TextRenderer,
 };
 use crate::scene::{BoxShadowSpec, RoundedRadii, RoundedRect};
 use crate::upload::GpuScene;
@@ -38,6 +38,7 @@ pub struct PassManager {
     pub solid_offscreen: BasicSolidRenderer,
     pub solid_direct: BasicSolidRenderer,
     pub solid_direct_no_msaa: BasicSolidRenderer,
+    overlay_solid: OverlaySolidRenderer,
     pub compositor: Compositor,
     pub blitter: Blitter,
     // Shadow/blur pipelines and helpers
@@ -133,6 +134,7 @@ impl PassManager {
         let solid_offscreen = BasicSolidRenderer::new(device.clone(), offscreen_format, msaa_count);
         let solid_direct = BasicSolidRenderer::new(device.clone(), target_format, msaa_count);
         let solid_direct_no_msaa = BasicSolidRenderer::new(device.clone(), target_format, 1);
+        let overlay_solid = OverlaySolidRenderer::new(device.clone(), target_format);
         let compositor = Compositor::new(device.clone(), target_format);
         let blitter = Blitter::new(device.clone(), target_format);
         // Shadow/blur pipelines
@@ -214,6 +216,7 @@ impl PassManager {
             solid_offscreen,
             solid_direct,
             solid_direct_no_msaa,
+            overlay_solid,
             compositor,
             blitter,
             mask_renderer,
@@ -1162,6 +1165,123 @@ impl PassManager {
         }
 
         // Temp textures are dropped at end of scope
+    }
+
+    /// Draw a simple overlay rectangle that darkens existing content without affecting depth.
+    /// This is intended for UI overlays like modal scrims that should blend over the scene
+    /// but not participate in depth testing.
+    pub fn draw_overlay_rect(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        target_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+        rect: crate::scene::Rect,
+        color: crate::scene::ColorLinPremul,
+        queue: &wgpu::Queue,
+    ) {
+        // Update viewport uniform based on render target dimensions (+ logical pixel scale)
+        let logical =
+            crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
+        let scale = [
+            (2.0f32 / (width.max(1) as f32)) * logical,
+            (-2.0f32 / (height.max(1) as f32)) * logical,
+        ];
+        let translate = [-1.0f32, 1.0f32];
+        let vp_data = [scale[0], scale[1], translate[0], translate[1]];
+        queue.write_buffer(&self.vp_buffer, 0, bytemuck::bytes_of(&vp_data));
+
+        #[repr(C)]
+        #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+        struct OverlayVtx {
+            pos: [f32; 2],
+            color: [f32; 4],
+            z_index: f32,
+        }
+
+        let overlay_color = [color.r, color.g, color.b, color.a];
+        let z_index = 0.0f32;
+        let x = rect.x;
+        let y = rect.y;
+        let w = rect.w.max(0.0);
+        let h = rect.h.max(0.0);
+
+        // Skip degenerate rectangles
+        if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+
+        let verts = [
+            OverlayVtx {
+                pos: [x, y],
+                color: overlay_color,
+                z_index,
+            },
+            OverlayVtx {
+                pos: [x + w, y],
+                color: overlay_color,
+                z_index,
+            },
+            OverlayVtx {
+                pos: [x + w, y + h],
+                color: overlay_color,
+                z_index,
+            },
+            OverlayVtx {
+                pos: [x, y + h],
+                color: overlay_color,
+                z_index,
+            },
+        ];
+        let idx: [u16; 6] = [0, 1, 2, 0, 2, 3];
+
+        let vsize = (verts.len() * std::mem::size_of::<OverlayVtx>()) as u64;
+        let isize = (idx.len() * std::mem::size_of::<u16>()) as u64;
+        let vbuf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("overlay-rect-vbuf"),
+            size: vsize.max(4),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let ibuf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("overlay-rect-ibuf"),
+            size: isize.max(4),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        if vsize > 0 {
+            queue.write_buffer(&vbuf, 0, bytemuck::cast_slice(&verts));
+        }
+        if isize > 0 {
+            queue.write_buffer(&ibuf, 0, bytemuck::cast_slice(&idx));
+        }
+
+        let vp_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("overlay-vp-bg"),
+            layout: self.overlay_solid.viewport_bgl(),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.vp_buffer.as_entire_binding(),
+            }],
+        });
+
+        // Overlay pass: no depth attachment so the quad simply blends over existing content.
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("overlay-rect-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+        self.overlay_solid
+            .record(&mut pass, &vp_bg, &vbuf, &ibuf, idx.len() as u32);
     }
 
     /// Draw a filled rounded rectangle directly onto the target using the solid_direct pipeline.

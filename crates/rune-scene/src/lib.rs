@@ -1,7 +1,6 @@
 use anyhow::Result;
 use engine_core::{
-    Brush, ColorLinPremul, Rect, SubpixelOrientation,
-    Transform2D, make_surface_config,
+    Brush, ColorLinPremul, Rect, SubpixelOrientation, Transform2D, make_surface_config,
 };
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::EventLoop;
@@ -148,7 +147,7 @@ pub fn run() -> Result<()> {
     // Viewport IR content - incremental implementation
     let viewport_ir =
         std::sync::Arc::new(std::sync::Mutex::new(viewport_ir::ViewportContent::new()));
-    let _viewport_ir_overlay = viewport_ir.clone();
+    let viewport_ir_overlay = viewport_ir.clone();
 
     // Text layout cache for efficient resize performance
     let text_cache = std::sync::Arc::new(engine_core::TextLayoutCache::new(200));
@@ -191,11 +190,227 @@ pub fn run() -> Result<()> {
     let viewport_scroll_offset_overlay = viewport_scroll_offset.clone();
 
     surf.set_overlay(Box::new(
-        move |_passes, _encoder, _view, _queue, width, height| {
+        move |passes, encoder, view, queue, width, height| {
             let sidebar_vis = *sidebar_visible_overlay.lock().unwrap();
             let logical_width = (width as f32 / overlay_scale).max(0.0) as u32;
             let logical_height = (height as f32 / overlay_scale).max(0.0) as u32;
-            let _layout = zones::ZoneLayout::calculate(logical_width, logical_height, sidebar_vis);
+            let layout = zones::ZoneLayout::calculate(logical_width, logical_height, sidebar_vis);
+            let viewport_zone = layout.get_zone(ZoneId::Viewport);
+
+            // If a modal or confirm dialog is open, draw a dark overlay behind it
+            // using a post-render overlay pass. This darkens the background while
+            // leaving the panel itself unaffected and avoiding depth-buffer issues.
+            if let Ok(viewport_ir_lock) = viewport_ir_overlay.lock() {
+                if viewport_ir_lock.modal_open {
+                    let modal = crate::elements::Modal::new(
+                        viewport_zone.w,
+                        viewport_zone.h,
+                        "Confirm Action",
+                        "Are you sure you want to continue?\nThis action cannot be undone.",
+                        vec![
+                            crate::elements::ModalButton::new("Cancel"),
+                            crate::elements::ModalButton::primary("Continue"),
+                        ],
+                    );
+                    let panel = modal.get_panel_rect();
+
+                    // Convert panel rect from viewport-local to surface coordinates.
+                    let panel_global = Rect {
+                        x: viewport_zone.x + panel.x,
+                        y: viewport_zone.y + panel.y,
+                        w: panel.w,
+                        h: panel.h,
+                    };
+
+                    let viewport_left = viewport_zone.x;
+                    let viewport_top = viewport_zone.y;
+                    let viewport_right = viewport_zone.x + viewport_zone.w;
+                    let viewport_bottom = viewport_zone.y + viewport_zone.h;
+
+                    let overlay_color = modal.overlay_color;
+
+                    // Top band
+                    if panel_global.y > viewport_top {
+                        let top_rect = Rect {
+                            x: viewport_left,
+                            y: viewport_top,
+                            w: viewport_zone.w,
+                            h: panel_global.y - viewport_top,
+                        };
+                        passes.draw_overlay_rect(
+                            encoder,
+                            view,
+                            width,
+                            height,
+                            top_rect,
+                            overlay_color,
+                            queue,
+                        );
+                    }
+
+                    // Bottom band
+                    let panel_bottom = panel_global.y + panel_global.h;
+                    if panel_bottom < viewport_bottom {
+                        let bottom_rect = Rect {
+                            x: viewport_left,
+                            y: panel_bottom,
+                            w: viewport_zone.w,
+                            h: viewport_bottom - panel_bottom,
+                        };
+                        passes.draw_overlay_rect(
+                            encoder,
+                            view,
+                            width,
+                            height,
+                            bottom_rect,
+                            overlay_color,
+                            queue,
+                        );
+                    }
+
+                    // Left band (beside panel)
+                    if panel_global.x > viewport_left {
+                        let left_rect = Rect {
+                            x: viewport_left,
+                            y: panel_global.y,
+                            w: panel_global.x - viewport_left,
+                            h: panel_global.h,
+                        };
+                        passes.draw_overlay_rect(
+                            encoder,
+                            view,
+                            width,
+                            height,
+                            left_rect,
+                            overlay_color,
+                            queue,
+                        );
+                    }
+
+                    // Right band (beside panel)
+                    let panel_right = panel_global.x + panel_global.w;
+                    if panel_right < viewport_right {
+                        let right_rect = Rect {
+                            x: panel_right,
+                            y: panel_global.y,
+                            w: viewport_right - panel_right,
+                            h: panel_global.h,
+                        };
+                        passes.draw_overlay_rect(
+                            encoder,
+                            view,
+                            width,
+                            height,
+                            right_rect,
+                            overlay_color,
+                            queue,
+                        );
+                    }
+                } else if viewport_ir_lock.confirm_open {
+                    // For the confirm dialog, use the same four-band approach as the modal
+                    // so the scrim darkens everything around the dialog but not the panel itself.
+                    let confirm = crate::elements::ConfirmDialog::new(
+                        viewport_zone.w,
+                        viewport_zone.h,
+                        viewport_ir_lock.confirm_title.clone(),
+                        viewport_ir_lock.confirm_message.clone(),
+                    );
+                    let panel = confirm.panel_rect();
+
+                    // Convert panel rect from viewport-local to surface coordinates.
+                    let panel_global = Rect {
+                        x: viewport_zone.x + panel.x,
+                        y: viewport_zone.y + panel.y,
+                        w: panel.w,
+                        h: panel.h,
+                    };
+
+                    let viewport_left = viewport_zone.x;
+                    let viewport_top = viewport_zone.y;
+                    let viewport_right = viewport_zone.x + viewport_zone.w;
+                    let viewport_bottom = viewport_zone.y + viewport_zone.h;
+
+                    let overlay_color = confirm.overlay_color;
+
+                    // Top band
+                    if panel_global.y > viewport_top {
+                        let top_rect = Rect {
+                            x: viewport_left,
+                            y: viewport_top,
+                            w: viewport_zone.w,
+                            h: panel_global.y - viewport_top,
+                        };
+                        passes.draw_overlay_rect(
+                            encoder,
+                            view,
+                            width,
+                            height,
+                            top_rect,
+                            overlay_color,
+                            queue,
+                        );
+                    }
+
+                    // Bottom band
+                    let panel_bottom = panel_global.y + panel_global.h;
+                    if panel_bottom < viewport_bottom {
+                        let bottom_rect = Rect {
+                            x: viewport_left,
+                            y: panel_bottom,
+                            w: viewport_zone.w,
+                            h: viewport_bottom - panel_bottom,
+                        };
+                        passes.draw_overlay_rect(
+                            encoder,
+                            view,
+                            width,
+                            height,
+                            bottom_rect,
+                            overlay_color,
+                            queue,
+                        );
+                    }
+
+                    // Left band (beside panel)
+                    if panel_global.x > viewport_left {
+                        let left_rect = Rect {
+                            x: viewport_left,
+                            y: panel_global.y,
+                            w: panel_global.x - viewport_left,
+                            h: panel_global.h,
+                        };
+                        passes.draw_overlay_rect(
+                            encoder,
+                            view,
+                            width,
+                            height,
+                            left_rect,
+                            overlay_color,
+                            queue,
+                        );
+                    }
+
+                    // Right band (beside panel)
+                    let panel_right = panel_global.x + panel_global.w;
+                    if panel_right < viewport_right {
+                        let right_rect = Rect {
+                            x: panel_right,
+                            y: panel_global.y,
+                            w: viewport_right - panel_right,
+                            h: panel_global.h,
+                        };
+                        passes.draw_overlay_rect(
+                            encoder,
+                            view,
+                            width,
+                            height,
+                            right_rect,
+                            overlay_color,
+                            queue,
+                        );
+                    }
+                }
+            }
 
             // Mark captured vars as used so we can easily re-enable overlay
             // rendering later without changing the closure signature.
@@ -207,9 +422,6 @@ pub fn run() -> Result<()> {
                 &devtools_active_tab_overlay,
                 &viewport_scroll_offset_overlay,
             );
-
-            // All toolbar/devtools chrome is now rendered via Canvas in the
-            // unified path; this overlay intentionally does nothing.
         },
     ));
 
@@ -323,59 +535,79 @@ pub fn run() -> Result<()> {
                         // Track if toolbar button was clicked to prevent double-handling
                         let mut clicked_toolbar_button = false;
 
+                        // Snapshot whether a modal dialog is currently open.
+                        // When the modal is open, we want to prevent hit testing
+                        // from percolating to toolbar/devtools chrome behind it.
+                        let modal_is_open = {
+                            let guard = viewport_ir.lock().unwrap();
+                            guard.modal_open
+                        };
+
                         if button == winit::event::MouseButton::Left
                             && state == winit::event::ElementState::Pressed
                         {
-                            if let Some((cursor_x, cursor_y)) = cursor_position {
-                                let logical_x = cursor_x / scale_factor;
-                                let logical_y = cursor_y / scale_factor;
+                            // When a modal is open, ignore toolbar/devtools hit regions so
+                            // clicks do not percolate through the modal overlay.
+                            if !modal_is_open {
+                                if let Some((cursor_x, cursor_y)) = cursor_position {
+                                    let logical_x = cursor_x / scale_factor;
+                                    let logical_y = cursor_y / scale_factor;
 
-                                // Perform hit test for toolbar and devtools buttons
-                                // eprintln!("🖱️ Click at logical ({}, {})", logical_x, logical_y);
-                                if let Some(ref index) = hit_index {
-                                    // eprintln!("   Hit index exists");
-                                    if let Some(hit) = index.topmost_at([logical_x, logical_y]) {
-                                        // eprintln!("   Hit found: region_id={:?}, z={}", hit.region_id, hit.z);
-                                        if let Some(region_id) = hit.region_id {
-                                            if region_id == TOGGLE_BUTTON_REGION_ID {
-                                                let logical_width =
-                                                    (size.width as f32 / scale_factor) as u32;
-                                                let logical_height =
-                                                    (size.height as f32 / scale_factor) as u32;
-                                                zone_manager.toggle_sidebar(
-                                                    logical_width,
-                                                    logical_height,
-                                                );
-                                                *sidebar_visible.lock().unwrap() =
-                                                    zone_manager.is_sidebar_visible();
-                                                clicked_toolbar_button = true;
-                                                needs_redraw = true;
-                                                window.request_redraw();
-                                            } else if region_id == DEVTOOLS_BUTTON_REGION_ID {
-                                                zone_manager.toggle_devtools();
-                                                let visible = zone_manager.is_devtools_visible();
-                                                // eprintln!("🔧 DevTools toggled: visible = {}", visible);
-                                                *devtools_visible.lock().unwrap() = visible;
-                                                clicked_toolbar_button = true;
-                                                needs_redraw = true;
-                                                window.request_redraw();
-                                            } else if region_id == DEVTOOLS_CLOSE_BUTTON_REGION_ID {
-                                                zone_manager.toggle_devtools();
-                                                *devtools_visible.lock().unwrap() =
-                                                    zone_manager.is_devtools_visible();
-                                                clicked_toolbar_button = true;
-                                                needs_redraw = true;
-                                                window.request_redraw();
-                                            } else if region_id == DEVTOOLS_ELEMENTS_TAB_REGION_ID {
-                                                zone_manager.devtools.set_active_tab(DevToolsTab::Elements);
-                                                clicked_toolbar_button = true;
-                                                needs_redraw = true;
-                                                window.request_redraw();
-                                            } else if region_id == DEVTOOLS_CONSOLE_TAB_REGION_ID {
-                                                zone_manager.devtools.set_active_tab(DevToolsTab::Console);
-                                                clicked_toolbar_button = true;
-                                                needs_redraw = true;
-                                                window.request_redraw();
+                                    // Perform hit test for toolbar and devtools buttons
+                                    if let Some(ref index) = hit_index {
+                                        if let Some(hit) = index.topmost_at([logical_x, logical_y])
+                                        {
+                                            if let Some(region_id) = hit.region_id {
+                                                if region_id == TOGGLE_BUTTON_REGION_ID {
+                                                    let logical_width =
+                                                        (size.width as f32 / scale_factor) as u32;
+                                                    let logical_height =
+                                                        (size.height as f32 / scale_factor) as u32;
+                                                    zone_manager.toggle_sidebar(
+                                                        logical_width,
+                                                        logical_height,
+                                                    );
+                                                    *sidebar_visible.lock().unwrap() =
+                                                        zone_manager.is_sidebar_visible();
+                                                    clicked_toolbar_button = true;
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                } else if region_id == DEVTOOLS_BUTTON_REGION_ID {
+                                                    zone_manager.toggle_devtools();
+                                                    let visible =
+                                                        zone_manager.is_devtools_visible();
+                                                    *devtools_visible.lock().unwrap() = visible;
+                                                    clicked_toolbar_button = true;
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                } else if region_id
+                                                    == DEVTOOLS_CLOSE_BUTTON_REGION_ID
+                                                {
+                                                    zone_manager.toggle_devtools();
+                                                    *devtools_visible.lock().unwrap() =
+                                                        zone_manager.is_devtools_visible();
+                                                    clicked_toolbar_button = true;
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                } else if region_id
+                                                    == DEVTOOLS_ELEMENTS_TAB_REGION_ID
+                                                {
+                                                    zone_manager
+                                                        .devtools
+                                                        .set_active_tab(DevToolsTab::Elements);
+                                                    clicked_toolbar_button = true;
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                } else if region_id
+                                                    == DEVTOOLS_CONSOLE_TAB_REGION_ID
+                                                {
+                                                    zone_manager
+                                                        .devtools
+                                                        .set_active_tab(DevToolsTab::Console);
+                                                    clicked_toolbar_button = true;
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                }
                                             }
                                         }
                                     }
@@ -659,8 +891,233 @@ pub fn run() -> Result<()> {
                                     }
                                 }
 
+                                // Check if click is on modal (close button, modal buttons,
+                                // modal panel background, or scrim area around the modal panel).
+                                let mut clicked_modal = false;
+                                if viewport_ir_lock.modal_open {
+                                    let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
+                                    let close_on_bg =
+                                        viewport_ir_lock.modal_close_on_background_click;
+                                    let modal = elements::Modal::new(
+                                        viewport_rect.w,
+                                        viewport_rect.h,
+                                        viewport_ir_lock.modal_title.clone(),
+                                        viewport_ir_lock.modal_content_lines.join("\n"),
+                                        viewport_ir_lock.modal_buttons.clone(),
+                                    )
+                                    .with_close_on_background_click(close_on_bg);
+
+                                    let close_btn = modal.get_close_button_rect();
+                                    let button_rects = modal.get_button_rects();
+                                    let panel_rect = modal.get_panel_rect();
+
+                                    let in_panel = viewport_local_x >= panel_rect.x
+                                        && viewport_local_x <= panel_rect.x + panel_rect.w
+                                        && viewport_local_y >= panel_rect.y
+                                        && viewport_local_y <= panel_rect.y + panel_rect.h;
+
+                                    // Check close button click
+                                    let in_close_btn = viewport_local_x >= close_btn.x
+                                        && viewport_local_x <= close_btn.x + close_btn.w
+                                        && viewport_local_y >= close_btn.y
+                                        && viewport_local_y <= close_btn.y + close_btn.h;
+
+                                    if in_panel {
+                                        // Any click within the modal panel should be captured
+                                        // by the modal, even if it doesn't hit a specific
+                                        // interactive element. This prevents clicks from
+                                        // percolating to underlying widgets.
+                                        clicked_modal = true;
+
+                                        if in_close_btn {
+                                            viewport_ir_lock.modal_open = false;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        } else {
+                                            // Check modal buttons
+                                            for btn_rect in button_rects.iter() {
+                                                let in_button = viewport_local_x >= btn_rect.x
+                                                    && viewport_local_x <= btn_rect.x + btn_rect.w
+                                                    && viewport_local_y >= btn_rect.y
+                                                    && viewport_local_y <= btn_rect.y + btn_rect.h;
+
+                                                if in_button {
+                                                    // Close modal on any button click
+                                                    // In a real app, you'd handle each button differently
+                                                    viewport_ir_lock.modal_open = false;
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // Click was outside the panel but while modal is open:
+                                        // treat this as a scrim/background click. Optionally close
+                                        // the modal (depending on configuration) and always prevent
+                                        // the event from reaching underlying widgets.
+                                        clicked_modal = true;
+                                        if modal.close_on_background_click {
+                                            viewport_ir_lock.modal_open = false;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                }
+
+                                // Check if click is on confirm dialog (buttons, panel background)
+                                let mut clicked_confirm = false;
+                                if viewport_ir_lock.confirm_open {
+                                    let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
+                                    let confirm_close_on_bg =
+                                        viewport_ir_lock.confirm_close_on_background_click;
+                                    let dialog = elements::ConfirmDialog::new(
+                                        viewport_rect.w,
+                                        viewport_rect.h,
+                                        viewport_ir_lock.confirm_title.clone(),
+                                        viewport_ir_lock.confirm_message.clone(),
+                                    );
+
+                                    let panel_rect = dialog.panel_rect();
+                                    let primary_rect = dialog.primary_button_rect();
+                                    let secondary_rect = dialog.secondary_button_rect();
+
+                                    let in_panel = viewport_local_x >= panel_rect.x
+                                        && viewport_local_x <= panel_rect.x + panel_rect.w
+                                        && viewport_local_y >= panel_rect.y
+                                        && viewport_local_y <= panel_rect.y + panel_rect.h;
+
+                                    let in_primary = viewport_local_x >= primary_rect.x
+                                        && viewport_local_x <= primary_rect.x + primary_rect.w
+                                        && viewport_local_y >= primary_rect.y
+                                        && viewport_local_y <= primary_rect.y + primary_rect.h;
+
+                                    let in_secondary = if let Some(rect) = secondary_rect {
+                                        viewport_local_x >= rect.x
+                                            && viewport_local_x <= rect.x + rect.w
+                                            && viewport_local_y >= rect.y
+                                            && viewport_local_y <= rect.y + rect.h
+                                    } else {
+                                        false
+                                    };
+
+                                    if in_panel {
+                                        // Any click within the confirm dialog panel should be
+                                        // captured by the dialog, preventing events from
+                                        // reaching underlying widgets.
+                                        clicked_confirm = true;
+
+                                        // Only close the dialog when clicking on one of the
+                                        // action buttons; clicks on the panel background
+                                        // should simply be swallowed.
+                                        if in_primary || in_secondary {
+                                            viewport_ir_lock.confirm_open = false;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    } else {
+                                        // Click was outside the confirm panel while it is open:
+                                        // treat this as a background/scrim click. Optionally close
+                                        // the dialog (depending on configuration) and always prevent
+                                        // clicks from reaching underlying UI.
+                                        clicked_confirm = true;
+                                        if confirm_close_on_bg {
+                                            viewport_ir_lock.confirm_open = false;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                }
+
+                                // Check if click is on alert action button (e.g., "Undo")
+                                let mut clicked_alert = false;
+                                if viewport_ir_lock.alert_visible {
+                                    let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
+                                    let alert = elements::Alert::new(
+                                        viewport_rect.w,
+                                        viewport_rect.h,
+                                        "Alert",
+                                        "This is an alert message.",
+                                    )
+                                    .with_action("Ok")
+                                    .with_position(viewport_ir_lock.alert_position);
+
+                                    if let Some(action_rect) = alert.action_rect() {
+                                        let in_action = viewport_local_x >= action_rect.x
+                                            && viewport_local_x <= action_rect.x + action_rect.w
+                                            && viewport_local_y >= action_rect.y
+                                            && viewport_local_y <= action_rect.y + action_rect.h;
+
+                                        if in_action {
+                                            clicked_alert = true;
+                                            viewport_ir_lock.alert_visible = false;
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                }
+
+                                // Check if click is on a button (adjust for viewport transform and scroll)
+                                let mut clicked_button = false;
+                                if !clicked_popup && !clicked_modal && !clicked_confirm && !clicked_alert {
+                                    for (idx, button) in viewport_ir_lock.buttons.iter().enumerate() {
+                                        let in_bounds = viewport_local_x >= button.rect.x
+                                            && viewport_local_x <= button.rect.x + button.rect.w
+                                            && viewport_local_y >= button.rect.y
+                                            && viewport_local_y <= button.rect.y + button.rect.h;
+
+                                        if in_bounds {
+                                            clicked_button = true;
+
+                                             // Update focus: buttons take focus on click and
+                                             // clear focus from other interactive elements.
+                                             for b in viewport_ir_lock.buttons.iter_mut() {
+                                                 b.focused = false;
+                                             }
+                                             for cb in viewport_ir_lock.checkboxes.iter_mut() {
+                                                 cb.focused = false;
+                                             }
+                                             for input in viewport_ir_lock.input_boxes.iter_mut() {
+                                                 input.focused = false;
+                                             }
+                                             for ta in viewport_ir_lock.text_areas.iter_mut() {
+                                                 ta.focused = false;
+                                             }
+                                             for r in viewport_ir_lock.radios.iter_mut() {
+                                                 r.focused = false;
+                                             }
+                                             if let Some(btn) = viewport_ir_lock.buttons.get_mut(idx)
+                                             {
+                                                 btn.focused = true;
+                                             }
+
+                                            // Button index 2 is "Open Modal"
+                                            if idx == 2 {
+                                                viewport_ir_lock.modal_open = true;
+                                            // Button index 3 is "Show Confirm"
+                                            } else if idx == 3 {
+                                                viewport_ir_lock.confirm_open =
+                                                    !viewport_ir_lock.confirm_open;
+                                            // Button index 4 is "Show Alert"
+                                            } else if idx == 4 {
+                                                viewport_ir_lock.alert_visible =
+                                                    !viewport_ir_lock.alert_visible;
+                                            }
+                                            // Any button focus or state change requires a redraw.
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                            break;
+                                        }
+                                    }
+                                }
+
                                 let mut clicked_input = false;
-                                if !clicked_popup {
+                                if !clicked_popup
+                                    && !clicked_modal
+                                    && !clicked_confirm
+                                    && !clicked_alert
+                                    && !clicked_button
+                                {
                                     for (idx, input_box) in
                                         viewport_ir_lock.input_boxes.iter_mut().enumerate()
                                     {
@@ -669,13 +1126,27 @@ pub fn run() -> Result<()> {
                                         && viewport_local_y >= input_box.rect.y
                                         && viewport_local_y <= input_box.rect.y + input_box.rect.h;
 
-                                    if in_bounds {
-                                        // Unfocus all, focus this one
-                                        for other in viewport_ir_lock.input_boxes.iter_mut() {
-                                            other.focused = false;
-                                        }
-                                        let input = &mut viewport_ir_lock.input_boxes[idx];
-                                        input.focused = true;
+                                        if in_bounds {
+                                            // Unfocus all, focus this one
+                                            for other in viewport_ir_lock.input_boxes.iter_mut() {
+                                                other.focused = false;
+                                            }
+                                            // Clear focus from other UI elements
+                                            for b in viewport_ir_lock.buttons.iter_mut() {
+                                                b.focused = false;
+                                            }
+                                            for cb in viewport_ir_lock.checkboxes.iter_mut() {
+                                                cb.focused = false;
+                                            }
+                                            for ta in viewport_ir_lock.text_areas.iter_mut() {
+                                                ta.focused = false;
+                                            }
+                                            for r in viewport_ir_lock.radios.iter_mut() {
+                                                r.focused = false;
+                                            }
+
+                                            let input = &mut viewport_ir_lock.input_boxes[idx];
+                                            input.focused = true;
 
                                         // Phase 5: Handle double-click and triple-click
                                         if click_count == 3 {
@@ -709,7 +1180,13 @@ pub fn run() -> Result<()> {
 
                                 // Check if click is on a text area
                                 let mut clicked_textarea = false;
-                                if !clicked_input && !clicked_popup {
+                                if !clicked_input
+                                    && !clicked_popup
+                                    && !clicked_modal
+                                    && !clicked_confirm
+                                    && !clicked_alert
+                                    && !clicked_button
+                                {
                                     for (idx, textarea) in
                                         viewport_ir_lock.text_areas.iter_mut().enumerate()
                                     {
@@ -727,6 +1204,16 @@ pub fn run() -> Result<()> {
                                             }
                                             for other in viewport_ir_lock.text_areas.iter_mut() {
                                                 other.focused = false;
+                                            }
+                                            // Clear focus from other UI elements (including buttons)
+                                            for b in viewport_ir_lock.buttons.iter_mut() {
+                                                b.focused = false;
+                                            }
+                                            for cb in viewport_ir_lock.checkboxes.iter_mut() {
+                                                cb.focused = false;
+                                            }
+                                            for r in viewport_ir_lock.radios.iter_mut() {
+                                                r.focused = false;
                                             }
 
                                             let textarea = &mut viewport_ir_lock.text_areas[idx];
@@ -761,7 +1248,13 @@ pub fn run() -> Result<()> {
 
                                 // Check if click is on a checkbox or its label (adjust for viewport transform and scroll)
                                 let mut clicked_checkbox = false;
-                                if !clicked_input && !clicked_textarea {
+                                if !clicked_input
+                                    && !clicked_textarea
+                                    && !clicked_modal
+                                    && !clicked_confirm
+                                    && !clicked_alert
+                                    && !clicked_button
+                                {
                                     for (idx, checkbox) in
                                         viewport_ir_lock.checkboxes.iter_mut().enumerate()
                                     {
@@ -791,7 +1284,10 @@ pub fn run() -> Result<()> {
                                             // Toggle the checkbox
                                             checkbox.checked = !checkbox.checked;
 
-                                            // Clear focus from all checkboxes, input boxes, and text areas
+                                            // Clear focus from buttons, checkboxes, input boxes, and text areas
+                                            for b in viewport_ir_lock.buttons.iter_mut() {
+                                                b.focused = false;
+                                            }
                                             for cb in viewport_ir_lock.checkboxes.iter_mut() {
                                                 cb.focused = false;
                                             }
@@ -815,7 +1311,7 @@ pub fn run() -> Result<()> {
 
                                 // Check if click is on a radio button or its label (adjust for viewport transform and scroll)
                                 let mut clicked_radio = false;
-                                if !clicked_input && !clicked_textarea && !clicked_checkbox {
+                                if !clicked_input && !clicked_textarea && !clicked_checkbox && !clicked_modal && !clicked_button {
                                     for (idx, radio) in
                                         viewport_ir_lock.radios.iter_mut().enumerate()
                                     {
@@ -853,6 +1349,9 @@ pub fn run() -> Result<()> {
                                             }
 
                                             // Clear focus from all other UI elements
+                                            for b in viewport_ir_lock.buttons.iter_mut() {
+                                                b.focused = false;
+                                            }
                                             for cb in viewport_ir_lock.checkboxes.iter_mut() {
                                                 cb.focused = false;
                                             }
@@ -882,6 +1381,8 @@ pub fn run() -> Result<()> {
                                     && !clicked_textarea
                                     && !clicked_checkbox
                                     && !clicked_radio
+                                    && !clicked_modal
+                                    && !clicked_button
                                     && !clicked_popup
                                 {
                                     for (idx, select) in
@@ -897,6 +1398,9 @@ pub fn run() -> Result<()> {
                                             select.open = !select.open;
 
                                             // Clear focus from all other UI elements
+                                            for b in viewport_ir_lock.buttons.iter_mut() {
+                                                b.focused = false;
+                                            }
                                             for cb in viewport_ir_lock.checkboxes.iter_mut() {
                                                 cb.focused = false;
                                             }
@@ -930,6 +1434,8 @@ pub fn run() -> Result<()> {
                                     && !clicked_checkbox
                                     && !clicked_radio
                                     && !clicked_select
+                                    && !clicked_modal
+                                    && !clicked_button
                                     && !clicked_popup
                                 {
                                     for (idx, datepicker) in
@@ -1143,6 +1649,8 @@ pub fn run() -> Result<()> {
                                     && !clicked_checkbox
                                     && !clicked_radio
                                     && !clicked_select
+                                    && !clicked_modal
+                                    && !clicked_button
                                     && !clicked_popup
                                 {
                                     for input_box in viewport_ir_lock.input_boxes.iter_mut() {
@@ -1192,12 +1700,14 @@ pub fn run() -> Result<()> {
                                 }
 
                                 // Perform hit test using the stored hit index
-                                // Only if we didn't click on an input box, text area, checkbox, radio, select, date picker, or toolbar button
+                                // Only if we didn't click on an input box, text area, checkbox, radio, select, date picker, modal, button, or toolbar button
                                 if !clicked_input
                                     && !clicked_textarea
                                     && !clicked_checkbox
                                     && !clicked_radio
                                     && !clicked_select
+                                    && !clicked_modal
+                                    && !clicked_button
                                     && !clicked_popup
                                     && !clicked_toolbar_button
                                 {

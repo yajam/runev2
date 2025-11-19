@@ -40,7 +40,7 @@ pub fn first_day_of_month(year: u32, month: u32) -> u32 {
 
 /// Phase 0: Just a solid background to verify rendering pipeline works
 pub struct ViewportContent {
-    buttons: Vec<elements::Button>,
+    pub(crate) buttons: Vec<elements::Button>,
     pub(crate) checkboxes: Vec<CheckboxData>,
     pub(crate) radios: Vec<RadioData>,
     pub(crate) input_boxes: Vec<elements::InputBox>,
@@ -52,6 +52,17 @@ pub struct ViewportContent {
     wrapped_paragraphs: Vec<WrappedParagraph>,
     col1_x: f32,
     multiline_y: f32,
+    pub(crate) alert_visible: bool,
+    pub(crate) alert_position: elements::AlertPosition,
+    pub(crate) modal_open: bool,
+    pub(crate) modal_close_on_background_click: bool,
+    pub(crate) modal_title: String,
+    pub(crate) modal_content_lines: Vec<String>,
+    pub(crate) modal_buttons: Vec<elements::ModalButton>,
+    pub(crate) confirm_open: bool,
+    pub(crate) confirm_title: String,
+    pub(crate) confirm_message: String,
+    pub(crate) confirm_close_on_background_click: bool,
 }
 
 #[derive(Clone)]
@@ -188,6 +199,48 @@ impl ViewportContent {
                 label: "Secondary".to_string(),
                 label_size: 16.0,
                 focused: true,
+            },
+            elements::Button {
+                rect: Rect {
+                    x: col1_x + 372.0,
+                    y: button_y,
+                    w: 160.0,
+                    h: 36.0,
+                },
+                radius: 8.0,
+                bg: ColorLinPremul::from_srgba_u8([147, 51, 234, 255]), // Purple
+                fg: ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
+                label: "Open Modal".to_string(),
+                label_size: 16.0,
+                focused: false,
+            },
+            elements::Button {
+                rect: Rect {
+                    x: col1_x + 372.0,
+                    y: button_y + 48.0,
+                    w: 160.0,
+                    h: 36.0,
+                },
+                radius: 8.0,
+                bg: ColorLinPremul::from_srgba_u8([220, 38, 38, 255]), // Red
+                fg: ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
+                label: "Show Confirm".to_string(),
+                label_size: 16.0,
+                focused: false,
+            },
+            elements::Button {
+                rect: Rect {
+                    x: col1_x + 552.0,
+                    y: button_y,
+                    w: 180.0,
+                    h: 36.0,
+                },
+                radius: 8.0,
+                bg: ColorLinPremul::from_srgba_u8([31, 41, 55, 255]), // Dark gray
+                fg: ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
+                label: "Show Alert".to_string(),
+                label_size: 16.0,
+                focused: false,
             },
         ];
 
@@ -421,6 +474,22 @@ impl ViewportContent {
             });
         }
 
+        // Default modal configuration (title, content lines, buttons)
+        let modal_title = "Confirm Action".to_string();
+        let modal_content_lines = vec![
+            "Are you sure you want to continue?".to_string(),
+            "This action cannot be undone.".to_string(),
+        ];
+        let modal_buttons = vec![
+            elements::ModalButton::new("Cancel"),
+            elements::ModalButton::primary("Continue"),
+        ];
+
+        // Default confirm dialog content
+        let confirm_title = "Delete Item?".to_string();
+        let confirm_message =
+            "This action cannot be undone. Are you sure you want to continue?".to_string();
+
         Self {
             buttons,
             checkboxes,
@@ -434,6 +503,17 @@ impl ViewportContent {
             wrapped_paragraphs,
             col1_x,
             multiline_y,
+            alert_visible: false,
+            alert_position: elements::AlertPosition::TopCenter,
+            modal_open: false,
+            modal_close_on_background_click: true,
+            modal_title,
+            modal_content_lines,
+            modal_buttons,
+            confirm_open: false,
+            confirm_title,
+            confirm_message,
+            confirm_close_on_background_click: false,
         }
     }
 
@@ -665,6 +745,89 @@ impl ViewportContent {
                 };
                 date_picker.render(canvas, 8000);
             }
+        }
+
+        // Render primary modal if open (highest z-index to appear above everything)
+        if self.modal_open {
+            // Build modal from current configuration
+            let modal = elements::Modal::new(
+                viewport_width as f32,
+                viewport_height as f32,
+                self.modal_title.clone(),
+                // Keep content string for default rendering paths, but primary
+                // modal body is driven by `modal_content_lines` below.
+                self.modal_content_lines.join("\n"),
+                self.modal_buttons.clone(),
+            )
+            .with_close_on_background_click(self.modal_close_on_background_click);
+
+            let z = modal.base_z;
+
+            // Render chrome (shadow, panel, border, close icon)
+            modal.render_chrome(canvas, z);
+
+            // Use layout helpers so content is easy to customize
+            let layout = modal.layout();
+
+            // Render title text
+            canvas.draw_text_run(
+                layout.title_pos,
+                self.modal_title.clone(),
+                modal.title_size,
+                modal.title_color,
+                z + 4,
+            );
+
+            // Render body lines into the content area
+            for (i, line) in self.modal_content_lines.iter().enumerate() {
+                let pos = [
+                    layout.content_origin[0],
+                    layout.content_origin[1] + i as f32 * layout.content_line_height,
+                ];
+                canvas.draw_text_run(
+                    pos,
+                    line.clone(),
+                    modal.content_size,
+                    modal.content_color,
+                    z + 4,
+                );
+            }
+
+            // Render buttons using the precomputed button rects
+            for (i, (button, rect)) in self
+                .modal_buttons
+                .iter()
+                .zip(layout.button_rects.iter())
+                .enumerate()
+            {
+                modal.render_button(canvas, button, *rect, z + 5 + i as i32 * 5);
+            }
+        }
+
+        // Render confirm dialog when open (shares the same viewport, slightly lower z than modal).
+        if self.confirm_open {
+            let dialog = elements::ConfirmDialog::new(
+                viewport_width as f32,
+                viewport_height as f32,
+                self.confirm_title.clone(),
+                self.confirm_message.clone(),
+            );
+            dialog.render(canvas);
+        }
+
+        // Render alert panel when enabled. This showcases the Alert element
+        // without a fullscreen background; it is positioned relative to the
+        // viewport using the configured alert_position.
+        if self.alert_visible {
+            let alert = elements::Alert::new(
+                viewport_width as f32,
+                viewport_height as f32,
+                "Event has been created",
+                "Sunday, December 03, 2023 at 9:00 AM",
+            )
+            .with_action("Ok")
+            .with_position(self.alert_position);
+            alert.render(canvas);
         }
 
         // Calculate total content height
