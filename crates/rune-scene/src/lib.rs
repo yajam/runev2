@@ -12,8 +12,10 @@ pub mod viewport_ir;
 pub mod zones;
 
 use zones::{
-    DEVTOOLS_BUTTON_REGION_ID, DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID,
-    DEVTOOLS_ELEMENTS_TAB_REGION_ID, DevToolsTab, TOGGLE_BUTTON_REGION_ID, ZoneId, ZoneManager,
+    ADDRESS_BAR_REGION_ID, BACK_BUTTON_REGION_ID, DEVTOOLS_BUTTON_REGION_ID,
+    DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID,
+    DEVTOOLS_ELEMENTS_TAB_REGION_ID, DevToolsTab, FORWARD_BUTTON_REGION_ID,
+    REFRESH_BUTTON_REGION_ID, TOGGLE_BUTTON_REGION_ID, ZoneId, ZoneManager,
 };
 
 /// Render zone backgrounds and borders (viewport, toolbar, sidebar).
@@ -558,6 +560,7 @@ pub fn run() -> Result<()> {
                                         if let Some(hit) = index.topmost_at([logical_x, logical_y])
                                         {
                                             if let Some(region_id) = hit.region_id {
+                                                println!("Hit region: {}", region_id); // DEBUG
                                                 if region_id == TOGGLE_BUTTON_REGION_ID {
                                                     let logical_width =
                                                         (size.width as f32 / scale_factor) as u32;
@@ -573,10 +576,61 @@ pub fn run() -> Result<()> {
                                                     needs_redraw = true;
                                                     window.request_redraw();
                                                 } else if region_id == DEVTOOLS_BUTTON_REGION_ID {
+                                                    println!("DevTools button clicked!"); // DEBUG
                                                     zone_manager.toggle_devtools();
                                                     let visible =
                                                         zone_manager.is_devtools_visible();
                                                     *devtools_visible.lock().unwrap() = visible;
+                                                    clicked_toolbar_button = true;
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                } else if region_id == BACK_BUTTON_REGION_ID {
+                                                    // Back button clicked
+                                                    println!("Back button clicked");
+                                                    clicked_toolbar_button = true;
+                                                    // TODO: Implement navigation history
+                                                } else if region_id == FORWARD_BUTTON_REGION_ID {
+                                                    // Forward button clicked
+                                                    println!("Forward button clicked");
+                                                    clicked_toolbar_button = true;
+                                                    // TODO: Implement navigation history
+                                                } else if region_id == REFRESH_BUTTON_REGION_ID {
+                                                    // Refresh button clicked
+                                                    println!("Refresh button clicked");
+                                                    clicked_toolbar_button = true;
+                                                    needs_redraw = true;
+                                                    window.request_redraw();
+                                                    // TODO: Implement page refresh logic
+                                                } else if region_id == ADDRESS_BAR_REGION_ID {
+                                                    // Address bar clicked - focus it for editing
+                                                    // Convert to toolbar-local coordinates
+                                                    let toolbar_rect =
+                                                        zone_manager.layout.get_zone(ZoneId::Toolbar);
+                                                    let local_x = logical_x - toolbar_rect.x;
+                                                    let local_y = logical_y - toolbar_rect.y;
+
+                                                    // Focus the address bar
+                                                    zone_manager.toolbar.address_bar.focused = true;
+
+                                                    // Handle click for cursor placement/selection
+                                                    if click_count == 3 {
+                                                        zone_manager
+                                                            .toolbar
+                                                            .address_bar
+                                                            .start_line_selection(local_x, local_y);
+                                                    } else if click_count == 2 {
+                                                        zone_manager
+                                                            .toolbar
+                                                            .address_bar
+                                                            .start_word_selection(local_x, local_y);
+                                                    } else {
+                                                        zone_manager
+                                                            .toolbar
+                                                            .address_bar
+                                                            .start_mouse_selection(local_x, local_y);
+                                                    }
+                                                    zone_manager.toolbar.address_bar.update_scroll();
+
                                                     clicked_toolbar_button = true;
                                                     needs_redraw = true;
                                                     window.request_redraw();
@@ -1787,6 +1841,93 @@ pub fn run() -> Result<()> {
                                     }
                                 }
                             }
+                        } else if zone_manager.toolbar.address_bar.focused {
+                            // Handle keyboard input for the toolbar address bar
+                            if event.state == winit::event::ElementState::Pressed {
+                                let has_cmd = modifiers_state.contains(ModifiersState::SUPER);
+                                let has_ctrl = modifiers_state.contains(ModifiersState::CONTROL);
+                                let has_alt = modifiers_state.contains(ModifiersState::ALT);
+                                let has_shift = modifiers_state.contains(ModifiersState::SHIFT);
+
+                                let line_modifier = has_cmd || has_ctrl;
+                                let word_modifier = has_alt;
+
+                                match event.physical_key {
+                                    PhysicalKey::Code(KeyCode::KeyA)
+                                        if line_modifier && !has_shift =>
+                                    {
+                                        zone_manager.toolbar.address_bar.select_all();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Backspace) => {
+                                        zone_manager.toolbar.address_bar.delete_before_cursor();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Delete) => {
+                                        zone_manager.toolbar.address_bar.delete_after_cursor();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::ArrowLeft) => {
+                                        if word_modifier {
+                                            zone_manager.toolbar.address_bar.move_cursor_left_word();
+                                        } else {
+                                            zone_manager.toolbar.address_bar.move_cursor_left();
+                                        }
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::ArrowRight) => {
+                                        if word_modifier {
+                                            zone_manager.toolbar.address_bar.move_cursor_right_word();
+                                        } else {
+                                            zone_manager.toolbar.address_bar.move_cursor_right();
+                                        }
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Home) => {
+                                        zone_manager.toolbar.address_bar.move_cursor_to_start();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::End) => {
+                                        zone_manager.toolbar.address_bar.move_cursor_to_end();
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Escape) => {
+                                        // Unfocus address bar on Escape
+                                        zone_manager.toolbar.address_bar.focused = false;
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::Enter) => {
+                                        // Handle Enter - navigate to URL
+                                        let url = &zone_manager.toolbar.address_bar.text;
+                                        println!("Navigate to: {}", url);
+                                        // TODO: Implement navigation
+                                        needs_redraw = true;
+                                        window.request_redraw();
+                                    }
+                                    _ => {
+                                        // Handle text input via the text field
+                                        if let Some(text) = &event.text {
+                                            for ch in text.chars() {
+                                                // Skip control characters but allow space
+                                                if !ch.is_control() || ch == ' ' {
+                                                    zone_manager.toolbar.address_bar.insert_char(ch);
+                                                }
+                                            }
+                                            zone_manager.toolbar.address_bar.update_scroll();
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                }
+                            }
                         } else if let Some(focused_input) = viewport_ir_lock
                             .input_boxes
                             .iter_mut()
@@ -2315,6 +2456,10 @@ pub fn run() -> Result<()> {
                             // a control is focused we keep `needs_redraw` true so
                             // that the event loop continues to request redraws and
                             // the caret can blink at a steady rate.
+
+                            // Update toolbar address bar blink
+                            zone_manager.toolbar.address_bar.update_blink(delta_time);
+
                             let any_focused_editable = {
                                 let mut viewport_ir_lock = viewport_ir.lock().unwrap();
                                 for input_box in viewport_ir_lock.input_boxes.iter_mut() {
@@ -2325,10 +2470,11 @@ pub fn run() -> Result<()> {
                                     textarea.update_blink(delta_time);
                                 }
 
-                                viewport_ir_lock
-                                    .input_boxes
-                                    .iter()
-                                    .any(|ib| ib.focused)
+                                zone_manager.toolbar.address_bar.focused
+                                    || viewport_ir_lock
+                                        .input_boxes
+                                        .iter()
+                                        .any(|ib| ib.focused)
                                     || viewport_ir_lock
                                         .text_areas
                                         .iter()
@@ -2384,68 +2530,19 @@ pub fn run() -> Result<()> {
                                 .viewport
                                 .set_content_height(content_height, viewport_rect.h);
 
-                            // Render toolbar icons and hit regions
+                            // Render toolbar with navigation controls and address bar
                             let toolbar_rect = zone_manager.layout.get_zone(ZoneId::Toolbar);
-                            let toggle_size = 24.0;
-                            let toggle_margin = 12.0;
 
-                            // Use toolbar-local coordinates for both hit regions and icons
+                            // Use toolbar-local coordinates for hit regions and icons
                             canvas.push_transform(Transform2D::translate(
                                 toolbar_rect.x,
                                 toolbar_rect.y,
                             ));
 
-                            // Sidebar toggle (local coords)
-                            let toggle_x_local = toggle_margin;
-                            let toggle_y_local = (toolbar_rect.h - toggle_size) * 0.5;
-
-                            let toggle_rect = Rect {
-                                x: toggle_x_local,
-                                y: toggle_y_local,
-                                w: toggle_size,
-                                h: toggle_size,
-                            };
-
-                            canvas.hit_region_rect(TOGGLE_BUTTON_REGION_ID, toggle_rect, 10100);
-
-                            // Devtools toggle (local coords)
-                            let devtools_x_local = toolbar_rect.w - toggle_size - toggle_margin;
-                            let devtools_y_local = (toolbar_rect.h - toggle_size) * 0.5;
-
-                            let devtools_rect_hit = Rect {
-                                x: devtools_x_local,
-                                y: devtools_y_local,
-                                w: toggle_size,
-                                h: toggle_size,
-                            };
-
-                            canvas.hit_region_rect(
-                                DEVTOOLS_BUTTON_REGION_ID,
-                                devtools_rect_hit,
-                                10100,
-                            );
-
-                            let white = ColorLinPremul::rgba(255, 255, 255, 255);
-                            let icon_style = engine_core::SvgStyle::new()
-                                .with_stroke(white)
-                                .with_stroke_width(1.5);
-
-                            // Icons rendered in toolbar-local coordinates (transform applied)
-                            canvas.draw_svg_styled(
-                                "images/panel-left.svg",
-                                [toggle_x_local, toggle_y_local],
-                                [toggle_size, toggle_size],
-                                icon_style,
-                                10200,
-                            );
-
-                            canvas.draw_svg_styled(
-                                "images/inspection-panel.svg",
-                                [devtools_x_local, devtools_y_local],
-                                [toggle_size, toggle_size],
-                                icon_style,
-                                10200,
-                            );
+                            // Render all toolbar content (buttons, address bar, etc.)
+                            zone_manager
+                                .toolbar
+                                .render(&mut canvas, toolbar_rect, provider.as_ref());
 
                             canvas.pop_transform();
                         }

@@ -80,10 +80,11 @@ impl Default for DevTools {
 }
 
 /// Close button region ID for hit testing
-pub const DEVTOOLS_CLOSE_BUTTON_REGION_ID: u32 = 1002;
+/// Use IDs distinct from toolbar controls to avoid collisions.
+pub const DEVTOOLS_CLOSE_BUTTON_REGION_ID: u32 = 1100;
 
 /// Elements tab region ID for hit testing
-pub const DEVTOOLS_ELEMENTS_TAB_REGION_ID: u32 = 1003;
+pub const DEVTOOLS_ELEMENTS_TAB_REGION_ID: u32 = 1101;
 
 /// Console tab region ID for hit testing
-pub const DEVTOOLS_CONSOLE_TAB_REGION_ID: u32 = 1004;
+pub const DEVTOOLS_CONSOLE_TAB_REGION_ID: u32 = 1102;

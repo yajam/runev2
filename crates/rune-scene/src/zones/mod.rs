@@ -11,7 +11,10 @@ pub use devtools::{
     DEVTOOLS_ELEMENTS_TAB_REGION_ID, DevTools, DevToolsTab,
 };
 pub use sidebar::Sidebar;
-pub use toolbar::{DEVTOOLS_BUTTON_REGION_ID, TOGGLE_BUTTON_REGION_ID, Toolbar};
+pub use toolbar::{
+    ADDRESS_BAR_REGION_ID, BACK_BUTTON_REGION_ID, DEVTOOLS_BUTTON_REGION_ID,
+    FORWARD_BUTTON_REGION_ID, REFRESH_BUTTON_REGION_ID, TOGGLE_BUTTON_REGION_ID, Toolbar,
+};
 pub use viewport::Viewport;
 
 /// Zone manager for rendering and interaction
