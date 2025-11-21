@@ -56,7 +56,7 @@ impl Scene for UnifiedTestScene {
 
 fn build_test_dl(viewport: Viewport, test_level: u32) -> DisplayList {
     use engine_core::{Rect, TextRun};
-    
+
     let mut painter = Painter::begin_frame(viewport);
 
     // Global background so we don't see the clear color.
@@ -77,21 +77,36 @@ fn build_test_dl(viewport: Viewport, test_level: u32) -> DisplayList {
 
     // Red rectangle (z=10)
     painter.rect(
-        Rect { x: 100.0, y: 100.0, w: 200.0, h: 150.0 },
+        Rect {
+            x: 100.0,
+            y: 100.0,
+            w: 200.0,
+            h: 150.0,
+        },
         Brush::Solid(ColorLinPremul::from_srgba_u8([255, 0, 0, 255])),
         10,
     );
 
     // Green rectangle overlapping (z=20 - should be on top of red)
     painter.rect(
-        Rect { x: 200.0, y: 150.0, w: 200.0, h: 150.0 },
+        Rect {
+            x: 200.0,
+            y: 150.0,
+            w: 200.0,
+            h: 150.0,
+        },
         Brush::Solid(ColorLinPremul::from_srgba_u8([0, 255, 0, 255])),
         20,
     );
 
     // Blue rectangle (z=30 - should be on top of both)
     painter.rect(
-        Rect { x: 300.0, y: 200.0, w: 200.0, h: 150.0 },
+        Rect {
+            x: 300.0,
+            y: 200.0,
+            w: 200.0,
+            h: 150.0,
+        },
         Brush::Solid(ColorLinPremul::from_srgba_u8([0, 0, 255, 255])),
         30,
     );
@@ -210,7 +225,7 @@ fn build_test_dl(viewport: Viewport, test_level: u32) -> DisplayList {
         "images/circle-x.svg",
     ];
 
-    let x_offset = 150.0;  // Start after icon name labels
+    let x_offset = 150.0; // Start after icon name labels
 
     // Column headers (size labels)
     for (col_idx, size) in sizes.iter().enumerate() {
@@ -231,7 +246,11 @@ fn build_test_dl(viewport: Viewport, test_level: u32) -> DisplayList {
         let row_y = icon_test_y + 30.0 + (row_idx as f32) * 60.0;
 
         // Icon name label
-        let icon_name = icon_path.split('/').last().unwrap_or("").replace(".svg", "");
+        let icon_name = icon_path
+            .split('/')
+            .last()
+            .unwrap_or("")
+            .replace(".svg", "");
         painter.text(
             TextRun {
                 text: icon_name.clone(),
@@ -250,12 +269,7 @@ fn build_test_dl(viewport: Viewport, test_level: u32) -> DisplayList {
             let icon_x = col_x + (48.0 - size) / 2.0;
             let icon_y = row_y;
 
-            painter.svg(
-                *icon_path,
-                [icon_x, icon_y],
-                [*size, *size],
-                50,
-            );
+            painter.svg(*icon_path, [icon_x, icon_y], [*size, *size], 50);
         }
     }
 

@@ -523,7 +523,6 @@ impl Scene for UiElementsScene {
     ) {
     }
 
-
     fn on_click(&mut self, _pos: [f32; 2], hit: Option<&HitResult>) -> Option<DisplayList> {
         if let Some(h) = hit {
             if let Some(region_id) = h.region_id {

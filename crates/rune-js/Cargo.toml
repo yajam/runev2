@@ -1,0 +1,19 @@
+[package]
+name = "rune-js"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+boa_engine = { version = "0.20.0", optional = true }
+boa_gc = { version = "0.20.0", optional = true }
+rune-ir = { path = "../rune-ir" }
+rune-utils = { path = "../rune-utils" }
+tracing = "0.1"
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[features]
+default = []
+boa = ["boa_engine", "boa_gc"]

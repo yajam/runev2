@@ -7,6 +7,10 @@ use rune_text::layout::{CursorPosition, TextLayout};
 pub struct CaretRenderConfig {
     /// Content area bounds (for positioning)
     pub content_rect: Rect,
+    /// Baseline Y used when text was drawn (e.g. content_y + baseline_offset)
+    pub text_baseline_y: f32,
+    /// Baseline offset from the layout (line.baseline_offset)
+    pub baseline_offset: f32,
     /// Horizontal scroll offset (0.0 for TextArea)
     pub scroll_x: f32,
     /// Vertical scroll offset (0.0 for InputBox)
@@ -39,7 +43,7 @@ pub fn render_caret(
 
     // Transform to screen coordinates
     let cx = config.content_rect.x - config.scroll_x + cursor_rect.x;
-    let cy0 = config.content_rect.y - config.scroll_y + cursor_rect.y;
+    let cy0 = config.text_baseline_y - config.baseline_offset + cursor_rect.y - config.scroll_y;
     let cy1 = cy0 + cursor_rect.height;
 
     let mut caret = Path {

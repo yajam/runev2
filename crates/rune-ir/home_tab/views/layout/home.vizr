@@ -1,0 +1,52 @@
+{
+  "$schema": "../../../schema/view_document.schema.json",
+  "view_id": "home",
+  "root": "root",
+  "nodes": [
+    {
+      "id": "root",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "center",
+        "gap": 0
+      },
+      "padding": {
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "margin": {
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "background": {
+        "type": "linear_gradient",
+        "angle": 0,
+        "stops": [
+          [
+            "#346fb4",
+            0
+          ],
+          [
+            "#1e4599",
+            1
+          ]
+        ]
+      },
+      "children": [
+        "hero_image"
+      ]
+    },
+    {
+      "id": "hero_image",
+      "node_id": "HMTB0001",
+      "type": "image",
+      "content_fit": "fill"
+    }
+  ]
+}

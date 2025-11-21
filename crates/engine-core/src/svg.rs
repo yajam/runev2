@@ -73,19 +73,19 @@ impl From<SvgStyle> for SvgStyleKey {
 /// Provides more granular buckets to support icons at various sizes while maintaining cache efficiency.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ScaleBucket {
-    X025,  // 0.25x
-    X05,   // 0.5x
-    X075,  // 0.75x
-    X1,    // 1.0x
-    X125,  // 1.25x
-    X15,   // 1.5x
-    X2,    // 2.0x
-    X25,   // 2.5x
-    X3,    // 3.0x
-    X4,    // 4.0x
-    X5,    // 5.0x
-    X6,    // 6.0x
-    X8,    // 8.0x
+    X025, // 0.25x
+    X05,  // 0.5x
+    X075, // 0.75x
+    X1,   // 1.0x
+    X125, // 1.25x
+    X15,  // 1.5x
+    X2,   // 2.0x
+    X25,  // 2.5x
+    X3,   // 3.0x
+    X4,   // 4.0x
+    X5,   // 5.0x
+    X6,   // 6.0x
+    X8,   // 8.0x
 }
 
 impl ScaleBucket {

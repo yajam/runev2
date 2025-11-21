@@ -4,18 +4,31 @@ Features
 - [x] Datepicker
 - [x] Hyperlink element
 - [NP] Box in elements - use canvas.draw_rect
+- [x] File input was not added
 - [ ] All elements should take dynamic parameters for styling
-- [ ] Add Rune-ir
-- [ ] Rune-layout using taffy
+- [x] Add Rune-ir
+- [x] Rune-layout using taffy
 - [ ] Address input, forward, backward, refresh implementation in toolbar
-- [ ] Port persistence.rs
+- [x] Port persistence.rs
 - [ ] Bookmark, Tabs
 - [ ] Port Boa, csslightning (canonical)
 - [ ] Test gradients in layers
 - [x] Full svg vector support
+- [ ] wire to wasm, fetch, form submission
 - [ ] Pdf export
 - [ ] Elements, Console and Network implementation in devtools
 - [ ] Light mode
+- [ ] Root level font definition inherit
+- [ ] Theming support dark mode, light mode system mode
+- [ ] Native menus support
+- [ ] Web page rendering
+
+IR Porting
+
+- [x] Input, text, textarea, buttons, label, hyperlinks, Table
+- [x] Image, Select, datepicker, fileinput
+- [x] Alert, modal, confirm
+- [~] Scroll horizontal and vertical
 
 Bugs
 
@@ -24,11 +37,14 @@ Bugs
 - [ ] Edge visbility fix using background expansion
 - [x] Caret blink is not consistent
 - [x] Change SVG to true vector
-
-Performance
-
+- [ ] Text editing textarea line selection multiple with keyboard doesnt work
+- [ ] Double click triple click doesnt work right only highlights till cursor position
+- [ ] Hyperlink underline mismatch
 - [ ] Load delay for elements
 
 Improvements
 
 - [ ] Select needs a placeholder
+- [ ] Implement a scrollbar
+- [ ] Refactor and move viewport_ir as a second demo-app
+- [ ] Text must ALWAYS be rendered in a linear (unorm) format, with premultiplied alpha, into a linear color attachment.

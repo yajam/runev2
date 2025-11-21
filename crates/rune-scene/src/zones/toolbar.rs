@@ -12,7 +12,12 @@ impl Toolbar {
     pub fn new() -> Self {
         // Create address bar input box (will be resized on first render)
         let address_bar = InputBox::new(
-            Rect { x: 0.0, y: 0.0, w: 400.0, h: 32.0 },
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 400.0,
+                h: 32.0,
+            },
             "https://example.com".to_string(),
             14.0,
             ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
@@ -35,6 +40,11 @@ impl Toolbar {
     }
 
     /// Render toolbar content with navigation controls and address bar
+    /// Render the toolbar.
+    ///
+    /// IMPORTANT: toolbar_rect is passed for dimensions and calculations,
+    /// but we render in LOCAL coordinates (0,0 origin) because the caller applies a transform.
+    /// Hit regions also use LOCAL coordinates since they ARE affected by transforms.
     pub fn render(
         &mut self,
         canvas: &mut rune_surface::Canvas,
@@ -48,6 +58,7 @@ impl Toolbar {
         const MARGIN: f32 = 12.0;
         const ADDRESS_HEIGHT: f32 = 32.0;
 
+        // Calculate positions in LOCAL coordinates (both rendering and hit regions use local coords)
         let center_y = (toolbar_rect.h - BUTTON_SIZE) * 0.5;
         let address_y = (toolbar_rect.h - ADDRESS_HEIGHT) * 0.5;
 
@@ -66,7 +77,7 @@ impl Toolbar {
             w: BUTTON_SIZE,
             h: BUTTON_SIZE,
         };
-        canvas.hit_region_rect(TOGGLE_BUTTON_REGION_ID, toggle_rect, 10150); // Above address bar
+        canvas.hit_region_rect(TOGGLE_BUTTON_REGION_ID, toggle_rect, 10150);
         canvas.draw_svg_styled(
             "images/panel-left.svg",
             [x, center_y],
@@ -83,7 +94,7 @@ impl Toolbar {
             w: BUTTON_SIZE,
             h: BUTTON_SIZE,
         };
-        canvas.hit_region_rect(BACK_BUTTON_REGION_ID, back_rect, 10150); // Above address bar
+        canvas.hit_region_rect(BACK_BUTTON_REGION_ID, back_rect, 10150);
         canvas.draw_svg_styled(
             "images/arrow-left.svg",
             [x, center_y],
@@ -100,7 +111,7 @@ impl Toolbar {
             w: BUTTON_SIZE,
             h: BUTTON_SIZE,
         };
-        canvas.hit_region_rect(FORWARD_BUTTON_REGION_ID, forward_rect, 10150); // Above address bar
+        canvas.hit_region_rect(FORWARD_BUTTON_REGION_ID, forward_rect, 10150);
         canvas.draw_svg_styled(
             "images/arrow-right.svg",
             [x, center_y],
@@ -113,9 +124,10 @@ impl Toolbar {
         // 4. Address bar (expanding to fill remaining space)
         // Calculate width: total - used space - refresh button - devtools button - margins
         let refresh_and_devtools_width = BUTTON_SIZE + BUTTON_GAP + BUTTON_SIZE + MARGIN;
-        let address_width = (toolbar_rect.w - x - refresh_and_devtools_width - SECTION_GAP).max(100.0);
+        let address_width =
+            (toolbar_rect.w - x - refresh_and_devtools_width - SECTION_GAP).max(100.0);
 
-        // Update address bar rect for proper layout
+        // Update address bar rect (LOCAL coordinates)
         self.address_bar.rect = Rect {
             x,
             y: address_y,
@@ -123,8 +135,10 @@ impl Toolbar {
             h: ADDRESS_HEIGHT,
         };
 
-        // Add hit region for address bar to enable focus and editing (lower z than buttons)
-        canvas.hit_region_rect(ADDRESS_BAR_REGION_ID, self.address_bar.rect, 10050);
+        // Add hit region (LOCAL coordinates - transform will be applied)
+        // Keep hit region above the rendered input visuals (which draw at z ≈ 10200)
+        // so hit testing isn't overshadowed by the background/border shapes.
+        canvas.hit_region_rect(ADDRESS_BAR_REGION_ID, self.address_bar.rect, 10250);
 
         // Render the address bar (editable input box)
         self.address_bar.render(canvas, 10200, provider);
@@ -137,7 +151,7 @@ impl Toolbar {
             w: BUTTON_SIZE,
             h: BUTTON_SIZE,
         };
-        canvas.hit_region_rect(REFRESH_BUTTON_REGION_ID, refresh_rect, 10150); // Above address bar
+        canvas.hit_region_rect(REFRESH_BUTTON_REGION_ID, refresh_rect, 10150);
         canvas.draw_svg_styled(
             "images/refresh.svg",
             [x, center_y],
@@ -154,7 +168,7 @@ impl Toolbar {
             w: BUTTON_SIZE,
             h: BUTTON_SIZE,
         };
-        canvas.hit_region_rect(DEVTOOLS_BUTTON_REGION_ID, devtools_rect, 10150); // Above address bar
+        canvas.hit_region_rect(DEVTOOLS_BUTTON_REGION_ID, devtools_rect, 10150);
         canvas.draw_svg_styled(
             "images/inspection-panel.svg",
             [devtools_x, center_y],

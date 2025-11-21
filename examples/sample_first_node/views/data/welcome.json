@@ -1,0 +1,205 @@
+{
+  "$schema": "../../../../crates/rune-ir/schema/data_document.schema.json",
+  "document_id": "welcome-first-data",
+  "nodes": [
+    {
+      "node_id": "CARDTXT1",
+      "kind": "text",
+      "text": "Hello from the first card",
+      "semantic_role": { "role": "paragraph" }
+    },
+    {
+      "node_id": "CARDTXT2",
+      "kind": "text",
+      "text": "Hello from the second card",
+      "semantic_role": { "role": "paragraph" }
+    },
+    {
+      "node_id": "MIDPARA1",
+      "kind": "text",
+      "text": "We're excited to learn more about you. Share a quick intro so we can follow up with details tailored to your needs.",
+      "semantic_role": { "role": "paragraph" }
+    },
+    {
+      "node_id": "CARD2BN1",
+      "kind": "action",
+      "label": "Tap me"
+    },
+    {
+      "node_id": "NAMEIN01",
+      "kind": "text",
+      "text": "Your name",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "MSGARE01",
+      "kind": "text",
+      "text": "Your message",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "FILELBL1",
+      "kind": "text",
+      "text": "Attachments",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "SBSCB001",
+      "kind": "text",
+      "text": "Subscribe",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "SBSCBWK1",
+      "kind": "text",
+      "text": "Weekly",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "SBSCBMN1",
+      "kind": "text",
+      "text": "Monthly",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "RRFREQDA",
+      "kind": "text",
+      "text": "Daily",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "RRFREQWK",
+      "kind": "text",
+      "text": "Weekly",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "RRFREQMN",
+      "kind": "text",
+      "text": "Monthly",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "SUBDAT01",
+      "kind": "text",
+      "text": "Subscription date",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "IMGFRST1",
+      "kind": "image",
+      "source": "images/Designer.png",
+      "width": 240.0,
+      "description": "Sample image for first-node demo"
+    },
+    {
+      "node_id": "LONGPAR1",
+      "kind": "text",
+      "text": "This is a long paragraph intended to exercise text layout, wrapping, and line breaking in the sample_first_node example. It includes several sentences so that it spans multiple lines within the card container. You can use this content to verify font metrics, spacing, and how the renderer handles soft wraps without hyphenation. Adjust the window size to see the text reflow across different widths and ensure no clipping or overflows occur.",
+      "semantic_role": { "role": "paragraph" }
+    },
+    {
+      "node_id": "RUNEDOC1",
+      "kind": "action",
+      "label": "Read the Rune docs",
+      "href": "https://docs.rune.sh/"
+    },
+    {
+      "node_id": "TRANTBL1",
+      "kind": "table",
+      "columns": ["Status", "Email", "Amount"],
+      "rows": [
+        ["Success", "ken99@example.com", "$316.00"],
+        ["Success", "abe45@example.com", "$242.00"],
+        ["Processing", "monserrat44@example.com", "$837.00"],
+        ["Success", "silas22@example.com", "$874.00"],
+        ["Failed", "carmella@example.com", "$721.00"]
+      ]
+    },
+    {
+      "node_id": "BTNMODAL",
+      "kind": "action",
+      "label": "Show Modal"
+    },
+    {
+      "node_id": "BTNALERT",
+      "kind": "action",
+      "label": "Show Alert"
+    },
+    {
+      "node_id": "BTNCONFI",
+      "kind": "action",
+      "label": "Confirm"
+    },
+    {
+      "node_id": "MODAL001",
+      "kind": "text",
+      "text": "Information Modal",
+      "semantic_role": { "role": "heading", "level": 2 }
+    },
+    {
+      "node_id": "ALERT001",
+      "kind": "text",
+      "text": "Event Created Successfully",
+      "semantic_role": { "role": "heading", "level": 2 }
+    },
+    {
+      "node_id": "CONFRM01",
+      "kind": "text",
+      "text": "Delete This Item?",
+      "semantic_role": { "role": "heading", "level": 2 }
+    },
+    {
+      "node_id": "MDLMSG01",
+      "kind": "text",
+      "text": "This is a sample modal dialog rendered from IR.",
+      "semantic_role": { "role": "paragraph" }
+    },
+    {
+      "node_id": "MDLMSG02",
+      "kind": "text",
+      "text": "The content and buttons are defined in the view document.",
+      "semantic_role": { "role": "paragraph" }
+    },
+    {
+      "node_id": "MDLBTNCA",
+      "kind": "action",
+      "label": "Dismiss"
+    },
+    {
+      "node_id": "MDLBTNOK",
+      "kind": "action",
+      "label": "Got It"
+    },
+    {
+      "node_id": "CFMMSG01",
+      "kind": "text",
+      "text": "This action will permanently delete the selected item.",
+      "semantic_role": { "role": "paragraph" }
+    },
+    {
+      "node_id": "CFMMSG02",
+      "kind": "text",
+      "text": "This cannot be undone. Are you sure you want to proceed?",
+      "semantic_role": { "role": "paragraph" }
+    },
+    {
+      "node_id": "CFMBTNCA",
+      "kind": "action",
+      "label": "Keep Item"
+    },
+    {
+      "node_id": "CFMBTNDE",
+      "kind": "action",
+      "label": "Delete"
+    }
+  ],
+  "bindings": [],
+  "channels": [
+    {
+      "channel_id": "telemetry",
+      "kind": "broadcast",
+      "description": "Publishes incremental layout metrics to observers"
+    }
+  ]
+}

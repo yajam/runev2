@@ -176,7 +176,7 @@ impl DisplayList {
 
 /// Convert z-index to depth value for GPU depth testing.
 /// Maps z-index range to [0.0, 1.0] where lower z-index = closer to camera = lower depth.
-/// 
+///
 /// Strategy:
 /// - z = 0 maps to depth 0.5 (middle)
 /// - Negative z (closer) maps to (0.0, 0.5)

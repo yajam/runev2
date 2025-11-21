@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rune.splenta.com/schemas/data_document.schema.json",
+  "title": "Rune Data Document",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["document_id", "nodes"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "document_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/DataNode" },
+      "default": []
+    },
+    "bindings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/DataBinding" },
+      "default": []
+    },
+    "channels": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/DataChannel" },
+      "default": []
+    }
+  },
+  "$defs": {
+    "NodeId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9]{8}$"
+    },
+    "WidgetId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9]{8}$"
+    },
+    "DataNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_id", "kind"],
+      "properties": {
+        "node_id": { "$ref": "#/$defs/NodeId" },
+        "widget_id": { "$ref": "#/$defs/WidgetId" },
+        "kind": {
+          "type": "string",
+          "enum": ["group", "text", "action", "image", "table"]
+        },
+        "label": { "type": "string" },
+        "description": { "type": "string" },
+        "text": { "type": "string" },
+        "semantic_role": { "$ref": "#/$defs/TextSemanticRole" },
+        "action": { "type": "string" },
+        "href": { "type": "string" },
+        "intent": { "type": "string" },
+        "source": { "type": "string" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "columns": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "const": "group" } }
+          },
+          "then": {
+            "properties": {
+              "label": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "text" } }
+          },
+          "then": {
+            "required": ["text"],
+            "properties": {}
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "action" } }
+          },
+          "then": {
+            "required": ["label"],
+            "properties": {}
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "image" } }
+          },
+          "then": {
+            "required": ["source"],
+            "properties": {
+              "source": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "table" } } },
+          "then": {
+            "required": ["columns", "rows"],
+            "properties": {
+              "columns": { "$ref": "#/$defs/DataNode/properties/columns" },
+              "rows": { "$ref": "#/$defs/DataNode/properties/rows" }
+            }
+          }
+        }
+      ]
+    },
+    "TextSemanticRole": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["role", "level"],
+          "properties": {
+            "role": { "const": "heading" },
+            "level": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["role"],
+          "properties": {
+            "role": { "enum": ["paragraph", "label"] }
+          }
+        }
+      ]
+    },
+    "DataBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "path"],
+      "properties": {
+        "target": { "$ref": "#/$defs/NodeId" },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["pull", "push", "duplex"],
+          "default": "pull"
+        }
+      }
+    },
+    "DataChannel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel_id"],
+      "properties": {
+        "channel_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["broadcast", "request_response"],
+          "default": "broadcast"
+        },
+        "description": { "type": "string" }
+      }
+    }
+  }
+}

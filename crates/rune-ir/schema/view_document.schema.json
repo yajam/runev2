@@ -1,0 +1,729 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rune.splenta.com/schemas/view_document.schema.json",
+  "title": "Rune View Document",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["view_id", "root", "nodes"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "view_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "root": { "$ref": "#/$defs/ViewNodeId" },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ViewNode" },
+      "default": []
+    }
+  },
+  "$defs": {
+    "NodeId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9]{8}$"
+    },
+    "WidgetId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9]{8}$"
+    },
+    "ViewNodeId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ViewNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "$ref": "#/$defs/ViewNodeId" },
+        "node_id": { "$ref": "#/$defs/NodeId" },
+        "widget_id": { "$ref": "#/$defs/WidgetId" },
+        "type": {
+          "type": "string",
+          "enum": [
+            "flex_container",
+            "grid_container",
+            "form_container",
+            "text",
+            "button",
+            "image",
+            "spacer",
+            "link",
+            "input_box",
+            "text_area",
+            "checkbox",
+            "radio",
+            "select",
+            "file_input",
+            "date_picker",
+            "table",
+            "alert",
+            "modal",
+            "confirm"
+          ]
+        },
+        "layout": {
+          "anyOf": [
+            { "$ref": "#/$defs/FlexLayout" },
+            { "$ref": "#/$defs/GridLayout" }
+          ]
+        },
+        "padding": { "$ref": "#/$defs/EdgeInsets" },
+        "margin": { "$ref": "#/$defs/EdgeInsets" },
+        "margin_left_auto": { "type": "boolean" },
+        "margin_right_auto": { "type": "boolean" },
+        "background": { "$ref": "#/$defs/ViewBackground" },
+        "backgrounds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ViewBackground" }
+        },
+        "corner_radius": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "min_width": { "type": "number" },
+        "min_height": { "type": "number" },
+        "max_width": { "type": "number" },
+        "border_width": { "type": "number" },
+        "border_color": { "type": "string" },
+        "border_top_width": { "type": "number" },
+        "border_right_width": { "type": "number" },
+        "border_bottom_width": { "type": "number" },
+        "border_left_width": { "type": "number" },
+        "border_top_color": { "type": "string" },
+        "border_right_color": { "type": "string" },
+        "border_bottom_color": { "type": "string" },
+        "border_left_color": { "type": "string" },
+        "box_shadow": { "$ref": "#/$defs/BoxShadow" },
+        "scroll": { "$ref": "#/$defs/ScrollBehavior" },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ViewNodeId" }
+        },
+        "style": { "$ref": "#/$defs/ViewNodeStyle" },
+        "label_style": { "$ref": "#/$defs/TextStyle" },
+        "placements": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/GridItemPlacement" }
+        },
+        "on_click_intent": { "type": "string" },
+        "button_type": {
+          "type": "string",
+          "enum": ["button", "submit", "reset"]
+        },
+        "form_action": { "type": "string" },
+        "form_method": { "type": "string", "enum": ["get", "post"] },
+        "form_encoding": {
+          "type": "string",
+          "enum": ["json", "form_urlencoded"]
+        },
+        "onsubmit_intent": { "type": "string" },
+        "content_fit": {
+          "type": "string",
+          "enum": ["cover", "contain", "fill"]
+        },
+        "size": {
+          "type": "number",
+          "minimum": 0.0
+        },
+        "placeholder": { "type": "string" },
+        "control_id": { "type": "string" },
+        "form_id": { "type": "string" },
+        "default_value": { "type": "string" },
+        "input_type": { "type": "string" },
+        "default_checked": { "type": "boolean" },
+        "default_selected": { "type": "boolean" },
+        "group": { "type": "string" },
+        "value": { "type": ["string", "null"] },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label"],
+            "properties": {
+              "label": { "type": "string" },
+              "value": { "type": ["string", "null"] },
+              "selected": { "type": "boolean" }
+            }
+          }
+        },
+        "search_placeholder": { "type": "string" },
+        "multiple": { "type": "boolean" },
+        "multi": { "type": "boolean" },
+        "max_height": { "type": "number" },
+        "position": { "$ref": "#/$defs/OverlayPosition" },
+        "dismissible": { "type": "boolean" },
+        "show_close": { "type": "boolean" },
+        "header_style": { "$ref": "#/$defs/TextStyle" },
+        "cell_style": { "$ref": "#/$defs/TextStyle" },
+        "column_gap": { "type": "number" },
+        "row_gap": { "type": "number" },
+        "zebra": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "flex_container" } } },
+          "then": {
+            "required": ["children"],
+            "properties": {
+              "layout": { "$ref": "#/$defs/FlexLayout" },
+              "padding": { "$ref": "#/$defs/EdgeInsets" },
+              "margin": { "$ref": "#/$defs/EdgeInsets" },
+              "margin_left_auto": { "type": "boolean" },
+              "margin_right_auto": { "type": "boolean" },
+              "background": { "$ref": "#/$defs/ViewBackground" },
+              "backgrounds": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/ViewBackground" }
+              },
+              "corner_radius": { "type": "number" },
+              "width": { "type": "number" },
+              "height": { "type": "number" },
+              "min_width": { "type": "number" },
+              "min_height": { "type": "number" },
+              "max_width": { "type": "number" },
+              "max_height": { "type": "number" },
+              "border_width": { "type": "number" },
+              "border_color": { "type": "string" },
+              "box_shadow": { "$ref": "#/$defs/BoxShadow" },
+              "scroll": { "$ref": "#/$defs/ScrollBehavior" },
+              "children": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/ViewNodeId" },
+                "minItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "grid_container" } } },
+          "then": {
+            "required": ["children"],
+            "properties": {
+              "layout": { "$ref": "#/$defs/GridLayout" },
+              "padding": { "$ref": "#/$defs/EdgeInsets" },
+              "margin": { "$ref": "#/$defs/EdgeInsets" },
+              "margin_left_auto": { "type": "boolean" },
+              "margin_right_auto": { "type": "boolean" },
+              "background": { "$ref": "#/$defs/ViewBackground" },
+              "backgrounds": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/ViewBackground" }
+              },
+              "corner_radius": { "type": "number" },
+              "width": { "type": "number" },
+              "height": { "type": "number" },
+              "min_width": { "type": "number" },
+              "min_height": { "type": "number" },
+              "max_width": { "type": "number" },
+              "max_height": { "type": "number" },
+              "border_width": { "type": "number" },
+              "border_color": { "type": "string" },
+              "box_shadow": { "$ref": "#/$defs/BoxShadow" },
+              "children": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/ViewNodeId" },
+                "minItems": 0
+              },
+              "placements": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/GridItemPlacement" }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "table" } } },
+          "then": {
+            "required": ["node_id"],
+            "properties": {
+              "style": { "$ref": "#/$defs/SurfaceStyle" },
+              "header_style": { "$ref": "#/$defs/TextStyle" },
+              "cell_style": { "$ref": "#/$defs/TextStyle" },
+              "column_gap": { "type": "number" },
+              "row_gap": { "type": "number" },
+              "zebra": { "type": "boolean" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "form_container" } } },
+          "then": {
+            "required": ["children", "form_id"],
+            "properties": {
+              "layout": { "$ref": "#/$defs/FlexLayout" },
+              "padding": { "$ref": "#/$defs/EdgeInsets" },
+              "margin": { "$ref": "#/$defs/EdgeInsets" },
+              "background": { "$ref": "#/$defs/ViewBackground" },
+              "backgrounds": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/ViewBackground" }
+              },
+              "corner_radius": { "type": "number" },
+              "width": { "type": "number" },
+              "height": { "type": "number" },
+              "border_width": { "type": "number" },
+              "border_color": { "type": "string" },
+              "box_shadow": { "$ref": "#/$defs/BoxShadow" },
+              "children": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/ViewNodeId" },
+                "minItems": 0
+              },
+              "form_id": { "type": "string" },
+              "form_action": { "type": "string" },
+              "form_method": { "type": "string", "enum": ["get", "post"] },
+              "form_encoding": {
+                "type": "string",
+                "enum": ["json", "form_urlencoded"]
+              },
+              "onsubmit_intent": { "type": "string" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "text" } } },
+          "then": {
+            "properties": {
+              "style": { "$ref": "#/$defs/TextStyle" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "button" } } },
+          "then": {
+            "properties": {
+              "style": { "$ref": "#/$defs/SurfaceStyle" },
+              "label_style": { "$ref": "#/$defs/TextStyle" },
+              "on_click_intent": { "type": "string" },
+              "button_type": {
+                "type": "string",
+                "enum": ["button", "submit", "reset"]
+              },
+              "form_id": { "type": "string" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "link" } } },
+          "then": {
+            "properties": {
+              "style": { "$ref": "#/$defs/SurfaceStyle" },
+              "label_style": { "$ref": "#/$defs/TextStyle" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "image" } } },
+          "then": {
+            "properties": {
+              "width": { "type": "number" },
+              "height": { "type": "number" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "spacer" } } },
+          "then": {
+            "required": ["size"],
+            "properties": {
+              "size": {
+                "type": "number",
+                "minimum": 0.0
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "input_box" } } },
+          "then": {
+            "properties": {
+              "placeholder": { "type": "string" },
+              "control_id": { "type": "string" },
+              "width": { "type": "number" },
+              "form_id": { "type": "string" },
+              "default_value": { "type": "string" },
+              "input_type": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "password",
+                  "email",
+                  "number",
+                  "search",
+                  "date"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "text_area" } } },
+          "then": {
+            "properties": {
+              "placeholder": { "type": "string" },
+              "control_id": { "type": "string" },
+              "width": { "type": "number" },
+              "form_id": { "type": "string" },
+              "default_value": { "type": "string" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "checkbox" } } },
+          "then": {
+            "properties": {
+              "control_id": { "type": "string" },
+              "form_id": { "type": "string" },
+              "value": { "type": ["string", "null"] },
+              "default_checked": { "type": "boolean" },
+              "size": { "type": "number" },
+              "width": { "type": "number" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "radio" } } },
+          "then": {
+            "properties": {
+              "group": { "type": "string" },
+              "value": { "type": ["string", "null"] },
+              "default_selected": { "type": "boolean" },
+              "size": { "type": "number" },
+              "width": { "type": "number" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "file_input" } } },
+          "then": {
+            "properties": {
+              "placeholder": { "type": "string" },
+              "control_id": { "type": "string" },
+              "form_id": { "type": "string" },
+              "multi": { "type": "boolean" },
+              "width": { "type": "number" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "select" } } },
+          "then": {
+            "properties": {
+              "style": { "$ref": "#/$defs/SurfaceStyle" },
+              "placeholder": { "type": "string" },
+              "search_placeholder": { "type": "string" },
+              "control_id": { "type": "string" },
+              "form_id": { "type": "string" },
+              "multiple": { "type": "boolean" },
+              "multi": { "type": "boolean" },
+              "options": { "$ref": "#/$defs/ViewNode/properties/options" },
+              "width": { "type": "number" },
+              "max_height": { "type": "number" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "date_picker" } } },
+          "then": {
+            "properties": {
+              "style": { "$ref": "#/$defs/SurfaceStyle" },
+              "placeholder": { "type": "string" },
+              "control_id": { "type": "string" },
+              "form_id": { "type": "string" },
+              "default_value": { "type": "string" },
+              "width": { "type": "number" }
+            }
+          }
+        }
+      ]
+    },
+    "OverlayPosition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "center" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "top_center" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "bottom_center" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "top_left" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "top_right" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "bottom_left" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "bottom_right" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "x", "y"],
+          "properties": {
+            "kind": { "const": "absolute" },
+            "x": { "type": "number" },
+            "y": { "type": "number" }
+          }
+        }
+      ]
+    },
+    "FlexLayout": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "type": "string",
+          "enum": ["row", "column"],
+          "default": "column"
+        },
+        "align": {
+          "type": "string",
+          "enum": ["start", "center", "end", "stretch"],
+          "default": "stretch"
+        },
+        "justify": {
+          "type": "string",
+          "enum": ["start", "center", "end", "space_between"],
+          "default": "start"
+        },
+        "wrap": {
+          "type": "boolean",
+          "default": false
+        },
+        "gap": {
+          "type": "number",
+          "default": 0.0
+        }
+      }
+    },
+    "GridLayout": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/GridTrack" },
+          "default": []
+        },
+        "rows": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/GridTrack" },
+          "default": []
+        },
+        "auto_flow": {
+          "type": "string",
+          "enum": ["row", "column", "row_dense", "column_dense"],
+          "default": "row"
+        },
+        "column_gap": { "type": "number", "default": 0.0 },
+        "row_gap": { "type": "number", "default": 0.0 },
+        "align_items": { "type": "string", "defsult": "center" }
+      }
+    },
+    "GridTrack": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "fr" },
+            "value": { "type": "number" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "px" },
+            "value": { "type": "number" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "auto" } }
+        }
+      ]
+    },
+    "GridItemPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "col_span": { "type": "integer", "minimum": 1, "default": 1 },
+        "row_span": { "type": "integer", "minimum": 1, "default": 1 },
+        "col_start": { "type": "integer", "minimum": 1 },
+        "row_start": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "EdgeInsets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "top": { "type": "number", "default": 0.0 },
+        "right": { "type": "number", "default": 0.0 },
+        "bottom": { "type": "number", "default": 0.0 },
+        "left": { "type": "number", "default": 0.0 }
+      }
+    },
+    "ScrollBehavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "horizontal": { "type": "boolean", "default": false },
+        "vertical": { "type": "boolean", "default": false }
+      }
+    },
+    "ViewBackground": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "color"],
+          "properties": {
+            "type": { "const": "solid" },
+            "color": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "stops"],
+          "properties": {
+            "type": { "const": "linear_gradient" },
+            "angle": { "type": "number", "default": 0.0 },
+            "stops": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "array",
+                "prefixItems": [
+                  { "type": "string", "minLength": 1 },
+                  { "type": "number" }
+                ],
+                "minItems": 2,
+                "maxItems": 2
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "stops"],
+          "properties": {
+            "type": { "const": "radial_gradient" },
+            "cx": { "type": "number", "default": 0.5 },
+            "cy": { "type": "number", "default": 0.5 },
+            "rx": { "type": "number", "default": 0.0 },
+            "ry": { "type": "number", "default": 0.0 },
+            "stops": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "array",
+                "prefixItems": [
+                  { "type": "string", "minLength": 1 },
+                  { "type": "number" }
+                ],
+                "minItems": 2,
+                "maxItems": 2
+              }
+            }
+          }
+        }
+      ]
+    },
+    "SurfaceStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "background": { "$ref": "#/$defs/ViewBackground" },
+        "backgrounds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ViewBackground" }
+        },
+        "padding": { "$ref": "#/$defs/EdgeInsets" },
+        "margin": { "$ref": "#/$defs/EdgeInsets" },
+        "corner_radius": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "min_width": { "type": "number" },
+        "min_height": { "type": "number" },
+        "max_width": { "type": "number" },
+        "max_height": { "type": "number" },
+        "border_width": { "type": "number" },
+        "border_color": { "type": "string" },
+        "box_shadow": { "$ref": "#/$defs/BoxShadow" }
+      }
+    },
+    "BoxShadow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["offset_x", "offset_y", "blur", "color"],
+      "properties": {
+        "offset_x": { "type": "number" },
+        "offset_y": { "type": "number" },
+        "blur": { "type": "number" },
+        "color": { "type": "string", "minLength": 1 }
+      }
+    },
+    "TextStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "color": { "type": "string" },
+        "font_family": { "type": "string" },
+        "font_size": { "type": "number" },
+        "line_height": { "type": "number" },
+        "font_weight": { "type": "number" },
+        "background": { "$ref": "#/$defs/ViewBackground" },
+        "padding": { "$ref": "#/$defs/EdgeInsets" },
+        "margin": { "$ref": "#/$defs/EdgeInsets" },
+        "corner_radius": { "type": "number" },
+        "text_align": { "type": "string", "enum": ["start", "center", "end"] }
+      }
+    },
+    "ViewNodeStyle": {
+      "anyOf": [
+        { "$ref": "#/$defs/TextStyle" },
+        { "$ref": "#/$defs/SurfaceStyle" }
+      ]
+    }
+  }
+}

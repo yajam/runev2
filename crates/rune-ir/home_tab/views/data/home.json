@@ -1,0 +1,12 @@
+{
+  "$schema": "../../../schema/data_document.schema.json",
+  "document_id": "home-data",
+  "nodes": [
+    {
+      "node_id": "HMTB0001",
+      "kind": "image",
+      "source": "images/home_tab.png",
+      "description": "Rune home tab"
+    }
+  ]
+}

@@ -6,7 +6,7 @@ use crate::layout::{
     cursor::{Cursor, CursorAffinity, CursorPosition, CursorRect},
     cursor_movement::CursorMovement,
     hit_test::{HitTestPolicy, HitTestResult, Point, Position},
-    line_breaker::{compute_line_breaks, compute_word_boundaries},
+    line_breaker::{WordBoundaryKind, compute_line_breaks, compute_word_boundaries},
     selection::{Selection, SelectionRect},
     undo::{TextOperation, UndoStack},
 };
@@ -862,8 +862,19 @@ impl TextLayout {
         let boundaries = compute_word_boundaries(&self.text);
 
         // Find the word boundary containing this offset
+        // Check both inside the range and at the end boundary (for clicks at word end)
         for boundary in boundaries.iter() {
-            if boundary.range.contains(&offset) || boundary.range.start == offset {
+            // Offset is inside the range (exclusive end)
+            if boundary.range.contains(&offset) {
+                return Selection::new(boundary.range.start, boundary.range.end);
+            }
+            // Offset is at the start of the range
+            if boundary.range.start == offset {
+                return Selection::new(boundary.range.start, boundary.range.end);
+            }
+            // Offset is at the exclusive end of the range - select this word if it's an actual word
+            // (not whitespace/punctuation), as clicking at the very end should select the word
+            if boundary.range.end == offset && boundary.kind == WordBoundaryKind::Word {
                 return Selection::new(boundary.range.start, boundary.range.end);
             }
         }
@@ -886,6 +897,14 @@ impl TextLayout {
         if let Some(line_idx) = self.find_line_at_byte_offset(offset) {
             let line = &self.lines[line_idx];
             return Selection::new(line.text_range.start, line.text_range.end);
+        }
+
+        // If offset is at the exclusive end of a line, select that line
+        // This handles triple-clicking at the very end of a line
+        for line in &self.lines {
+            if line.text_range.end == offset {
+                return Selection::new(line.text_range.start, line.text_range.end);
+            }
         }
 
         Selection::collapsed(offset)

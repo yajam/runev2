@@ -111,6 +111,7 @@ pub fn run() -> Result<()> {
                                 label: "Primary".to_string(),
                                 label_size: 16.0,
                                 focused: false,
+                                on_click_intent: None,
                             };
                             let btn2 = rune_scene::elements::button::Button {
                                 rect: Rect {
@@ -125,6 +126,7 @@ pub fn run() -> Result<()> {
                                 label: "Secondary (focused)".to_string(),
                                 label_size: 16.0,
                                 focused: true,
+                                on_click_intent: None,
                             };
                             btn1.render(&mut canvas, 5);
                             btn2.render(&mut canvas, 5);

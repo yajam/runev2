@@ -6,7 +6,8 @@ use crate::allocator::{RenderAllocator, TexKey};
 // use crate::display_list::{Command, DisplayList, Viewport};
 use crate::pipeline::{
     BackgroundRenderer, BasicSolidRenderer, Blitter, BlurRenderer, Compositor,
-    OverlaySolidRenderer, ShadowCompositeRenderer, TextRenderer,
+    OverlaySolidRenderer, ScrimSolidRenderer, ScrimStencilMaskRenderer, ScrimStencilRenderer,
+    ShadowCompositeRenderer, SmaaRenderer, TextRenderer,
 };
 use crate::scene::{BoxShadowSpec, RoundedRadii, RoundedRect};
 use crate::upload::GpuScene;
@@ -39,8 +40,12 @@ pub struct PassManager {
     pub solid_direct: BasicSolidRenderer,
     pub solid_direct_no_msaa: BasicSolidRenderer,
     overlay_solid: OverlaySolidRenderer,
+    scrim_solid: ScrimSolidRenderer,
     pub compositor: Compositor,
     pub blitter: Blitter,
+    pub smaa: SmaaRenderer,
+    scrim_mask: ScrimStencilMaskRenderer,
+    scrim_stencil: ScrimStencilRenderer,
     // Shadow/blur pipelines and helpers
     pub mask_renderer: BasicSolidRenderer,
     pub blur_r8: BlurRenderer,
@@ -67,8 +72,12 @@ pub struct PassManager {
     logical_pixels: bool,
     // Intermediate texture for Vello-style smooth resizing
     pub intermediate_texture: Option<crate::OwnedTexture>,
+    smaa_edges: Option<crate::OwnedTexture>,
+    smaa_weights: Option<crate::OwnedTexture>,
     // Depth texture for z-ordering across all element types
     depth_texture: Option<crate::OwnedTexture>,
+    // Stencil texture for scrim cutouts
+    scrim_stencil_tex: Option<crate::OwnedTexture>,
     // Reusable GPU resources for text rendering to avoid per-glyph allocations.
     text_mask_atlas: wgpu::Texture,
     // Note: This view is not directly read but must be kept alive for the bind group reference
@@ -78,6 +87,7 @@ pub struct PassManager {
     // Track atlas region used in previous frame for efficient clearing
     prev_atlas_max_x: u32,
     prev_atlas_max_y: u32,
+    smaa_param_buffer: wgpu::Buffer,
 }
 
 // Vertex structures for unified rendering
@@ -97,11 +107,22 @@ struct ImageQuadVtx {
 }
 
 impl PassManager {
-
-    /// Choose the best offscreen format: Rgba16Float if supported, otherwise Rgba8Unorm
-    fn choose_offscreen_format(device: &wgpu::Device) -> wgpu::TextureFormat {
-        // WORKAROUND: Use Rgba8UnormSrgb instead of Rgba16Float due to Metal blending bug
-        let preferred = wgpu::TextureFormat::Rgba8UnormSrgb;
+    /// Choose the best offscreen format based on scene color space.
+    ///
+    /// - If the whole render target is sRGB, prefer Rgba8UnormSrgb so wgpu handles the
+    ///   linear→sRGB conversion on write.
+    /// - If the scene is linear-light, keep the offscreen target linear via Rgba8Unorm.
+    fn choose_offscreen_format(
+        device: &wgpu::Device,
+        target_format: wgpu::TextureFormat,
+    ) -> wgpu::TextureFormat {
+        // WORKAROUND: Stay on 8-bit formats due to Metal blending issues with Rgba16Float.
+        let prefer_srgb = target_format.is_srgb();
+        let preferred = if prefer_srgb {
+            wgpu::TextureFormat::Rgba8UnormSrgb
+        } else {
+            wgpu::TextureFormat::Rgba8Unorm
+        };
 
         // Try to create a small test texture to verify support
         let test_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -123,20 +144,32 @@ impl PassManager {
 
         match test_result {
             Ok(_) => preferred,
-            Err(_) => wgpu::TextureFormat::Rgba8Unorm,
+            Err(_) => {
+                // Fallback to the opposite variant to avoid failing on platforms
+                // that reject the preferred format.
+                if prefer_srgb {
+                    wgpu::TextureFormat::Rgba8Unorm
+                } else {
+                    wgpu::TextureFormat::Rgba8UnormSrgb
+                }
+            }
         }
     }
 
     pub fn new(device: Arc<wgpu::Device>, target_format: wgpu::TextureFormat) -> Self {
         // Try Rgba16Float for better gradient quality, fallback to Rgba8Unorm if not supported
-        let offscreen_format = Self::choose_offscreen_format(&device);
-        let msaa_count = 4;
+        let offscreen_format = Self::choose_offscreen_format(&device, target_format);
+        let msaa_count = 1;
         let solid_offscreen = BasicSolidRenderer::new(device.clone(), offscreen_format, msaa_count);
         let solid_direct = BasicSolidRenderer::new(device.clone(), target_format, msaa_count);
         let solid_direct_no_msaa = BasicSolidRenderer::new(device.clone(), target_format, 1);
         let overlay_solid = OverlaySolidRenderer::new(device.clone(), target_format);
+        let scrim_solid = ScrimSolidRenderer::new(device.clone(), target_format);
         let compositor = Compositor::new(device.clone(), target_format);
         let blitter = Blitter::new(device.clone(), target_format);
+        let smaa = SmaaRenderer::new(device.clone(), target_format);
+        let scrim_mask = ScrimStencilMaskRenderer::new(device.clone(), target_format);
+        let scrim_stencil = ScrimStencilRenderer::new(device.clone(), target_format);
         // Shadow/blur pipelines
         let mask_renderer =
             BasicSolidRenderer::new(device.clone(), wgpu::TextureFormat::R8Unorm, 1);
@@ -171,6 +204,12 @@ impl PassManager {
         let bg_stops_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("background-stops"),
             size: 256, // 8 stops x 32 bytes
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let smaa_param_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("smaa-params"),
+            size: 16,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -217,8 +256,12 @@ impl PassManager {
             solid_direct,
             solid_direct_no_msaa,
             overlay_solid,
+            scrim_solid,
             compositor,
             blitter,
+            smaa,
+            scrim_mask,
+            scrim_stencil,
             mask_renderer,
             blur_r8,
             shadow_comp,
@@ -239,12 +282,16 @@ impl PassManager {
             ui_scale,
             logical_pixels: logical_default,
             intermediate_texture: None,
+            smaa_edges: None,
+            smaa_weights: None,
             depth_texture: None,
             text_mask_atlas,
             text_mask_atlas_view,
             text_bind_group,
             prev_atlas_max_x: 0,
             prev_atlas_max_y: 0,
+            smaa_param_buffer,
+            scrim_stencil_tex: None,
         }
     }
 
@@ -372,44 +419,27 @@ impl PassManager {
         let z_bg = self.create_z_bind_group(0.0, queue);
         let tex_bg = self.image.tex_bind_group(&self.device, tex_view);
 
-        // Create MSAA texture for image rendering
-        let msaa_tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("image-msaa"),
+        // Create depth texture for image rendering (1x)
+        let depth_tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("image-depth"),
             size: wgpu::Extent3d {
                 width,
                 height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: 4,
-            dimension: wgpu::TextureDimension::D2,
-            format: self.surface_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let msaa_view = msaa_tex.create_view(&wgpu::TextureViewDescriptor::default());
-        
-        // Create MSAA depth texture
-        let msaa_depth_tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("image-msaa-depth"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 4,
+            sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
-        let msaa_depth_view = msaa_depth_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let depth_view = depth_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
         let depth_attachment = Some(wgpu::RenderPassDepthStencilAttachment {
-            view: &msaa_depth_view,
+            view: &depth_view,
             depth_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Load,  // Preserve existing depth values
+                load: wgpu::LoadOp::Load, // Preserve existing depth values
                 store: wgpu::StoreOp::Store,
             }),
             stencil_ops: None,
@@ -418,8 +448,8 @@ impl PassManager {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("image-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &msaa_view,
-                resolve_target: Some(target_view),
+                view: target_view,
+                resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
@@ -429,8 +459,15 @@ impl PassManager {
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-        self.image
-            .record(&mut pass, &vp_bg, &z_bg, &tex_bg, &vbuf, &ibuf, idx.len() as u32);
+        self.image.record(
+            &mut pass,
+            &vp_bg,
+            &z_bg,
+            &tex_bg,
+            &vbuf,
+            &ibuf,
+            idx.len() as u32,
+        );
     }
 
     /// Rasterize an SVG file to a cached texture for the given scale.
@@ -666,6 +703,161 @@ impl PassManager {
             .as_ref()
             .expect("depth texture must be allocated before use")
             .view
+    }
+
+    fn ensure_scrim_stencil_texture(
+        &mut self,
+        allocator: &mut RenderAllocator,
+        width: u32,
+        height: u32,
+    ) {
+        let needs_realloc = match &self.scrim_stencil_tex {
+            Some(tex) => tex.key.width != width || tex.key.height != height,
+            None => true,
+        };
+
+        if needs_realloc {
+            if let Some(old) = self.scrim_stencil_tex.take() {
+                allocator.release_texture(old);
+            }
+            let tex = allocator.allocate_texture(TexKey {
+                width,
+                height,
+                format: wgpu::TextureFormat::Depth24PlusStencil8,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            });
+            self.scrim_stencil_tex = Some(tex);
+        }
+    }
+
+    fn ensure_smaa_textures(&mut self, allocator: &mut RenderAllocator, width: u32, height: u32) {
+        let key = TexKey {
+            width,
+            height,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        };
+
+        if self.smaa_edges.as_ref().map_or(true, |tex| tex.key != key) {
+            if let Some(old) = self.smaa_edges.take() {
+                allocator.release_texture(old);
+            }
+            self.smaa_edges = Some(allocator.allocate_texture(key));
+        }
+
+        if self
+            .smaa_weights
+            .as_ref()
+            .map_or(true, |tex| tex.key != key)
+        {
+            if let Some(old) = self.smaa_weights.take() {
+                allocator.release_texture(old);
+            }
+            self.smaa_weights = Some(allocator.allocate_texture(key));
+        }
+    }
+
+    pub fn apply_smaa(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        allocator: &mut RenderAllocator,
+        src_view: &wgpu::TextureView,
+        dst_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+        queue: &wgpu::Queue,
+    ) {
+        if width == 0 || height == 0 {
+            return;
+        }
+
+        self.ensure_smaa_textures(allocator, width, height);
+        let texel_size = [
+            1.0f32 / width.max(1) as f32,
+            1.0f32 / height.max(1) as f32,
+            0.0,
+            0.0,
+        ];
+        queue.write_buffer(&self.smaa_param_buffer, 0, bytemuck::bytes_of(&texel_size));
+
+        let edges = self
+            .smaa_edges
+            .as_ref()
+            .expect("SMAA edges texture must exist");
+        let weights = self
+            .smaa_weights
+            .as_ref()
+            .expect("SMAA weights texture must exist");
+
+        let edge_bg = self
+            .smaa
+            .edge_bind_group(&self.device, src_view, &self.smaa_param_buffer);
+        let blend_bg =
+            self.smaa
+                .blend_bind_group(&self.device, &edges.view, &self.smaa_param_buffer);
+        let resolve_bg = self.smaa.resolve_bind_group(
+            &self.device,
+            src_view,
+            &weights.view,
+            &self.smaa_param_buffer,
+        );
+
+        // Pass 1: edge detect
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("smaa-edge-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &edges.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            self.smaa.record_edges(&mut pass, &edge_bg);
+        }
+
+        // Pass 2: blend weights
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("smaa-blend-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &weights.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            self.smaa.record_blend(&mut pass, &blend_bg);
+        }
+
+        // Pass 3: resolve onto the swapchain/offscreen destination
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("smaa-resolve-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: dst_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            self.smaa.record_resolve(&mut pass, &resolve_bg);
+        }
     }
 
     /// Draw a box shadow for a rounded rect using an R8 mask + separable Gaussian blur pipeline.
@@ -1284,6 +1476,417 @@ impl PassManager {
             .record(&mut pass, &vp_bg, &vbuf, &ibuf, idx.len() as u32);
     }
 
+    /// Draw a full-viewport scrim rectangle that blends over existing content.
+    /// Unlike draw_overlay_rect, this uses a depth buffer attachment but with:
+    /// - depth_write_enabled = false (doesn't affect depth buffer)
+    /// - depth_compare = Always (always passes depth test)
+    /// This allows the scrim to render over all existing content while letting
+    /// subsequent draws at higher z-index render on top of the scrim.
+    ///
+    /// NOTE: Scrim renders directly to target without MSAA or depth attachment.
+    /// The scrim pipeline uses depth_compare=Always and depth_write_enabled=false.
+    pub fn draw_scrim_rect(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        target_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+        rect: crate::scene::Rect,
+        color: crate::scene::ColorLinPremul,
+        queue: &wgpu::Queue,
+    ) {
+        // Update viewport uniform based on render target dimensions (+ logical pixel scale)
+        let logical =
+            crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
+        let scale = [
+            (2.0f32 / (width.max(1) as f32)) * logical,
+            (-2.0f32 / (height.max(1) as f32)) * logical,
+        ];
+        let translate = [-1.0f32, 1.0f32];
+        let vp_data = [scale[0], scale[1], translate[0], translate[1]];
+        queue.write_buffer(&self.vp_buffer, 0, bytemuck::bytes_of(&vp_data));
+
+        #[repr(C)]
+        #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+        struct ScrimVtx {
+            pos: [f32; 2],
+            color: [f32; 4],
+            z_index: f32,
+        }
+
+        let scrim_color = [color.r, color.g, color.b, color.a];
+        // Use a middle z-index - the scrim pipeline ignores depth testing anyway
+        let z_index = 0.5f32;
+        let x = rect.x;
+        let y = rect.y;
+        let w = rect.w.max(0.0);
+        let h = rect.h.max(0.0);
+
+        // Skip degenerate rectangles
+        if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+
+        let verts = [
+            ScrimVtx {
+                pos: [x, y],
+                color: scrim_color,
+                z_index,
+            },
+            ScrimVtx {
+                pos: [x + w, y],
+                color: scrim_color,
+                z_index,
+            },
+            ScrimVtx {
+                pos: [x + w, y + h],
+                color: scrim_color,
+                z_index,
+            },
+            ScrimVtx {
+                pos: [x, y + h],
+                color: scrim_color,
+                z_index,
+            },
+        ];
+        let idx: [u16; 6] = [0, 1, 2, 0, 2, 3];
+
+        let vsize = (verts.len() * std::mem::size_of::<ScrimVtx>()) as u64;
+        let isize = (idx.len() * std::mem::size_of::<u16>()) as u64;
+        let vbuf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scrim-rect-vbuf"),
+            size: vsize.max(4),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let ibuf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scrim-rect-ibuf"),
+            size: isize.max(4),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        if vsize > 0 {
+            queue.write_buffer(&vbuf, 0, bytemuck::cast_slice(&verts));
+        }
+        if isize > 0 {
+            queue.write_buffer(&ibuf, 0, bytemuck::cast_slice(&idx));
+        }
+
+        let vp_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("scrim-vp-bg"),
+            layout: self.scrim_solid.viewport_bgl(),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.vp_buffer.as_entire_binding(),
+            }],
+        });
+
+        // Scrim pass: no depth attachment. The scrim pipeline is configured with
+        // depth_compare=Always and depth_write_enabled=false, so depth isn't needed.
+        // It simply blends over existing content without affecting any depth state.
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("scrim-rect-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+        self.scrim_solid
+            .record(&mut pass, &vp_bg, &vbuf, &ibuf, idx.len() as u32);
+    }
+
+    /// Draw a full scrim but cut out a rounded-rect hole via stencil.
+    pub fn draw_scrim_with_cutout(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        allocator: &mut RenderAllocator,
+        target_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+        hole: RoundedRect,
+        color: crate::scene::ColorLinPremul,
+        queue: &wgpu::Queue,
+    ) {
+        self.ensure_scrim_stencil_texture(allocator, width, height);
+        let stencil_tex = self
+            .scrim_stencil_tex
+            .as_ref()
+            .expect("stencil texture must exist");
+
+        // Update viewport uniform
+        let logical =
+            crate::dpi::logical_multiplier(self.logical_pixels, self.scale_factor, self.ui_scale);
+        let scale = [
+            (2.0f32 / (width.max(1) as f32)) * logical,
+            (-2.0f32 / (height.max(1) as f32)) * logical,
+        ];
+        let translate = [-1.0f32, 1.0f32];
+        let vp_data = [scale[0], scale[1], translate[0], translate[1]];
+        queue.write_buffer(&self.vp_buffer, 0, bytemuck::bytes_of(&vp_data));
+
+        #[repr(C)]
+        #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+        struct Vtx {
+            pos: [f32; 2],
+            color: [f32; 4],
+            z: f32,
+        }
+
+        // Tessellate filled rounded rect (copied from draw_filled_rounded_rect)
+        let mut vertices: Vec<Vtx> = Vec::new();
+        let mut indices: Vec<u16> = Vec::new();
+        let rect = hole.rect;
+        let tl = hole.radii.tl.min(rect.w * 0.5).min(rect.h * 0.5);
+        let tr = hole.radii.tr.min(rect.w * 0.5).min(rect.h * 0.5);
+        let br = hole.radii.br.min(rect.w * 0.5).min(rect.h * 0.5);
+        let bl = hole.radii.bl.min(rect.w * 0.5).min(rect.h * 0.5);
+        let segs = 32u32;
+        let mut ring: Vec<[f32; 2]> = Vec::new();
+        fn arc_append(
+            ring: &mut Vec<[f32; 2]>,
+            c: [f32; 2],
+            r: f32,
+            start: f32,
+            end: f32,
+            segs: u32,
+            include_start: bool,
+        ) {
+            if r <= 0.0 {
+                return;
+            }
+            for i in 0..=segs {
+                if i == 0 && !include_start {
+                    continue;
+                }
+                let t = (i as f32) / (segs as f32);
+                let ang = start + t * (end - start);
+                let p = [c[0] + r * ang.cos(), c[1] - r * ang.sin()];
+                ring.push(p);
+            }
+        }
+        if tl > 0.0 {
+            arc_append(
+                &mut ring,
+                [rect.x + tl, rect.y + tl],
+                tl,
+                std::f32::consts::FRAC_PI_2,
+                std::f32::consts::PI,
+                segs,
+                true,
+            );
+        } else {
+            ring.push([rect.x + 0.0, rect.y + 0.0]);
+        }
+        if bl > 0.0 {
+            arc_append(
+                &mut ring,
+                [rect.x + bl, rect.y + rect.h - bl],
+                bl,
+                std::f32::consts::PI,
+                std::f32::consts::FRAC_PI_2 * 3.0,
+                segs,
+                true,
+            );
+        } else {
+            ring.push([rect.x + 0.0, rect.y + rect.h]);
+        }
+        if br > 0.0 {
+            arc_append(
+                &mut ring,
+                [rect.x + rect.w - br, rect.y + rect.h - br],
+                br,
+                std::f32::consts::FRAC_PI_2 * 3.0,
+                std::f32::consts::TAU,
+                segs,
+                true,
+            );
+        } else {
+            ring.push([rect.x + rect.w, rect.y + rect.h]);
+        }
+        if tr > 0.0 {
+            arc_append(
+                &mut ring,
+                [rect.x + rect.w - tr, rect.y + tr],
+                tr,
+                0.0,
+                std::f32::consts::FRAC_PI_2,
+                segs,
+                true,
+            );
+        } else {
+            ring.push([rect.x + rect.w, rect.y + 0.0]);
+        }
+
+        // Triangulate fan
+        let center = [rect.x + rect.w * 0.5, rect.y + rect.h * 0.5];
+        vertices.push(Vtx {
+            pos: center,
+            color: [color.r, color.g, color.b, color.a],
+            z: 0.5,
+        });
+        for p in ring.iter() {
+            vertices.push(Vtx {
+                pos: *p,
+                color: [color.r, color.g, color.b, color.a],
+                z: 0.5,
+            });
+        }
+        // Triangle fan around center
+        for i in 1..(vertices.len() - 1) {
+            indices.extend_from_slice(&[0, i as u16, (i as u16) + 1]);
+        }
+        if vertices.len() > 2 {
+            indices.extend_from_slice(&[0, (vertices.len() - 1) as u16, 1]);
+        }
+
+        // Ensure index byte length is 4-byte aligned for write_buffer
+        if indices.len() % 2 != 0 {
+            indices.push(*indices.last().unwrap_or(&0));
+        }
+
+        let vsize = (vertices.len() * std::mem::size_of::<Vtx>()) as u64;
+        let isize = (indices.len() * std::mem::size_of::<u16>()) as u64;
+        let vbuf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scrim-hole-vbuf"),
+            size: vsize.max(4),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let ibuf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scrim-hole-ibuf"),
+            size: isize.max(4),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        if vsize > 0 {
+            queue.write_buffer(&vbuf, 0, bytemuck::cast_slice(&vertices));
+        }
+        if isize > 0 {
+            queue.write_buffer(&ibuf, 0, bytemuck::cast_slice(&indices));
+        }
+
+        let vp_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("scrim-stencil-vp-bg"),
+            layout: self.scrim_mask.viewport_bgl(),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.vp_buffer.as_entire_binding(),
+            }],
+        });
+
+        // Pass 1: write stencil = 1 inside hole (color writes disabled)
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("scrim-stencil-mask-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &stencil_tex.view,
+                    depth_ops: None,
+                    stencil_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            pass.set_stencil_reference(1);
+            self.scrim_mask
+                .record(&mut pass, &vp_bg, &vbuf, &ibuf, indices.len() as u32);
+        }
+
+        // Fullscreen quad for scrim (cover entire viewport)
+        let quad = [
+            Vtx {
+                pos: [0.0, 0.0],
+                color: [color.r, color.g, color.b, color.a],
+                z: 0.5,
+            },
+            Vtx {
+                pos: [width as f32, 0.0],
+                color: [color.r, color.g, color.b, color.a],
+                z: 0.5,
+            },
+            Vtx {
+                pos: [width as f32, height as f32],
+                color: [color.r, color.g, color.b, color.a],
+                z: 0.5,
+            },
+            Vtx {
+                pos: [0.0, height as f32],
+                color: [color.r, color.g, color.b, color.a],
+                z: 0.5,
+            },
+        ];
+        let quad_idx: [u16; 6] = [0, 1, 2, 0, 2, 3];
+        let qvbuf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scrim-fullscreen-vbuf"),
+            size: (quad.len() * std::mem::size_of::<Vtx>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let qibuf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scrim-fullscreen-ibuf"),
+            size: (quad_idx.len() * std::mem::size_of::<u16>()) as u64,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&qvbuf, 0, bytemuck::cast_slice(&quad));
+        queue.write_buffer(&qibuf, 0, bytemuck::cast_slice(&quad_idx));
+
+        let vp_bg_scrim = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("scrim-stencil-vp-bg-scrim"),
+            layout: self.scrim_stencil.viewport_bgl(),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.vp_buffer.as_entire_binding(),
+            }],
+        });
+
+        // Pass 2: draw scrim where stencil == 0 (outside hole)
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("scrim-stencil-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &stencil_tex.view,
+                    depth_ops: None,
+                    stencil_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            pass.set_stencil_reference(0);
+            self.scrim_stencil
+                .record(&mut pass, &vp_bg_scrim, &qvbuf, &qibuf, quad_idx.len() as u32);
+        }
+    }
+
+
     /// Draw a filled rounded rectangle directly onto the target using the solid_direct pipeline.
     /// Uses premultiplied linear color.
     pub fn draw_filled_rounded_rect(
@@ -1484,7 +2087,7 @@ impl PassManager {
                 stencil_ops: None,
             }
         });
-        
+
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("rounded-rect-fill-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1511,53 +2114,36 @@ impl PassManager {
         clear_color: wgpu::Color,
         queue: &wgpu::Queue,
     ) {
-        // Multisampled color target with resolve to offscreen color
-        let msaa_tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("solid-msaa-offscreen"),
+        // Depth attachment for offscreen rendering (1x)
+        let depth_tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("solid-depth-offscreen"),
             size: wgpu::Extent3d {
                 width: targets.color.key.width,
                 height: targets.color.key.height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: 4,
-            dimension: wgpu::TextureDimension::D2,
-            format: self.offscreen_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let msaa_view = msaa_tex.create_view(&wgpu::TextureViewDescriptor::default());
-        
-        // Create 4x MSAA depth texture to match color attachment sample count
-        let msaa_depth_tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("solid-msaa-depth-offscreen"),
-            size: wgpu::Extent3d {
-                width: targets.color.key.width,
-                height: targets.color.key.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 4, // Must match color attachment
+            sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
-        let msaa_depth_view = msaa_depth_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let depth_view = depth_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
         let _z_bg = self.create_z_bind_group(0.0, queue);
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("solid-offscreen-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &msaa_view,
-                resolve_target: Some(&targets.color.view),
+                view: &targets.color.view,
+                resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(clear_color),
                     store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &msaa_depth_view,
+                view: &depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Store,
@@ -2157,7 +2743,7 @@ impl PassManager {
 
     /// Unified rendering: Render all draw types (solids, text, images, SVGs) in a single pass
     /// with proper z-ordering. This is Phase 3 of the depth buffer implementation.
-    /// 
+    ///
     /// This method interleaves all draw calls based on z-index for optimal z-ordering performance.
     /// Draw calls are batched by material type when possible for efficiency.
     pub fn render_unified(
@@ -2168,8 +2754,20 @@ impl PassManager {
         width: u32,
         height: u32,
         scene: &GpuScene,
-        glyph_draws: &[([f32; 2], crate::text::RasterizedGlyph, crate::ColorLinPremul, i32)], // (origin, glyph, color, z)
-        svg_draws: &[(std::path::PathBuf, [f32; 2], [f32; 2], Option<crate::SvgStyle>, i32, crate::Transform2D)],
+        glyph_draws: &[(
+            [f32; 2],
+            crate::text::RasterizedGlyph,
+            crate::ColorLinPremul,
+            i32,
+        )], // (origin, glyph, color, z)
+        svg_draws: &[(
+            std::path::PathBuf,
+            [f32; 2],
+            [f32; 2],
+            Option<crate::SvgStyle>,
+            i32,
+            crate::Transform2D,
+        )],
         image_draws: &[(std::path::PathBuf, [f32; 2], [f32; 2], i32)], // (path, origin, size, z)
         clear: wgpu::Color,
         direct: bool,
@@ -2188,6 +2786,9 @@ impl PassManager {
         let data = bytemuck::bytes_of(&vp_data);
         queue.write_buffer(&self.vp_buffer, 0, data);
 
+        // Ensure depth buffer matches current render size (1x sample)
+        self.ensure_depth_texture(allocator, width.max(1), height.max(1));
+
         // Create viewport bind groups
         let vp_bg_off = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("vp-bg-offscreen"),
@@ -2197,62 +2798,14 @@ impl PassManager {
                 resource: self.vp_buffer.as_entire_binding(),
             }],
         });
-        let vp_bg_direct = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("vp-bg-direct"),
-            layout: self.solid_direct.viewport_bgl(),
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: self.vp_buffer.as_entire_binding(),
-            }],
-        });
-
         if direct {
-            // MSAA render directly to surface with resolve
-            let msaa_tex = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("unified-msaa-direct"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 4,
-                dimension: wgpu::TextureDimension::D2,
-                format: self.surface_format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            });
-            let msaa_view = msaa_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-            // Create 4x MSAA depth texture to match color attachment sample count
-            let msaa_depth_tex = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("unified-msaa-depth-direct"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 4,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Depth32Float,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            });
-            let msaa_depth_view =
-                msaa_depth_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-            let depth_attachment = Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &msaa_depth_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: if preserve_surface {
-                        wgpu::LoadOp::Load
-                    } else {
-                        wgpu::LoadOp::Clear(1.0)
-                    },
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
+            let vp_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("vp-bg-direct-local"),
+                layout: self.solid_direct.viewport_bgl(),
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.vp_buffer.as_entire_binding(),
+                }],
             });
 
             // Create z-index bind group before render pass (must outlive the pass)
@@ -2261,49 +2814,58 @@ impl PassManager {
             // Pre-fetch (and lazily load) all image views before render pass (to avoid mutable borrow conflicts)
             let mut image_views: Vec<(wgpu::TextureView, [f32; 2], [f32; 2], f32)> = Vec::new();
             for (path, origin, size, z) in image_draws.iter() {
-                let tex_opt = if let Some(view) =
-                    self.try_get_image_view(std::path::Path::new(path))
-                {
-                    Some(view)
-                } else {
-                    self.load_image_to_view(std::path::Path::new(path), queue)
-                };
+                let tex_opt =
+                    if let Some(view) = self.try_get_image_view(std::path::Path::new(path)) {
+                        Some(view)
+                    } else {
+                        self.load_image_to_view(std::path::Path::new(path), queue)
+                    };
                 if let Some((tex_view, _w, _h)) = tex_opt {
                     image_views.push((tex_view, *origin, *size, *z as f32));
                 }
             }
-            
+
             // Pre-rasterize all SVGs before render pass (to avoid mutable borrow conflicts)
             let mut svg_views: Vec<(wgpu::TextureView, [f32; 2], [f32; 2], f32)> = Vec::new();
             for (path, origin, max_size, style, _z, transform) in svg_draws.iter() {
-                if let Some((_view, w, h)) = self.rasterize_svg_to_view(
-                    std::path::Path::new(path),
-                    1.0,
-                    *style,
-                    queue,
-                ) {
+                if let Some((_view, w, h)) =
+                    self.rasterize_svg_to_view(std::path::Path::new(path), 1.0, *style, queue)
+                {
                     let base_w = w.max(1) as f32;
                     let base_h = h.max(1) as f32;
                     let scale = (max_size[0] / base_w).min(max_size[1] / base_h).max(0.0);
 
-                    if let Some((view_scaled, sw, sh)) = self.rasterize_svg_to_view(
-                        std::path::Path::new(path),
-                        scale,
-                        *style,
-                        queue,
-                    ) {
+                    if let Some((view_scaled, sw, sh)) =
+                        self.rasterize_svg_to_view(std::path::Path::new(path), scale, *style, queue)
+                    {
                         // Apply transform to origin for correct positioning
                         let transformed_origin = apply_transform_to_point(*origin, *transform);
-                        svg_views.push((view_scaled, transformed_origin, [sw as f32, sh as f32], *_z as f32));
+                        svg_views.push((
+                            view_scaled,
+                            transformed_origin,
+                            [sw as f32, sh as f32],
+                            *_z as f32,
+                        ));
                     }
                 }
             }
-            
+
             // Group text by z-index for proper depth rendering
             // eprintln!("🎨 render_unified received {} glyph_draws", glyph_draws.len());
-            let mut text_by_z: std::collections::HashMap<i32, Vec<(usize, [f32; 2], &crate::text::RasterizedGlyph, &crate::ColorLinPremul)>> = std::collections::HashMap::new();
+            let mut text_by_z: std::collections::HashMap<
+                i32,
+                Vec<(
+                    usize,
+                    [f32; 2],
+                    &crate::text::RasterizedGlyph,
+                    &crate::ColorLinPremul,
+                )>,
+            > = std::collections::HashMap::new();
             for (idx, (origin, glyph, color, z)) in glyph_draws.iter().enumerate() {
-                text_by_z.entry(*z).or_insert_with(Vec::new).push((idx, *origin, glyph, color));
+                text_by_z
+                    .entry(*z)
+                    .or_insert_with(Vec::new)
+                    .push((idx, *origin, glyph, color));
             }
             // eprintln!("🎨 Grouped text into {} z-index groups", text_by_z.len());
 
@@ -2350,85 +2912,85 @@ impl PassManager {
 
                     let mut local_idx = 0;
                     for (_idx, origin, glyph, color) in glyphs.iter() {
-                    let mask = &glyph.mask;
-                    let w = mask.width;
-                    let h = mask.height;
-                    if local_idx == 0 {
-                        // eprintln!("        🔤 First glyph: origin=[{:.1}, {:.1}], size=[{}, {}], color=[{:.3}, {:.3}, {:.3}, {:.3}]",
-                        //     origin[0], origin[1], w, h, color.r, color.g, color.b, color.a);
-                    }
-                    local_idx += 1;
+                        let mask = &glyph.mask;
+                        let w = mask.width;
+                        let h = mask.height;
+                        if local_idx == 0 {
+                            // eprintln!("        🔤 First glyph: origin=[{:.1}, {:.1}], size=[{}, {}], color=[{:.3}, {:.3}, {:.3}, {:.3}]",
+                            //     origin[0], origin[1], w, h, color.r, color.g, color.b, color.a);
+                        }
+                        local_idx += 1;
 
-                    if atlas_cursor_x + w >= 4096 {
-                        atlas_cursor_x = 0;
-                        atlas_cursor_y += next_row_height;
-                        next_row_height = 0;
-                    }
-                    next_row_height = next_row_height.max(h);
+                        if atlas_cursor_x + w >= 4096 {
+                            atlas_cursor_x = 0;
+                            atlas_cursor_y += next_row_height;
+                            next_row_height = 0;
+                        }
+                        next_row_height = next_row_height.max(h);
 
-                    // Track maximum atlas region used for clearing next frame
-                    atlas_max_x = atlas_max_x.max(atlas_cursor_x + w);
-                    atlas_max_y = atlas_max_y.max(atlas_cursor_y + h);
+                        // Track maximum atlas region used for clearing next frame
+                        atlas_max_x = atlas_max_x.max(atlas_cursor_x + w);
+                        atlas_max_y = atlas_max_y.max(atlas_cursor_y + h);
 
-                    queue.write_texture(
-                        wgpu::ImageCopyTexture {
-                            texture: &self.text_mask_atlas,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d {
-                                x: atlas_cursor_x,
-                                y: atlas_cursor_y,
-                                z: 0,
+                        queue.write_texture(
+                            wgpu::ImageCopyTexture {
+                                texture: &self.text_mask_atlas,
+                                mip_level: 0,
+                                origin: wgpu::Origin3d {
+                                    x: atlas_cursor_x,
+                                    y: atlas_cursor_y,
+                                    z: 0,
+                                },
+                                aspect: wgpu::TextureAspect::All,
                             },
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        &mask.data,
-                        wgpu::ImageDataLayout {
-                            offset: 0,
-                            bytes_per_row: Some(w * mask.bytes_per_pixel() as u32),
-                            rows_per_image: Some(h),
-                        },
-                        wgpu::Extent3d {
-                            width: w,
-                            height: h,
-                            depth_or_array_layers: 1,
-                        },
-                    );
+                            &mask.data,
+                            wgpu::ImageDataLayout {
+                                offset: 0,
+                                bytes_per_row: Some(w * mask.bytes_per_pixel() as u32),
+                                rows_per_image: Some(h),
+                            },
+                            wgpu::Extent3d {
+                                width: w,
+                                height: h,
+                                depth_or_array_layers: 1,
+                            },
+                        );
 
-                    let u0 = atlas_cursor_x as f32 / 4096.0;
-                    let v0 = atlas_cursor_y as f32 / 4096.0;
-                    let u1 = (atlas_cursor_x + w) as f32 / 4096.0;
-                    let v1 = (atlas_cursor_y + h) as f32 / 4096.0;
+                        let u0 = atlas_cursor_x as f32 / 4096.0;
+                        let v0 = atlas_cursor_y as f32 / 4096.0;
+                        let u1 = (atlas_cursor_x + w) as f32 / 4096.0;
+                        let v1 = (atlas_cursor_y + h) as f32 / 4096.0;
 
-                    if local_idx == 1 {
-                        // eprintln!("        📐 Atlas pos: cursor=({}, {}), uv=[{:.4}, {:.4}] to [{:.4}, {:.4}]",
-                        //     atlas_cursor_x, atlas_cursor_y, u0, v0, u1, v1);
+                        if local_idx == 1 {
+                            // eprintln!("        📐 Atlas pos: cursor=({}, {}), uv=[{:.4}, {:.4}] to [{:.4}, {:.4}]",
+                            //     atlas_cursor_x, atlas_cursor_y, u0, v0, u1, v1);
+                        }
+
+                        vertices.extend_from_slice(&[
+                            TextQuadVtx {
+                                pos: [origin[0], origin[1]],
+                                uv: [u0, v0],
+                                color: [color.r, color.g, color.b, color.a],
+                            },
+                            TextQuadVtx {
+                                pos: [origin[0] + w as f32, origin[1]],
+                                uv: [u1, v0],
+                                color: [color.r, color.g, color.b, color.a],
+                            },
+                            TextQuadVtx {
+                                pos: [origin[0] + w as f32, origin[1] + h as f32],
+                                uv: [u1, v1],
+                                color: [color.r, color.g, color.b, color.a],
+                            },
+                            TextQuadVtx {
+                                pos: [origin[0], origin[1] + h as f32],
+                                uv: [u0, v1],
+                                color: [color.r, color.g, color.b, color.a],
+                            },
+                        ]);
+
+                        atlas_cursor_x += w;
                     }
-
-                    vertices.extend_from_slice(&[
-                        TextQuadVtx {
-                            pos: [origin[0], origin[1]],
-                            uv: [u0, v0],
-                            color: [color.r, color.g, color.b, color.a],
-                        },
-                        TextQuadVtx {
-                            pos: [origin[0] + w as f32, origin[1]],
-                            uv: [u1, v0],
-                            color: [color.r, color.g, color.b, color.a],
-                        },
-                        TextQuadVtx {
-                            pos: [origin[0] + w as f32, origin[1] + h as f32],
-                            uv: [u1, v1],
-                            color: [color.r, color.g, color.b, color.a],
-                        },
-                        TextQuadVtx {
-                            pos: [origin[0], origin[1] + h as f32],
-                            uv: [u0, v1],
-                            color: [color.r, color.g, color.b, color.a],
-                        },
-                    ]);
-
-                    atlas_cursor_x += w;
-                }
 
                     // Store vertices for this z-index group
                     if !vertices.is_empty() {
@@ -2557,10 +3119,10 @@ impl PassManager {
                 // Pass z_index as float directly - shader will convert to depth
                 let (z_bg_img, z_buf_img) = self.create_group_z_bind_group(*z_val as f32, queue);
                 let tex_bg = self.image.tex_bind_group(&self.device, tex_view);
-                
+
                 image_resources.push((vbuf, ibuf, vp_bg_img, z_bg_img, tex_bg, z_buf_img));
             }
-            
+
             // Prepare SVG resources
             let mut svg_resources: Vec<(
                 wgpu::Buffer,
@@ -2610,16 +3172,30 @@ impl PassManager {
                 // Pass z_index as float directly - shader will convert to depth
                 let (z_bg_svg, z_buf_svg) = self.create_group_z_bind_group(*z_val as f32, queue);
                 let tex_bg = self.image.tex_bind_group(&self.device, view_scaled);
-                
+
                 svg_resources.push((vbuf, ibuf, vp_bg_svg, z_bg_svg, tex_bg, z_buf_svg));
             }
+
+            // Build depth attachment after all mutable borrows on self are finished
+            let depth_attachment = Some(wgpu::RenderPassDepthStencilAttachment {
+                view: self.depth_view(),
+                depth_ops: Some(wgpu::Operations {
+                    load: if preserve_surface {
+                        wgpu::LoadOp::Load
+                    } else {
+                        wgpu::LoadOp::Clear(1.0)
+                    },
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            });
 
             // Begin unified render pass (after all resource preparation)
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("unified-render-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &msaa_view,
-                    resolve_target: Some(surface_view),
+                    view: surface_view,
+                    resolve_target: None,
                     ops: wgpu::Operations {
                         load: if preserve_surface {
                             wgpu::LoadOp::Load
@@ -2633,10 +3209,9 @@ impl PassManager {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-            
+
             // Render solids first (they're already sorted by z-index in the scene)
-            // eprintln!("🔵 DIRECT PATH: Rendering {} solid vertices", scene.vertices);
-            self.solid_direct.record(&mut pass, &vp_bg_direct, scene);
+            self.solid_direct.record(&mut pass, &vp_bg, scene);
 
             // Render text glyphs within the same pass (already sorted by z-index)
             // eprintln!("📊 text_groups.len() = {}", text_groups.len());
@@ -2648,10 +3223,7 @@ impl PassManager {
                     pass.set_bind_group(1, z_bg, &[]);
                     pass.set_bind_group(2, &self.text_bind_group, &[]);
                     pass.set_vertex_buffer(0, vbuf.slice(..));
-                    pass.set_index_buffer(
-                        ibuf.slice(..),
-                        wgpu::IndexFormat::Uint16,
-                    );
+                    pass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint16);
                     pass.draw_indexed(0..*index_count, 0, 0..1);
                     // eprintln!("  ✅ Drew {} indices for z={}", index_count, z_index);
                 }
@@ -2677,15 +3249,13 @@ impl PassManager {
 
         // Offscreen path - unified rendering to offscreen target
         let targets = self.alloc_targets(allocator, width.max(1), height.max(1));
-        
+
         // Pre-fetch (and lazily load) all image views before render pass (to avoid mutable borrow conflicts)
         let mut image_views_off: Vec<(wgpu::TextureView, [f32; 2], [f32; 2], f32)> = Vec::new();
         // eprintln!("🔍 Pre-fetching {} images for unified offscreen render", image_draws.len());
         for (path, origin, size, z) in image_draws.iter() {
             // eprintln!("  📦 Image at z={}: {:?}", z, path.file_name().unwrap_or_default());
-            let tex_opt = if let Some(view) =
-                self.try_get_image_view(std::path::Path::new(path))
-            {
+            let tex_opt = if let Some(view) = self.try_get_image_view(std::path::Path::new(path)) {
                 Some(view)
             } else {
                 self.load_image_to_view(std::path::Path::new(path), queue)
@@ -2694,26 +3264,20 @@ impl PassManager {
                 image_views_off.push((tex_view, *origin, *size, *z as f32));
             }
         }
-        
+
         // Pre-rasterize all SVGs before creating render pass (to avoid mutable borrow conflicts)
         let mut svg_views_off: Vec<(wgpu::TextureView, [f32; 2], [f32; 2], f32)> = Vec::new();
         for (path, origin, max_size, style, _z, transform) in svg_draws.iter() {
-            if let Some((_view, w, h)) = self.rasterize_svg_to_view(
-                std::path::Path::new(path),
-                1.0,
-                *style,
-                queue,
-            ) {
+            if let Some((_view, w, h)) =
+                self.rasterize_svg_to_view(std::path::Path::new(path), 1.0, *style, queue)
+            {
                 let base_w = w.max(1) as f32;
                 let base_h = h.max(1) as f32;
                 let scale = (max_size[0] / base_w).min(max_size[1] / base_h).max(0.0);
 
-                if let Some((view_scaled, sw, sh)) = self.rasterize_svg_to_view(
-                    std::path::Path::new(path),
-                    scale,
-                    *style,
-                    queue,
-                ) {
+                if let Some((view_scaled, sw, sh)) =
+                    self.rasterize_svg_to_view(std::path::Path::new(path), scale, *style, queue)
+                {
                     // Apply transform to origin for correct positioning (offscreen path)
                     let transformed_origin = apply_transform_to_point(*origin, *transform);
                     svg_views_off.push((
@@ -2725,11 +3289,22 @@ impl PassManager {
                 }
             }
         }
-        
+
         // Group text by z-index for proper depth rendering (offscreen path)
-        let mut text_by_z_off: std::collections::HashMap<i32, Vec<(usize, [f32; 2], &crate::text::RasterizedGlyph, &crate::ColorLinPremul)>> = std::collections::HashMap::new();
+        let mut text_by_z_off: std::collections::HashMap<
+            i32,
+            Vec<(
+                usize,
+                [f32; 2],
+                &crate::text::RasterizedGlyph,
+                &crate::ColorLinPremul,
+            )>,
+        > = std::collections::HashMap::new();
         for (idx, (origin, glyph, color, z)) in glyph_draws.iter().enumerate() {
-            text_by_z_off.entry(*z).or_insert_with(Vec::new).push((idx, *origin, glyph, color));
+            text_by_z_off
+                .entry(*z)
+                .or_insert_with(Vec::new)
+                .push((idx, *origin, glyph, color));
         }
 
         // Prepare text rendering data (same as direct path)
@@ -2774,75 +3349,75 @@ impl PassManager {
                 let mut vertices: Vec<TextQuadVtx> = Vec::new();
 
                 for (_idx, origin, glyph, color) in glyphs.iter() {
-                let mask = &glyph.mask;
-                let w = mask.width;
-                let h = mask.height;
+                    let mask = &glyph.mask;
+                    let w = mask.width;
+                    let h = mask.height;
 
-                if atlas_cursor_x + w >= 4096 {
-                    atlas_cursor_x = 0;
-                    atlas_cursor_y += next_row_height;
-                    next_row_height = 0;
-                }
-                next_row_height = next_row_height.max(h);
+                    if atlas_cursor_x + w >= 4096 {
+                        atlas_cursor_x = 0;
+                        atlas_cursor_y += next_row_height;
+                        next_row_height = 0;
+                    }
+                    next_row_height = next_row_height.max(h);
 
-                // Track maximum atlas region used for clearing next frame
-                atlas_max_x = atlas_max_x.max(atlas_cursor_x + w);
-                atlas_max_y = atlas_max_y.max(atlas_cursor_y + h);
+                    // Track maximum atlas region used for clearing next frame
+                    atlas_max_x = atlas_max_x.max(atlas_cursor_x + w);
+                    atlas_max_y = atlas_max_y.max(atlas_cursor_y + h);
 
-                queue.write_texture(
-                    wgpu::ImageCopyTexture {
-                        texture: &self.text_mask_atlas,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d {
-                            x: atlas_cursor_x,
-                            y: atlas_cursor_y,
-                            z: 0,
+                    queue.write_texture(
+                        wgpu::ImageCopyTexture {
+                            texture: &self.text_mask_atlas,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d {
+                                x: atlas_cursor_x,
+                                y: atlas_cursor_y,
+                                z: 0,
+                            },
+                            aspect: wgpu::TextureAspect::All,
                         },
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &mask.data,
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: Some(w * mask.bytes_per_pixel() as u32),
-                        rows_per_image: Some(h),
-                    },
-                    wgpu::Extent3d {
-                        width: w,
-                        height: h,
-                        depth_or_array_layers: 1,
-                    },
-                );
+                        &mask.data,
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(w * mask.bytes_per_pixel() as u32),
+                            rows_per_image: Some(h),
+                        },
+                        wgpu::Extent3d {
+                            width: w,
+                            height: h,
+                            depth_or_array_layers: 1,
+                        },
+                    );
 
-                let u0 = atlas_cursor_x as f32 / 4096.0;
-                let v0 = atlas_cursor_y as f32 / 4096.0;
-                let u1 = (atlas_cursor_x + w) as f32 / 4096.0;
-                let v1 = (atlas_cursor_y + h) as f32 / 4096.0;
+                    let u0 = atlas_cursor_x as f32 / 4096.0;
+                    let v0 = atlas_cursor_y as f32 / 4096.0;
+                    let u1 = (atlas_cursor_x + w) as f32 / 4096.0;
+                    let v1 = (atlas_cursor_y + h) as f32 / 4096.0;
 
-                vertices.extend_from_slice(&[
-                    TextQuadVtx {
-                        pos: [origin[0], origin[1]],
-                        uv: [u0, v0],
-                        color: [color.r, color.g, color.b, color.a],
-                    },
-                    TextQuadVtx {
-                        pos: [origin[0] + w as f32, origin[1]],
-                        uv: [u1, v0],
-                        color: [color.r, color.g, color.b, color.a],
-                    },
-                    TextQuadVtx {
-                        pos: [origin[0] + w as f32, origin[1] + h as f32],
-                        uv: [u1, v1],
-                        color: [color.r, color.g, color.b, color.a],
-                    },
-                    TextQuadVtx {
-                        pos: [origin[0], origin[1] + h as f32],
-                        uv: [u0, v1],
-                        color: [color.r, color.g, color.b, color.a],
-                    },
-                ]);
+                    vertices.extend_from_slice(&[
+                        TextQuadVtx {
+                            pos: [origin[0], origin[1]],
+                            uv: [u0, v0],
+                            color: [color.r, color.g, color.b, color.a],
+                        },
+                        TextQuadVtx {
+                            pos: [origin[0] + w as f32, origin[1]],
+                            uv: [u1, v0],
+                            color: [color.r, color.g, color.b, color.a],
+                        },
+                        TextQuadVtx {
+                            pos: [origin[0] + w as f32, origin[1] + h as f32],
+                            uv: [u1, v1],
+                            color: [color.r, color.g, color.b, color.a],
+                        },
+                        TextQuadVtx {
+                            pos: [origin[0], origin[1] + h as f32],
+                            uv: [u0, v1],
+                            color: [color.r, color.g, color.b, color.a],
+                        },
+                    ]);
 
-                atlas_cursor_x += w;
-            }
+                    atlas_cursor_x += w;
+                }
 
                 // Store vertices for this z-index group
                 if !vertices.is_empty() {
@@ -2913,8 +3488,10 @@ impl PassManager {
         text_groups_off.sort_by_key(|(z, _, _, _, _, _)| *z);
 
         // Create text bind groups (use offscreen text renderer for offscreen rendering)
-        let vp_bg_text_off = self.text_offscreen.vp_bind_group(&self.device, &self.vp_buffer);
-        
+        let vp_bg_text_off = self
+            .text_offscreen
+            .vp_bind_group(&self.device, &self.vp_buffer);
+
         // Prepare image resources (offscreen: use image_offscreen to match format)
         let mut image_resources_off: Vec<(
             wgpu::Buffer,
@@ -2960,14 +3537,16 @@ impl PassManager {
             queue.write_buffer(&vbuf, 0, bytemuck::cast_slice(&verts));
             queue.write_buffer(&ibuf, 0, bytemuck::cast_slice(&idx));
 
-            let vp_bg_img = self.image_offscreen.vp_bind_group(&self.device, &self.vp_buffer);
+            let vp_bg_img = self
+                .image_offscreen
+                .vp_bind_group(&self.device, &self.vp_buffer);
             // Pass z_index as float directly - shader will convert to depth
             let (z_bg_img, z_buf_img) = self.create_group_z_bind_group(*z_val as f32, queue);
             let tex_bg = self.image_offscreen.tex_bind_group(&self.device, tex_view);
 
             image_resources_off.push((vbuf, ibuf, vp_bg_img, z_bg_img, tex_bg, z_buf_img));
         }
-        
+
         // Prepare SVG resources (offscreen: use image_offscreen to match format)
         let mut svg_resources_off: Vec<(
             wgpu::Buffer,
@@ -3013,49 +3592,20 @@ impl PassManager {
             queue.write_buffer(&vbuf, 0, bytemuck::cast_slice(&verts));
             queue.write_buffer(&ibuf, 0, bytemuck::cast_slice(&idx));
 
-            let vp_bg_svg = self.image_offscreen.vp_bind_group(&self.device, &self.vp_buffer);
+            let vp_bg_svg = self
+                .image_offscreen
+                .vp_bind_group(&self.device, &self.vp_buffer);
             // Pass z_index as float directly - shader will convert to depth
             let (z_bg_svg, z_buf_svg) = self.create_group_z_bind_group(*z_val as f32, queue);
-            let tex_bg = self.image_offscreen.tex_bind_group(&self.device, view_scaled);
+            let tex_bg = self
+                .image_offscreen
+                .tex_bind_group(&self.device, view_scaled);
 
             svg_resources_off.push((vbuf, ibuf, vp_bg_svg, z_bg_svg, tex_bg, z_buf_svg));
         }
-        
-        // Create MSAA color and depth textures for offscreen rendering
-        let msaa_tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("unified-msaa-offscreen"),
-            size: wgpu::Extent3d {
-                width: targets.color.key.width,
-                height: targets.color.key.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 4,
-            dimension: wgpu::TextureDimension::D2,
-            format: self.offscreen_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let msaa_view = msaa_tex.create_view(&wgpu::TextureViewDescriptor::default());
-        
-        let msaa_depth_tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("unified-msaa-depth-offscreen"),
-            size: wgpu::Extent3d {
-                width: targets.color.key.width,
-                height: targets.color.key.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 4,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let msaa_depth_view = msaa_depth_tex.create_view(&wgpu::TextureViewDescriptor::default());
-        
+
         let depth_attachment = Some(wgpu::RenderPassDepthStencilAttachment {
-            view: &msaa_depth_view,
+            view: self.depth_view(),
             depth_ops: Some(wgpu::Operations {
                 load: wgpu::LoadOp::Clear(1.0),
                 store: wgpu::StoreOp::Store,
@@ -3068,8 +3618,8 @@ impl PassManager {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("unified-offscreen-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &msaa_view,
-                resolve_target: Some(&targets.color.view),
+                view: &targets.color.view,
+                resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(clear),
                     store: wgpu::StoreOp::Store,
@@ -3079,7 +3629,7 @@ impl PassManager {
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-        
+
         // Render solids first
         // eprintln!("🟢 OFFSCREEN PATH: Rendering {} solid vertices", scene.vertices);
         self.solid_offscreen.record(&mut pass, &vp_bg_off, scene);
@@ -3094,18 +3644,17 @@ impl PassManager {
                 pass.set_bind_group(1, z_bg, &[]);
                 pass.set_bind_group(2, &self.text_bind_group, &[]);
                 pass.set_vertex_buffer(0, vbuf.slice(..));
-                pass.set_index_buffer(
-                    ibuf.slice(..),
-                    wgpu::IndexFormat::Uint16,
-                );
+                pass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint16);
                 pass.draw_indexed(0..*index_count, 0, 0..1);
                 // eprintln!("  ✅ Drew {} indices for z={} (OFFSCREEN)", index_count, z_index);
             }
         }
-        
+
         // Render images within same pass (offscreen image pipeline)
         // eprintln!("📷 image_resources_off.len() = {}", image_resources_off.len());
-        for (_i, (vbuf, ibuf, vp_bg_img, z_bg_img, tex_bg, _z_buf_img)) in image_resources_off.iter().enumerate() {
+        for (_i, (vbuf, ibuf, vp_bg_img, z_bg_img, tex_bg, _z_buf_img)) in
+            image_resources_off.iter().enumerate()
+        {
             // eprintln!("  🖼️ Rendering image {} (OFFSCREEN)", i);
             self.image_offscreen
                 .record(&mut pass, vp_bg_img, z_bg_img, tex_bg, vbuf, ibuf, 6);
@@ -3113,12 +3662,14 @@ impl PassManager {
 
         // Render SVGs within same pass (offscreen image pipeline)
         // eprintln!("🎨 svg_resources_off.len() = {}", svg_resources_off.len());
-        for (_i, (vbuf, ibuf, vp_bg_svg, z_bg_svg, tex_bg, _z_buf_svg)) in svg_resources_off.iter().enumerate() {
+        for (_i, (vbuf, ibuf, vp_bg_svg, z_bg_svg, tex_bg, _z_buf_svg)) in
+            svg_resources_off.iter().enumerate()
+        {
             // eprintln!("  🎨 Rendering SVG {} (OFFSCREEN)", i);
             self.image_offscreen
                 .record(&mut pass, vp_bg_svg, z_bg_svg, tex_bg, vbuf, ibuf, 6);
         }
-        
+
         // Drop the pass to complete offscreen rendering
         drop(pass);
 

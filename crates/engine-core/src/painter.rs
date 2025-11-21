@@ -130,13 +130,7 @@ impl Painter {
     /// Automatically uses vector rendering for simple SVGs (solid fills/strokes only)
     /// and falls back to rasterization for complex SVGs (gradients, filters, images, text).
     /// The path is interpreted relative to the process working directory.
-    pub fn svg<P: Into<PathBuf>>(
-        &mut self,
-        path: P,
-        origin: [f32; 2],
-        max_size: [f32; 2],
-        z: i32,
-    ) {
+    pub fn svg<P: Into<PathBuf>>(&mut self, path: P, origin: [f32; 2], max_size: [f32; 2], z: i32) {
         let path_buf = path.into();
         let path_ref = std::path::Path::new(&path_buf);
 
@@ -180,13 +174,7 @@ impl Painter {
 
     /// Queue a raster image (PNG/JPEG/GIF/WebP) to be drawn at origin with the given pixel size.
     /// The path is interpreted relative to the process working directory.
-    pub fn image<P: Into<PathBuf>>(
-        &mut self,
-        path: P,
-        origin: [f32; 2],
-        size: [f32; 2],
-        z: i32,
-    ) {
+    pub fn image<P: Into<PathBuf>>(&mut self, path: P, origin: [f32; 2], size: [f32; 2], z: i32) {
         let t = self.current_transform();
         self.list.commands.push(Command::DrawImage {
             path: path.into(),

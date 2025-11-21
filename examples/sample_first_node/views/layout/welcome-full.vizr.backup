@@ -1,0 +1,437 @@
+{
+  "$schema": "../../../../crates/rune-ir/schema/view_document.schema.json",
+  "view_id": "welcome_first",
+  "root": "root_view",
+  "nodes": [
+    {
+      "id": "root_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 24
+      },
+      "padding": {
+        "top": 32,
+        "right": 48,
+        "bottom": 32,
+        "left": 48
+      },
+      "background": {
+        "type": "linear_gradient",
+        "angle": 15,
+        "stops": [
+          [
+            "#0d1b4d",
+            0
+          ],
+          [
+            "#00b4db",
+            1
+          ]
+        ]
+      },
+      "scroll": {
+        "vertical": true
+      },
+      "children": [
+        "card_view",
+        "second_card_view"
+      ],
+      "widget_id": "wvN8p2xQ"
+    },
+    {
+      "id": "card_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 20
+      },
+      "padding": {
+        "top": 28,
+        "right": 32,
+        "bottom": 28,
+        "left": 32
+      },
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "corner_radius": 18,
+      "children": [
+        "card_text_view",
+        "first_image_view"
+      ]
+    },
+    {
+      "id": "card_text_view",
+      "node_id": "CARDTXT1",
+      "type": "text",
+      "style": {
+        "color": "#0f172a",
+        "font_size": 32,
+        "line_height": 43,
+        "padding": {
+          "top": 6,
+          "right": 8,
+          "bottom": 6,
+          "left": 8
+        },
+        "background": {
+          "type": "solid",
+          "color": "#f8fafc"
+        },
+        "corner_radius": 6
+      }
+    },
+    {
+      "id": "first_image_view",
+      "node_id": "IMGFRST1",
+      "type": "image",
+      "width": 240
+    },
+    {
+      "id": "second_card_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 20
+      },
+      "padding": {
+        "top": 28,
+        "right": 32,
+        "bottom": 28,
+        "left": 32
+      },
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "corner_radius": 18,
+      "children": [
+        "card2_text_view",
+        "long_paragraph_container",
+        "name_field_container",
+        "message_field_container",
+        "subscription_date_label_view",
+        "subscription_date_input_view",
+        "priority_select_view",
+        "topic_select_view",
+        "subscribe_row_view",
+        "frequency_row_view",
+        "card2_button_view"
+      ]
+    },
+    {
+      "id": "long_paragraph_container",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 0
+      },
+      "children": [
+        "long_paragraph_view"
+      ]
+    },
+    {
+      "id": "long_paragraph_view",
+      "node_id": "LONGPAR1",
+      "type": "text",
+      "style": {
+        "color": "#334155",
+        "font_size": 16,
+        "line_height": 24,
+        "padding": {
+          "top": 4,
+          "right": 6,
+          "bottom": 4,
+          "left": 6
+        }
+      }
+    },
+    {
+      "id": "subscription_date_label_view",
+      "type": "text",
+      "node_id": "SUBDAT01"
+    },
+    {
+      "id": "subscription_date_input_view",
+      "type": "input_box",
+      "control_id": "subscription-date",
+      "form_id": "contact",
+      "placeholder": "June 01, 2025",
+      "input_type": "date",
+      "width": 360
+    },
+    {
+      "id": "name_field_container",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 8
+      },
+      "children": [
+        "name_label_view",
+        "name_input_view"
+      ]
+    },
+    {
+      "id": "message_field_container",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 8
+      },
+      "children": [
+        "message_label_view",
+        "message_area_view"
+      ]
+    },
+    {
+      "id": "card2_text_view",
+      "node_id": "CARDTXT2",
+      "type": "text",
+      "style": {
+        "color": "#0f172a",
+        "font_size": 28,
+        "line_height": 38,
+        "padding": {
+          "top": 6,
+          "right": 8,
+          "bottom": 6,
+          "left": 8
+        },
+        "background": {
+          "type": "solid",
+          "color": "#f8fafc"
+        },
+        "corner_radius": 6
+      }
+    },
+    {
+      "id": "priority_select_view",
+      "type": "select",
+      "control_id": "priority",
+      "form_id": "contact",
+      "placeholder": "Select priority",
+      "width": 260,
+      "options": [
+        {
+          "label": "Low",
+          "value": "low"
+        },
+        {
+          "label": "Medium",
+          "value": "medium",
+          "selected": true
+        },
+        {
+          "label": "High",
+          "value": "high"
+        }
+      ]
+    },
+    {
+      "id": "topic_select_view",
+      "type": "select",
+      "control_id": "topics",
+      "form_id": "contact",
+      "multiple": true,
+      "placeholder": "Select topics",
+      "width": 260,
+      "options": [
+        {
+          "label": "Bug report",
+          "value": "bug"
+        },
+        {
+          "label": "Feature request",
+          "value": "feature",
+          "selected": true
+        },
+        {
+          "label": "Other",
+          "value": "other"
+        }
+      ]
+    },
+    {
+      "id": "frequency_row_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "align": "center",
+        "gap": 8
+      },
+      "children": [
+        "frequency_radio_daily_view",
+        "frequency_label_daily_view",
+        "frequency_radio_weekly_view",
+        "frequency_label_weekly_view",
+        "frequency_radio_monthly_view",
+        "frequency_label_monthly_view"
+      ]
+    },
+    {
+      "id": "frequency_radio_daily_view",
+      "type": "radio",
+      "group": "frequency",
+      "value": "daily",
+      "default_selected": false,
+      "size": 20
+    },
+    {
+      "id": "frequency_label_daily_view",
+      "type": "text",
+      "node_id": "RRFREQDA"
+    },
+    {
+      "id": "frequency_radio_weekly_view",
+      "type": "radio",
+      "group": "frequency",
+      "value": "weekly",
+      "default_selected": true,
+      "size": 20
+    },
+    {
+      "id": "frequency_label_weekly_view",
+      "type": "text",
+      "node_id": "RRFREQWK"
+    },
+    {
+      "id": "frequency_radio_monthly_view",
+      "type": "radio",
+      "group": "frequency",
+      "value": "monthly",
+      "default_selected": false,
+      "size": 20
+    },
+    {
+      "id": "frequency_label_monthly_view",
+      "type": "text",
+      "node_id": "RRFREQMN"
+    },
+    {
+      "id": "subscribe_row_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "align": "center",
+        "gap": 8
+      },
+      "children": [
+        "subscribe_checkbox_view",
+        "subscribe_label_view",
+        "subscribe_checkbox_view_opt1",
+        "subscribe_label_opt1_view",
+        "subscribe_checkbox_view_opt2",
+        "subscribe_label_opt2_view"
+      ]
+    },
+    {
+      "id": "subscribe_checkbox_view_opt1",
+      "type": "checkbox",
+      "control_id": "subscribe-newsletter",
+      "form_id": "contact",
+      "value": "weekly",
+      "default_checked": false,
+      "size": 20
+    },
+    {
+      "id": "subscribe_checkbox_view_opt2",
+      "type": "checkbox",
+      "control_id": "subscribe-newsletter",
+      "form_id": "contact",
+      "value": "monthly",
+      "default_checked": false,
+      "size": 20
+    },
+    {
+      "id": "subscribe_checkbox_view",
+      "type": "checkbox",
+      "control_id": "subscribe-newsletter",
+      "form_id": "contact",
+      "value": "yes",
+      "default_checked": false,
+      "size": 20
+    },
+    {
+      "id": "subscribe_label_view",
+      "type": "text",
+      "node_id": "SBSCB001"
+    },
+    {
+      "id": "subscribe_label_opt1_view",
+      "type": "text",
+      "node_id": "SBSCBWK1"
+    },
+    {
+      "id": "subscribe_label_opt2_view",
+      "type": "text",
+      "node_id": "SBSCBMN1"
+    },
+    {
+      "id": "name_label_view",
+      "node_id": "NAMEIN01",
+      "type": "text",
+      "style": {
+        "color": "#0f172a"
+      }
+    },
+    {
+      "id": "name_input_view",
+      "type": "input_box",
+      "control_id": "name",
+      "placeholder": "Your name",
+      "width": 320
+    },
+    {
+      "id": "message_label_view",
+      "node_id": "MSGARE01",
+      "type": "text",
+      "style": {
+        "color": "#0f172a"
+      }
+    },
+    {
+      "id": "message_area_view",
+      "type": "text_area",
+      "control_id": "message",
+      "placeholder": "Your message",
+      "width": 520
+    },
+    {
+      "id": "card2_button_view",
+      "node_id": "CARD2BN1",
+      "type": "button",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#3b82f6"
+        },
+        "height": 44,
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#ffffff"
+      }
+    }
+  ]
+}

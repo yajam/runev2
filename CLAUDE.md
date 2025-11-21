@@ -4,7 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Rune Draw is a GPU-native 2D rendering engine built in Rust using wgpu. It provides a display list architecture for rendering shapes, text, images, and SVG content with support for z-layering, hit-testing, and interactive scenes.
+Rune Draw is an **AI-native runtime** built on a GPU-accelerated Intermediate Representation (IR) rendering engine. Built in Rust using wgpu, it provides two execution modes for AI-generated and traditional UIs:
+
+### Dual-Mode Architecture
+
+**1. Direct IR Mode (Native)**
+- AI agents generate IR commands directly
+- WebAssembly modules mutate the IR scene graph
+- Zero-overhead rendering pipeline
+- Native performance for AI-composed interfaces
+
+**2. Web Standards Mode (Compatibility)**
+- HTML, CSS, and JavaScript mapped to IR primitives
+- DOM → IR translation layer
+- CSS layout engine → IR geometry
+- JavaScript runtime with WASM-based mutations
+- Allows existing web content to run on the IR runtime
+
+Both modes share the same GPU rendering backend: a display list architecture for rendering shapes, text, images, and SVG content with support for z-layering, hit-testing, and interactive scenes.
 
 ## Build & Run Commands
 
@@ -61,7 +78,12 @@ This is a Rust workspace with the following crates:
 - **`demo-app`**: Primary test harness using winit + wgpu. Entry point: `src/main.rs`. Scenes in `src/scenes/`
   - Supports multiple scenes via `--scene=<name>` flag or `DEMO_SCENE` env var
 
-- **`rune-scene`**: Higher-level zone-based UI app with viewport, toolbar, sidebar, and devtools panels
+- **`rune-scene`**: IR-based runtime environment with:
+  - Direct IR rendering mode (AI-native)
+  - WASM-based scene mutations
+  - Web standards compatibility layer (HTML/CSS/JS → IR mapping)
+  - Viewport, toolbar, sidebar, and devtools panels
+  - Element inspector and IR scene graph visualization
 
 ### Utility Crates
 - **`rune-surface`**: Canvas-style API on top of engine-core
@@ -70,7 +92,14 @@ This is a Rust workspace with the following crates:
 
 ## Core Rendering Concepts
 
-### Display List & Painter Pattern
+### IR (Intermediate Representation) Architecture
+
+The runtime operates on an Intermediate Representation that can be:
+- **Generated directly** by AI agents or Rust code via the `Painter` API
+- **Translated** from web standards (HTML/CSS/JS) to IR primitives
+- **Mutated** by WebAssembly modules for dynamic behavior
+
+### Display List & Painter Pattern (IR Generation)
 
 1. **Build a display list** using `Painter`:
    ```rust
@@ -92,6 +121,13 @@ This is a Rust workspace with the following crates:
                         &glyph_draws, &svg_draws, &image_draws,
                         clear_color, /*direct*/ false, &queue, preserve_surface);
    ```
+
+### WASM Integration
+
+WebAssembly modules can mutate the IR scene graph in both modes:
+- **Direct mode**: WASM receives IR scene graph, returns modified IR
+- **Web standards mode**: WASM operates on virtual DOM, translated to IR mutations
+- Safe, sandboxed execution with controlled access to scene state
 
 ### Z-Ordering & Depth Buffer
 
@@ -151,9 +187,10 @@ Text is rendered with subpixel antialiasing (RGB or BGR orientation). GPU shader
 - Hit-testing uses device-space pixel positions directly
 
 ### Rendering Architecture
-- **Unified rendering**: All element types (solids, text, images, SVGs) are rendered in a single depth-sorted pass via `PassManager::render_unified`
+- **Unified IR rendering**: All element types (solids, text, images, SVGs) are rendered in a single depth-sorted pass via `PassManager::render_unified`
 - **Direct vs Intermediate**: Can render directly to surface or via intermediate texture for smooth resizing (controlled by `direct` parameter)
 - All rendering uses depth buffer for proper z-ordering across all element types
+- Mode-agnostic: Same GPU backend for both direct IR and web standards modes
 
 ### Text Color Handling
 - Text shaders expect **premultiplied linear color**
@@ -168,8 +205,10 @@ Text is rendered with subpixel antialiasing (RGB or BGR orientation). GPU shader
 ## Critical Constraints
 
 ### Do NOT Change Without Coordination
-- `engine-core` public APIs exported in `src/lib.rs` (breaking changes require workspace-wide updates)
+- `engine-core` public APIs exported in `src/lib.rs` (breaking changes require workspace-wide updates and may impact both IR modes)
 - Shader layouts and binding interfaces in `engine-shaders` and `pass_manager` (must match upload shapes and pipeline definitions)
+- IR primitive definitions (changes affect both direct mode and web standards translation layer)
+- WASM interface contracts (breaking changes impact all WASM modules)
 
 ### Known Issues
 - Text hit-testing not implemented (placeholder only)
@@ -191,3 +230,26 @@ When making changes to rendering code:
 - `docs/z-layering-depth-buffer-implementation.md`: Depth buffer implementation status
 - `docs/pass-manager-unified-refactoring-checklist.md`: Unified rendering refactoring plan
 - `docs/how-to-run.md`: Quick reference for running different scenes
+- `docs/rune-scene.md`: IR runtime architecture and dual-mode design
+- `docs/FILE_INPUT_IMPLEMENTATION.md`: File input IR element implementation
+- `docs/TABLE_IMPLEMENTATION.md`: Table IR element implementation
+
+## AI-Native Runtime Goals
+
+### Direct IR Mode Priorities
+- Minimize latency between AI generation and visual output
+- Provide rich IR primitives that match AI mental models
+- Enable efficient WASM-based interactivity and animations
+- Support visual debugging and IR inspection tools
+
+### Web Standards Mode Priorities
+- High-fidelity HTML/CSS layout translation to IR
+- JavaScript runtime integration with WASM compilation
+- DOM API compatibility for existing web libraries
+- Progressive enhancement: web → IR optimization over time
+
+### Shared Infrastructure
+- Single GPU rendering backend for both modes
+- Unified hit-testing and event routing
+- Common text rendering and font management
+- Shared resource management (images, gradients, patterns)

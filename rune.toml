@@ -1,0 +1,93 @@
+# Rune Draw Configuration File
+#
+# This file configures the Rune Draw runtime environment.
+# All settings are optional - defaults will be used if not specified.
+# Environment variables override settings in this file.
+
+# Demo Application Settings
+# Controls which demo scene to load and display
+[demo]
+# Default scene to load
+# Options: zones, images, overlay, shadow, linear, radial, circle, centered,
+#          hyperlinks, svg, path, ui, unified-test, ui-canvas
+# Default: default scene (basic demo)
+scene = "zones"
+
+# Text Rendering Settings
+# Configure text rendering, font loading, and text layout
+[text]
+# Path to custom font file (.ttf)
+# If not specified, system fonts will be used (when available)
+# font = "/path/to/your/font.ttf"
+
+# Use FreeType provider for LCD rendering (requires freetype_ffi feature)
+# Default: false
+# use_freetype = false
+
+# Fractional X offset for subpixel text positioning
+# Range: 0.0 - 1.0, commonly 0.33
+# Default: none
+# subpixel_offset = 0.33
+
+# Snap text X position to integer pixels
+# Useful for avoiding subpixel rendering artifacts
+# Default: false
+# snap_x = false
+
+# Default text size in points
+# Default: provider-specific
+# text_size = 48.0
+
+# Extra baseline spacing between text lines in pixels
+# Default: none
+# line_padding = 4.0
+
+# Rendering Engine Settings
+# Configure GPU rendering pipeline behavior
+[rendering]
+# Enable intermediate texture for smooth resizing
+# When true, renders to an intermediate texture before blitting to screen
+# This provides smoother experience during window resize but uses more memory
+# Default: true
+# use_intermediate = true
+
+# Enable debug visualization for radial backgrounds
+# Shows visual debugging information for radial gradient rendering
+# Default: false
+# debug_radial = false
+
+# Lyon tessellation tolerance for path rendering
+# Lower values = higher quality but more triangles
+# Typical range: 0.01 - 1.0
+# Default: Lyon's default tolerance
+# lyon_tolerance = 0.1
+
+# Intermediate Representation (IR) Settings
+# Configure IR rendering mode and diagnostics
+[ir]
+# Use IR rendering mode (vs legacy rendering)
+# The IR mode is the modern, AI-native rendering path
+# Default: true
+# use_ir = true
+
+# Path to a Rune package to load and render
+# Points to a directory containing RUNE.MANIFEST.json
+# Example: "examples/sample_first_node"
+# Default: none
+package_path = "examples/sample_first_node"
+
+# Enable diagnostic output for IR processing
+# Comma-separated list of diagnostic categories
+# Options: css, layout, render, etc.
+# Default: none
+# diagnostics = "css,layout"
+
+# Enable user-agent heading margins in HTML rendering
+# Adds default margins to heading elements (h1-h6)
+# Default: false
+# ua_heading_margins = false
+
+# Layout Engine Settings
+# Configure layout and positioning behavior
+[layout]
+# (Reserved for future layout configuration options)

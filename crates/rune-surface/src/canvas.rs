@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use engine_core::{
-    Brush, ColorLinPremul, Painter, Path, RasterizedGlyph, Rect, RoundedRect, Stroke, TextProvider,
-    TextRun, Transform2D, Viewport,
+    Brush, ColorLinPremul, Painter, Path, RasterizedGlyph, Rect, RoundedRadii, RoundedRect, Stroke,
+    TextProvider, TextRun, Transform2D, Viewport,
 };
 
 /// How an image should fit within its bounds.
@@ -49,6 +49,22 @@ pub struct Canvas {
     // Effective clip stack in device coordinates for direct text rendering.
     // Each entry is the intersection of all active clips at that depth.
     pub(crate) clip_stack: Vec<Option<Rect>>,
+    // Overlay rectangles that render without depth testing (for modal scrims).
+    // These are rendered in a separate pass after the main scene.
+    pub(crate) overlay_draws: Vec<(Rect, ColorLinPremul)>,
+    // Scrim draws that blend over content but allow z-ordered content to render on top.
+    // Supports either a full-rect scrim or a scrim with a rounded-rect cutout via stencil.
+    pub(crate) scrim_draws: Vec<ScrimDraw>,
+}
+
+/// Scrim drawing modes.
+#[derive(Clone, Copy)]
+pub enum ScrimDraw {
+    Rect(Rect, ColorLinPremul),
+    Cutout {
+        hole: RoundedRect,
+        color: ColorLinPremul,
+    },
 }
 
 impl Canvas {
@@ -64,6 +80,138 @@ impl Canvas {
     /// Fill a rectangle with a brush.
     pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, brush: Brush, z: i32) {
         self.painter.rect(Rect { x, y, w, h }, brush, z);
+    }
+
+    /// Fill a rectangle as an overlay (no depth testing).
+    /// Use this for modal scrims and other overlays that should blend over
+    /// existing content without blocking text rendered at lower z-indices.
+    ///
+    /// The rectangle coordinates are transformed by the current canvas transform,
+    /// so they should be in local (viewport) coordinates.
+    pub fn fill_overlay_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: ColorLinPremul) {
+        // Apply current transform to get screen coordinates.
+        // Transform all four corners and compute axis-aligned bounding box.
+        let t = self.painter.current_transform();
+        let [a, b, c, d, e, f] = t.m;
+
+        // Transform corner points
+        let p0 = [a * x + c * y + e, b * x + d * y + f];
+        let p1 = [a * (x + w) + c * y + e, b * (x + w) + d * y + f];
+        let p2 = [a * (x + w) + c * (y + h) + e, b * (x + w) + d * (y + h) + f];
+        let p3 = [a * x + c * (y + h) + e, b * x + d * (y + h) + f];
+
+        // For axis-aligned transforms (translation/scale only), the AABB works.
+        // For rotation, this is an approximation but should be fine for scrims.
+        let min_x = p0[0].min(p1[0]).min(p2[0]).min(p3[0]);
+        let max_x = p0[0].max(p1[0]).max(p2[0]).max(p3[0]);
+        let min_y = p0[1].min(p1[1]).min(p2[1]).min(p3[1]);
+        let max_y = p0[1].max(p1[1]).max(p2[1]).max(p3[1]);
+
+        self.overlay_draws.push((
+            Rect {
+                x: min_x,
+                y: min_y,
+                w: max_x - min_x,
+                h: max_y - min_y,
+            },
+            color,
+        ));
+    }
+
+    /// Fill a rectangle as a scrim (blends over all existing content but allows
+    /// subsequent z-ordered draws to render on top).
+    ///
+    /// Unlike `fill_overlay_rect`, this uses a depth buffer attachment with:
+    /// - depth_compare = Always (always passes depth test)
+    /// - depth_write_enabled = false (doesn't affect depth buffer)
+    ///
+    /// This allows the scrim to dim background content while the modal panel
+    /// (rendered at a higher z-index afterward) renders cleanly on top.
+    pub fn fill_scrim_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: ColorLinPremul) {
+        // Apply current transform to get screen coordinates.
+        let t = self.painter.current_transform();
+        let [a, b, c, d, e, f] = t.m;
+
+        // Transform corner points
+        let p0 = [a * x + c * y + e, b * x + d * y + f];
+        let p1 = [a * (x + w) + c * y + e, b * (x + w) + d * y + f];
+        let p2 = [a * (x + w) + c * (y + h) + e, b * (x + w) + d * (y + h) + f];
+        let p3 = [a * x + c * (y + h) + e, b * x + d * (y + h) + f];
+
+        // Compute axis-aligned bounding box
+        let min_x = p0[0].min(p1[0]).min(p2[0]).min(p3[0]);
+        let max_x = p0[0].max(p1[0]).max(p2[0]).max(p3[0]);
+        let min_y = p0[1].min(p1[1]).min(p2[1]).min(p3[1]);
+        let max_y = p0[1].max(p1[1]).max(p2[1]).max(p3[1]);
+
+        self.scrim_draws.push(ScrimDraw::Rect(
+            Rect {
+                x: min_x,
+                y: min_y,
+                w: max_x - min_x,
+                h: max_y - min_y,
+            },
+            color,
+        ));
+    }
+
+    /// Fill a fullscreen scrim that leaves a rounded-rect hole using stencil.
+    pub fn fill_scrim_with_cutout(&mut self, hole: RoundedRect, color: ColorLinPremul) {
+        // Transform the hole into screen space using the current canvas transform.
+        // Assumes transform is affine (translation/scale/skew); uses AABB to keep it simple.
+        let t = self.painter.current_transform();
+        let [a, b, c, d, e, f] = t.m;
+
+        let rect = hole.rect;
+        let corners = [
+            [rect.x, rect.y],
+            [rect.x + rect.w, rect.y],
+            [rect.x + rect.w, rect.y + rect.h],
+            [rect.x, rect.y + rect.h],
+        ];
+
+        let mut min_x = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut min_y = f32::INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+
+        for p in corners {
+            let tx = a * p[0] + c * p[1] + e;
+            let ty = b * p[0] + d * p[1] + f;
+            min_x = min_x.min(tx);
+            max_x = max_x.max(tx);
+            min_y = min_y.min(ty);
+            max_y = max_y.max(ty);
+        }
+
+        // Approximate radius scaling by average scale of the transform axes.
+        let sx = (a * a + b * b).sqrt();
+        let sy = (c * c + d * d).sqrt();
+        let scale = if sx.is_finite() && sy.is_finite() && sx > 0.0 && sy > 0.0 {
+            (sx + sy) * 0.5
+        } else {
+            1.0
+        };
+
+        let transformed = RoundedRect {
+            rect: Rect {
+                x: min_x,
+                y: min_y,
+                w: (max_x - min_x).max(0.0),
+                h: (max_y - min_y).max(0.0),
+            },
+            radii: RoundedRadii {
+                tl: hole.radii.tl * scale,
+                tr: hole.radii.tr * scale,
+                br: hole.radii.br * scale,
+                bl: hole.radii.bl * scale,
+            },
+        };
+
+        self.scrim_draws.push(ScrimDraw::Cutout {
+            hole: transformed,
+            color,
+        });
     }
 
     /// Stroke a path with uniform width and solid color.
@@ -167,19 +315,25 @@ impl Canvas {
             // Current effective clip rect in device coordinates, if any.
             let current_clip = self.clip_stack.last().cloned().unwrap_or(None);
 
+            let snap = |v: f32| -> f32 { (v * sf).round() / sf };
+
             for g in glyphs.iter() {
                 // Glyph offsets are in logical pixels (from rasterization at logical size)
                 // Store origins in LOGICAL PIXELS for local coordinate system
-                let glyph_origin_logical = [
+                let mut glyph_origin_logical = [
                     transformed_origin[0] + g.offset[0],
                     transformed_origin[1] + g.offset[1],
                 ];
 
+                // Snap small text to device pixels to avoid shimmering edges
+                if size_px <= 15.0 {
+                    glyph_origin_logical[0] = snap(glyph_origin_logical[0]);
+                    glyph_origin_logical[1] = snap(glyph_origin_logical[1]);
+                }
+
                 // For clipping, convert to device pixels
-                let glyph_origin_device = [
-                    glyph_origin_logical[0] * sf,
-                    glyph_origin_logical[1] * sf,
-                ];
+                let glyph_origin_device =
+                    [glyph_origin_logical[0] * sf, glyph_origin_logical[1] * sf];
 
                 if let Some(clip) = current_clip {
                     // Clip glyph to the current rect in device coordinates.
@@ -191,10 +345,12 @@ impl Canvas {
                             mask: clipped_mask,
                         };
                         // Convert clipped origin back to logical coordinates
-                        let clipped_origin_logical = [
-                            clipped_origin_device[0] / sf,
-                            clipped_origin_device[1] / sf,
-                        ];
+                        let mut clipped_origin_logical =
+                            [clipped_origin_device[0] / sf, clipped_origin_device[1] / sf];
+                        if size_px <= 15.0 {
+                            clipped_origin_logical[0] = snap(clipped_origin_logical[0]);
+                            clipped_origin_logical[1] = snap(clipped_origin_logical[1]);
+                        }
                         self.glyph_draws
                             .push((clipped_origin_logical, clipped, color, z));
                     }
@@ -258,19 +414,23 @@ impl Canvas {
         // re-rasterizing identical text every frame.
         let glyphs = engine_core::rasterize_run_cached(provider, &run);
 
+        let snap = |v: f32| -> f32 { (v * sf).round() / sf };
+
         for g in glyphs.iter() {
             // Glyph offsets are in logical pixels (from rasterization at logical size)
             // Store origins in LOGICAL PIXELS for local coordinate system
-            let glyph_origin_logical = [
+            let mut glyph_origin_logical = [
                 transformed_origin[0] + g.offset[0],
                 transformed_origin[1] + g.offset[1],
             ];
 
+            if size_px <= 15.0 {
+                glyph_origin_logical[0] = snap(glyph_origin_logical[0]);
+                glyph_origin_logical[1] = snap(glyph_origin_logical[1]);
+            }
+
             // For clipping, convert to device pixels
-            let glyph_origin_device = [
-                glyph_origin_logical[0] * sf,
-                glyph_origin_logical[1] * sf,
-            ];
+            let glyph_origin_device = [glyph_origin_logical[0] * sf, glyph_origin_logical[1] * sf];
 
             if let Some(clip) = current_clip {
                 if let Some((clipped_mask, clipped_origin_device)) =
@@ -281,10 +441,12 @@ impl Canvas {
                         mask: clipped_mask,
                     };
                     // Convert clipped origin back to logical coordinates
-                    let clipped_origin_logical = [
-                        clipped_origin_device[0] / sf,
-                        clipped_origin_device[1] / sf,
-                    ];
+                    let mut clipped_origin_logical =
+                        [clipped_origin_device[0] / sf, clipped_origin_device[1] / sf];
+                    if size_px <= 15.0 {
+                        clipped_origin_logical[0] = snap(clipped_origin_logical[0]);
+                        clipped_origin_logical[1] = snap(clipped_origin_logical[1]);
+                    }
                     self.glyph_draws
                         .push((clipped_origin_logical, clipped, color, z));
                 }

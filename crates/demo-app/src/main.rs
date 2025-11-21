@@ -1,6 +1,7 @@
 use anyhow::Result;
 use engine_core::{GraphicsEngine, PassManager, Viewport, make_surface_config};
 use pollster::FutureExt;
+use rune_config::RuneConfig;
 use winit::event::{ElementState, Event, MouseButton, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
@@ -10,8 +11,11 @@ use scenes::{Scene, SceneKind};
 mod ui_canvas;
 
 fn main() -> Result<()> {
+    // Load configuration from rune.toml (with environment variable overrides)
+    let rune_config = RuneConfig::load();
+
     // Optional Canvas-based UI path to verify Canvas rendering in demo-app
-    if std::env::var("DEMO_SCENE").as_deref().ok() == Some("ui-canvas")
+    if rune_config.demo.scene.as_deref() == Some("ui-canvas")
         || std::env::args().any(|a| a == "--scene=ui-canvas" || a == "--ui-canvas")
     {
         return ui_canvas::run();
@@ -53,55 +57,55 @@ fn main() -> Result<()> {
     surface.configure(&engine.device(), &config);
 
     // Scene selection and initialization
-    let scene_env = std::env::var("DEMO_SCENE").ok();
-    let mut scene: Box<dyn Scene> = if scene_env.as_deref() == Some("radial")
+    let scene_name = rune_config.demo.scene.as_deref();
+    let mut scene: Box<dyn Scene> = if scene_name == Some("radial")
         || std::env::args().any(|a| a == "--scene=radial" || a == "--radial")
     {
         Box::new(scenes::radial::RadialBgScene::default())
-    } else if scene_env.as_deref() == Some("circle")
+    } else if scene_name == Some("circle")
         || std::env::args().any(|a| a == "--scene=circle" || a == "--circle")
     {
         Box::new(scenes::circle::CircleScene::default())
-    } else if scene_env.as_deref() == Some("linear")
+    } else if scene_name == Some("linear")
         || std::env::args().any(|a| a == "--scene=linear" || a == "--linear")
     {
         Box::new(scenes::linear::LinearBgScene::default())
-    } else if scene_env.as_deref() == Some("centered")
+    } else if scene_name == Some("centered")
         || std::env::args().any(|a| a == "--scene=centered" || a == "--centered")
     {
         Box::new(scenes::centered_rect::CenteredRectScene::default())
-    } else if scene_env.as_deref() == Some("shadow")
+    } else if scene_name == Some("shadow")
         || std::env::args().any(|a| a == "--scene=shadow" || a == "--shadow")
     {
         Box::new(scenes::shadow::ShadowScene::default())
-    } else if scene_env.as_deref() == Some("overlay")
+    } else if scene_name == Some("overlay")
         || std::env::args().any(|a| a == "--scene=overlay" || a == "--overlay")
     {
         Box::new(scenes::overlay::OverlayScene::default())
-    } else if scene_env.as_deref() == Some("zones")
+    } else if scene_name == Some("zones")
         || std::env::args().any(|a| a == "--scene=zones" || a == "--zones")
     {
         Box::new(scenes::zones::ZonesScene::default())
-    } else if scene_env.as_deref() == Some("images")
+    } else if scene_name == Some("images")
         || std::env::args().any(|a| a == "--scene=images" || a == "--images")
     {
         Box::new(scenes::images::ImagesScene::default())
-    } else if scene_env.as_deref() == Some("hyperlinks")
+    } else if scene_name == Some("hyperlinks")
         || std::env::args().any(|a| a == "--scene=hyperlinks" || a == "--hyperlinks")
     {
         Box::new(scenes::hyperlinks::HyperlinksScene::default())
-    } else if scene_env.as_deref() == Some("svg")
+    } else if scene_name == Some("svg")
         || std::env::args().any(|a| a == "--scene=svg" || a == "--svg" || a == "--scene=svg-geom")
     {
         Box::new(scenes::svg_geom::SvgGeomScene::default())
-    } else if scene_env.as_deref() == Some("path")
+    } else if scene_name == Some("path")
         || std::env::args()
             .any(|a| a == "--scene=path" || a == "--path" || a == "--scene=path-demo")
     {
         Box::new(scenes::path_demo::PathDemoScene::default())
-    } else if scene_env.as_deref() == Some("ui") || std::env::args().any(|a| a == "--scene=ui") {
+    } else if scene_name == Some("ui") || std::env::args().any(|a| a == "--scene=ui") {
         Box::new(scenes::ui::UiElementsScene::default())
-    } else if scene_env.as_deref() == Some("unified-test")
+    } else if scene_name == Some("unified-test")
         || std::env::args().any(|a| a == "--scene=unified-test" || a == "--unified-test")
     {
         Box::new(scenes::unified_test::UnifiedTestScene::default())
@@ -126,10 +130,7 @@ fn main() -> Result<()> {
     passes.set_ui_scale(1.0);
     passes.set_scale_factor(scale_factor);
     // Unified rendering uses intermediate texture by default for smooth resizing
-    let use_intermediate = std::env::var("USE_INTERMEDIATE")
-        .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(true); // Default to true for smooth resizing
+    let use_intermediate = rune_config.rendering.use_intermediate;
 
     // Initialize intermediate texture for fullscreen backgrounds
     if use_intermediate && matches!(scene.kind(), SceneKind::FullscreenBackground) {
@@ -151,11 +152,9 @@ fn main() -> Result<()> {
         #[cfg(feature = "cosmic_text_shaper")]
         {
             #[cfg(feature = "freetype_ffi")]
-            let use_freetype = std::env::var("DEMO_FREETYPE")
-                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                .unwrap_or(false);
-            if let Ok(path) = std::env::var("DEMO_FONT") {
-                if let Ok(bytes) = std::fs::read(path) {
+            let use_freetype = rune_config.text.use_freetype;
+            if let Some(font_path) = &rune_config.text.font {
+                if let Ok(bytes) = std::fs::read(font_path) {
                     #[cfg(feature = "freetype_ffi")]
                     let (rgb_res, bgr_res) = if use_freetype {
                         (
@@ -227,8 +226,10 @@ fn main() -> Result<()> {
         }
         #[cfg(not(feature = "cosmic_text_shaper"))]
         {
-            std::env::var("DEMO_FONT")
-                .ok()
+            rune_config
+                .text
+                .font
+                .as_ref()
                 .and_then(|path| std::fs::read(path).ok())
                 .and_then(|bytes| {
                     let rgb = engine_core::SimpleFontdueProvider::from_bytes(
@@ -423,7 +424,9 @@ fn main() -> Result<()> {
                         });
 
                 // Always use unified rendering - upload the current display list
-                let unified_scene_opt = if let (SceneKind::Geometry, Some(dl)) = (scene.kind(), dlist_opt.as_ref()) {
+                let unified_scene_opt = if let (SceneKind::Geometry, Some(dl)) =
+                    (scene.kind(), dlist_opt.as_ref())
+                {
                     let q2 = engine.queue();
                     // Use unified upload to extract all element types
                     Some(
@@ -443,7 +446,9 @@ fn main() -> Result<()> {
                             // Rasterize text runs from the unified scene
                             let mut glyph_draws = Vec::new();
                             // eprintln!("🔍 Text draws in unified_scene: {}", unified_scene.text_draws.len());
-                            if let Some(provider) = text_providers.as_ref().map(|(rgb, _, _)| &**rgb) {
+                            if let Some(provider) =
+                                text_providers.as_ref().map(|(rgb, _, _)| &**rgb)
+                            {
                                 for text_draw in &unified_scene.text_draws {
                                     // eprintln!("  📝 Processing text: '{}' at z={}", text_draw.run.text, text_draw.z);
                                     // Apply transform to text position
@@ -459,7 +464,10 @@ fn main() -> Result<()> {
                                     // Add each glyph with its position, color, and z-index
                                     for glyph in glyphs {
                                         glyph_draws.push((
-                                            [transformed_pos[0] + glyph.offset[0], transformed_pos[1] + glyph.offset[1]],
+                                            [
+                                                transformed_pos[0] + glyph.offset[0],
+                                                transformed_pos[1] + glyph.offset[1],
+                                            ],
                                             glyph,
                                             text_draw.run.color,
                                             text_draw.z,
@@ -473,14 +481,24 @@ fn main() -> Result<()> {
 
                             // Convert image and SVG draws to the format expected by render_unified
                             let image_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)> =
-                                unified_scene.image_draws.iter()
+                                unified_scene
+                                    .image_draws
+                                    .iter()
                                     .map(|d| (d.path.clone(), d.origin, d.size, d.z))
                                     .collect();
 
-                            let svg_draws: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], Option<engine_core::SvgStyle>, i32, engine_core::Transform2D)> =
-                                unified_scene.svg_draws.iter()
-                                    .map(|d| (d.path.clone(), d.origin, d.size, None, d.z, d.transform))
-                                    .collect();
+                            let svg_draws: Vec<(
+                                std::path::PathBuf,
+                                [f32; 2],
+                                [f32; 2],
+                                Option<engine_core::SvgStyle>,
+                                i32,
+                                engine_core::Transform2D,
+                            )> = unified_scene
+                                .svg_draws
+                                .iter()
+                                .map(|d| (d.path.clone(), d.origin, d.size, None, d.z, d.transform))
+                                .collect();
 
                             // Use unified rendering
                             passes.render_unified(
@@ -499,9 +517,9 @@ fn main() -> Result<()> {
                                     b: 40.0 / 255.0,
                                     a: 1.0,
                                 },
-                                !use_intermediate,  // direct rendering if not using intermediate
+                                !use_intermediate, // direct rendering if not using intermediate
                                 &queue,
-                                false,  // preserve_surface
+                                false, // preserve_surface
                             );
                         }
                     }

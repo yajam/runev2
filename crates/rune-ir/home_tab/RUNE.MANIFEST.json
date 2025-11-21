@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "entrypoint": {
+    "id": "home",
+    "data": "views/data/home.json",
+    "view": "views/layout/home.vizr",
+    "page_title": "Home"
+  },
+  "locales": {},
+  "capabilities": [],
+  "integrity": null
+}

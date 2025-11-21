@@ -1,0 +1,96 @@
+{
+  "$schema": "../../../../crates/rune-ir/schema/view_document.schema.json",
+  "view_id": "welcome_simple",
+  "root": "root_view",
+  "nodes": [
+    {
+      "id": "root_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 24
+      },
+      "padding": {
+        "top": 32,
+        "right": 48,
+        "bottom": 32,
+        "left": 48
+      },
+      "background": {
+        "type": "linear_gradient",
+        "angle": 135,
+        "stops": [
+          ["#667eea", 0],
+          ["#764ba2", 1]
+        ]
+      },
+      "children": ["card_view"]
+    },
+    {
+      "id": "card_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 20
+      },
+      "padding": {
+        "top": 28,
+        "right": 32,
+        "bottom": 28,
+        "left": 32
+      },
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "corner_radius": 12,
+      "children": ["title_text", "body_text", "action_button"]
+    },
+    {
+      "id": "title_text",
+      "node_id": "CARDTXT1",
+      "type": "text",
+      "style": {
+        "color": "#1e293b",
+        "font_size": 32,
+        "line_height": 40
+      }
+    },
+    {
+      "id": "body_text",
+      "node_id": "CARDTXT2",
+      "type": "text",
+      "style": {
+        "color": "#64748b",
+        "font_size": 16,
+        "line_height": 24
+      }
+    },
+    {
+      "id": "action_button",
+      "node_id": "CARD2BN1",
+      "type": "button",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#3b82f6"
+        },
+        "height": 44,
+        "padding": {
+          "top": 10,
+          "right": 20,
+          "bottom": 10,
+          "left": 20
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#ffffff"
+      }
+    }
+  ]
+}

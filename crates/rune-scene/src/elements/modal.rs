@@ -1,6 +1,23 @@
+use crate::ir_renderer::HitRegionRegistry;
 use engine_core::{Brush, ColorLinPremul, Rect, RoundedRadii, RoundedRect};
+use rune_ir::view::ViewNodeId;
 use rune_surface::Canvas;
 use rune_surface::shapes;
+
+/// Result of a modal click event
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ModalClickResult {
+    /// Close button was clicked
+    CloseButton,
+    /// A modal button was clicked (with button index)
+    Button(usize),
+    /// Background/scrim was clicked (outside panel)
+    Background,
+    /// Panel was clicked but not a specific interactive element
+    Panel,
+    /// Click was not handled by modal
+    Ignored,
+}
 
 /// Button configuration for modal buttons
 #[derive(Clone)]
@@ -73,13 +90,21 @@ pub struct Modal {
     /// Base z-index (overlay and panel will use z and z+increments)
     pub base_z: i32,
 
-    /// Whether clicking on the background scrim (outside the panel)
-    /// should close the modal. This is only used by higher-level
-    /// hit-testing code; the renderer itself is unaware of this flag.
-    pub close_on_background_click: bool,
+/// Whether to draw the panel shadow
+pub show_shadow: bool,
+
+/// Whether clicking on the background scrim (outside the panel)
+/// should close the modal. This is only used by higher-level
+/// hit-testing code; the renderer itself is unaware of this flag.
+pub close_on_background_click: bool,
 }
 
 impl Modal {
+    /// Color used for the modal scrim overlay.
+    pub fn scrim_color(&self) -> ColorLinPremul {
+        ColorLinPremul::from_srgba_u8([0, 0, 0, 140])
+    }
+
     /// Create a new modal with default styling
     pub fn new(
         screen_width: f32,
@@ -109,6 +134,7 @@ impl Modal {
             button_label_size: 14.0,
             panel_radius: 8.0,
             base_z: 9500, // Above everything including dropdowns (8000)
+            show_shadow: true,
             close_on_background_click: true,
         }
     }
@@ -179,7 +205,8 @@ impl Modal {
         }
 
         // Calculate total width needed for all buttons
-        let total_width = (button_width * num_buttons as f32) + (button_spacing * (num_buttons - 1) as f32);
+        let total_width =
+            (button_width * num_buttons as f32) + (button_spacing * (num_buttons - 1) as f32);
 
         // Start x position for first button (centered)
         let start_x = panel.x + (panel.w - total_width) * 0.5;
@@ -193,6 +220,66 @@ impl Modal {
                 h: button_height,
             })
             .collect()
+    }
+
+    /// Compute scrim bands (top, bottom, left, right) that darken everything
+    /// except the modal panel. Useful for overlay renderers that want to
+    /// reproduce the legacy four-band approach without duplicating geometry
+    /// logic. Bands with zero size are omitted.
+    ///
+    /// Coordinates are in viewport-local space (0,0 is top-left of viewport).
+    /// The canvas transform will position them at the correct screen location.
+    pub fn scrim_bands(&self, viewport_width: f32, viewport_height: f32) -> Vec<Rect> {
+        let panel = self.get_panel_rect();
+
+        let mut bands = Vec::with_capacity(16);
+        let _r = self.panel_radius;
+        let _slices = 8;
+
+        // Main bands with exact rectangular hole (no overlap with panel)
+        // Top band
+        if panel.y > 0.0 {
+            bands.push(Rect {
+                x: 0.0,
+                y: 0.0,
+                w: viewport_width,
+                h: panel.y,
+            });
+        }
+
+        // Bottom band
+        let panel_bottom = panel.y + panel.h;
+        if panel_bottom < viewport_height {
+            bands.push(Rect {
+                x: 0.0,
+                y: panel_bottom,
+                w: viewport_width,
+                h: viewport_height - panel_bottom,
+            });
+        }
+
+        // Left band
+        if panel.x > 0.0 {
+            bands.push(Rect {
+                x: 0.0,
+                y: panel.y,
+                w: panel.x,
+                h: panel.h,
+            });
+        }
+
+        // Right band
+        let panel_right = panel.x + panel.w;
+        if panel_right < viewport_width {
+            bands.push(Rect {
+                x: panel_right,
+                y: panel.y,
+                w: viewport_width - panel_right,
+                h: panel.h,
+            });
+        }
+
+        bands
     }
 
     /// Render the modal using its built-in title, content, and buttons.
@@ -209,24 +296,10 @@ impl Modal {
         let layout = self.layout();
         let panel = layout.panel;
 
-        // 1. Render shadow backdrop (slightly larger than panel)
-        let shadow_offset = 8.0;
+        // Shadow disabled for now - investigating corner artifacts
+        let _ = self.show_shadow;
 
-        // Render multiple shadow layers for blur/depth effect
-        for i in 0..3 {
-            let offset = shadow_offset + i as f32 * 2.0;
-            let alpha = 60 - i * 15;
-            canvas.fill_rect(
-                panel.x - offset,
-                panel.y - offset,
-                panel.w + offset * 2.0,
-                panel.h + offset * 2.0,
-                Brush::Solid(ColorLinPremul::from_srgba_u8([0, 0, 0, alpha as u8])),
-                z - 10 + i as i32,
-            );
-        }
-
-        // 2. Render centered panel
+        // 2. Render centered panel (background + border in one call)
         let panel_rrect = RoundedRect {
             rect: panel,
             radii: RoundedRadii {
@@ -237,17 +310,14 @@ impl Modal {
             },
         };
 
-        // Panel background
-        canvas.rounded_rect(panel_rrect, Brush::Solid(self.panel_bg), z + 1);
-
-        // Panel border
+        // Panel background and border (at base z, text renders above)
         shapes::draw_rounded_rectangle(
             canvas,
             panel_rrect,
-            None,
+            Some(Brush::Solid(self.panel_bg)),
             Some(1.0),
             Some(Brush::Solid(self.panel_border_color)),
-            z + 2,
+            z,
         );
 
         // 3. Render close button (X icon) in top right
@@ -290,13 +360,13 @@ impl Modal {
     pub fn render_default_content(&self, canvas: &mut Canvas, z: i32) {
         let layout = self.layout();
 
-        // Title
+        // Title (render above panel background)
         canvas.draw_text_run(
             layout.title_pos,
             self.title.clone(),
             self.title_size,
             self.title_color,
-            z + 4,
+            z + 10,
         );
 
         // Content text (multi-line, split by '\n')
@@ -311,7 +381,7 @@ impl Modal {
                 line.to_string(),
                 self.content_size,
                 self.content_color,
-                z + 4,
+                z + 10,
             );
         }
 
@@ -322,7 +392,81 @@ impl Modal {
             .zip(layout.button_rects.iter())
             .enumerate()
         {
-            self.render_button(canvas, button, *rect, z + 5 + i as i32 * 5);
+            self.render_button(canvas, button, *rect, z + 20 + i as i32 * 5);
+        }
+    }
+
+    /// Render the complete modal overlay with scrim bands and hit regions.
+    ///
+    /// This is the primary method for rendering modals in the IR renderer.
+    /// It handles:
+    /// - Scrim bands (darkened areas around the modal) with optional hit regions
+    /// - Panel hit region
+    /// - Modal chrome (shadow, panel, border, close button)
+    /// - Default content (title, content text, buttons)
+    /// - Hit regions for buttons and close button
+    pub fn render_overlay(
+        &self,
+        canvas: &mut Canvas,
+        hit_registry: &mut HitRegionRegistry,
+        overlay_id: &ViewNodeId,
+        dismissible: bool,
+        show_close: bool,
+        viewport_width: f32,
+        viewport_height: f32,
+    ) {
+        let panel_rect = self.get_panel_rect();
+        let overlay_z = self.base_z - 10; // Scrim below modal
+
+        // 1. Render scrim bands using the depth-bypass scrim pipeline so background
+        // content stays visible and the panel remains undimmed.
+        let scrim_color = self.scrim_color();
+        let panel_rrect = RoundedRect {
+            rect: panel_rect,
+            radii: RoundedRadii {
+                tl: self.panel_radius,
+                tr: self.panel_radius,
+                br: self.panel_radius,
+                bl: self.panel_radius,
+            },
+        };
+        canvas.fill_scrim_with_cutout(panel_rrect, scrim_color);
+
+        // Register scrim hit region for dismissal (outside panel area)
+        // Use bands for hit testing to exclude the panel area
+        if dismissible {
+            let scrim_region_id = hit_registry.register(&format!("__scrim__{}", overlay_id));
+            let full = Rect {
+                x: 0.0,
+                y: 0.0,
+                w: viewport_width,
+                h: viewport_height,
+            };
+            canvas.hit_region_rect(scrim_region_id, full, overlay_z + 1);
+        }
+
+        // 2. Register panel hit region
+        let panel_region_id = hit_registry.register(overlay_id);
+        canvas.hit_region_rect(panel_region_id, panel_rect, self.base_z + 30);
+
+        // 3. Render modal chrome (shadow, panel, border, close icon)
+        self.render_chrome(canvas, self.base_z);
+
+        // 4. Render default content (title, content text, buttons)
+        self.render_default_content(canvas, self.base_z);
+
+        // 5. Register hit regions for buttons
+        let layout = self.layout();
+        for (i, rect) in layout.button_rects.iter().enumerate() {
+            let region_id = hit_registry.register(&format!("__modalbtn{}__{}", i, overlay_id));
+            canvas.hit_region_rect(region_id, *rect, self.base_z + 60 + i as i32);
+        }
+
+        // 6. Register hit region for close button
+        if show_close {
+            let close_rect = layout.close_button_rect;
+            let close_region_id = hit_registry.register(&format!("__close__{}", overlay_id));
+            canvas.hit_region_rect(close_region_id, close_rect, self.base_z + 70);
         }
     }
 
@@ -355,8 +499,8 @@ impl Modal {
         } else {
             (
                 ColorLinPremul::from_srgba_u8([240, 240, 240, 255]), // Light gray
-                ColorLinPremul::from_srgba_u8([60, 60, 60, 255]),     // Dark text
-                ColorLinPremul::from_srgba_u8([200, 200, 200, 255]),  // Gray border
+                ColorLinPremul::from_srgba_u8([60, 60, 60, 255]),    // Dark text
+                ColorLinPremul::from_srgba_u8([200, 200, 200, 255]), // Gray border
             )
         };
 
@@ -422,5 +566,203 @@ impl Modal {
                 z,
             );
         }
+    }
+
+    // =========================================================================
+    // EVENT HANDLING METHODS
+    // =========================================================================
+
+    /// Hit test the close button
+    pub fn hit_test_close_button(&self, x: f32, y: f32) -> bool {
+        let close_btn = self.get_close_button_rect();
+        x >= close_btn.x
+            && x <= close_btn.x + close_btn.w
+            && y >= close_btn.y
+            && y <= close_btn.y + close_btn.h
+    }
+
+    /// Hit test modal buttons, returning the button index if hit
+    pub fn hit_test_buttons(&self, x: f32, y: f32) -> Option<usize> {
+        let button_rects = self.get_button_rects();
+        for (idx, btn_rect) in button_rects.iter().enumerate() {
+            if x >= btn_rect.x
+                && x <= btn_rect.x + btn_rect.w
+                && y >= btn_rect.y
+                && y <= btn_rect.y + btn_rect.h
+            {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
+    /// Hit test the modal panel
+    pub fn hit_test_panel(&self, x: f32, y: f32) -> bool {
+        let panel_rect = self.get_panel_rect();
+        x >= panel_rect.x
+            && x <= panel_rect.x + panel_rect.w
+            && y >= panel_rect.y
+            && y <= panel_rect.y + panel_rect.h
+    }
+
+    /// Handle click event on the modal
+    /// Returns ModalClickResult indicating what was clicked
+    pub fn handle_click(&self, x: f32, y: f32) -> ModalClickResult {
+        // Check if click is on panel first
+        if self.hit_test_panel(x, y) {
+            // Check close button
+            if self.hit_test_close_button(x, y) {
+                return ModalClickResult::CloseButton;
+            }
+
+            // Check modal buttons
+            if let Some(button_idx) = self.hit_test_buttons(x, y) {
+                return ModalClickResult::Button(button_idx);
+            }
+
+            // Click was on panel but not on any interactive element
+            return ModalClickResult::Panel;
+        } else {
+            // Click was outside panel (background/scrim)
+            return ModalClickResult::Background;
+        }
+    }
+
+    /// Check if a point is inside the modal (panel or background)
+    /// This always returns true since modals capture all input when visible
+    pub fn contains_point(&self, _x: f32, _y: f32) -> bool {
+        // Modal captures all input when visible (fullscreen overlay)
+        true
+    }
+}
+
+// ===== Keyboard Event Handling =====
+
+/// Keyboard keys that modal responds to
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ModalKey {
+    /// Escape key - closes modal
+    Escape,
+    /// Enter key - activates primary button
+    Enter,
+    /// Tab key - cycles focus between buttons
+    Tab,
+    /// Other keys - ignored
+    Other,
+}
+
+/// Result of modal keyboard event handling
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ModalKeyResult {
+    /// Modal should be closed
+    Close,
+    /// Primary button should be activated
+    ActivatePrimary,
+    /// Navigate to next button
+    Navigate,
+    /// Key was ignored
+    Ignored,
+}
+
+impl Modal {
+    /// Handle keyboard input when modal is open
+    ///
+    /// Escape key closes the modal.
+    /// Enter key activates the primary button.
+    /// Returns ModalKeyResult indicating how the key was handled.
+    pub fn handle_modal_key(&self, key: ModalKey) -> ModalKeyResult {
+        match key {
+            ModalKey::Escape => ModalKeyResult::Close,
+            ModalKey::Enter => {
+                // Activate primary button if exists
+                if self.buttons.iter().any(|b| b.primary) {
+                    ModalKeyResult::ActivatePrimary
+                } else {
+                    ModalKeyResult::Ignored
+                }
+            }
+            ModalKey::Tab => ModalKeyResult::Navigate,
+            _ => ModalKeyResult::Ignored,
+        }
+    }
+
+    /// Get the index of the primary button, if any
+    pub fn get_primary_button_index(&self) -> Option<usize> {
+        self.buttons.iter().position(|b| b.primary)
+    }
+}
+
+// ===== EventHandler Trait Implementation =====
+
+impl crate::event_handler::EventHandler for Modal {
+    /// Handle mouse click event
+    ///
+    /// Returns Handled for any click (modals capture all input).
+    /// The ModalClickResult can be retrieved via handle_click().
+    fn handle_mouse_click(
+        &mut self,
+        event: crate::event_handler::MouseClickEvent,
+    ) -> crate::event_handler::EventResult {
+        use winit::event::ElementState;
+
+        // Only handle left mouse button press
+        if event.button != winit::event::MouseButton::Left || event.state != ElementState::Pressed {
+            return crate::event_handler::EventResult::Ignored;
+        }
+
+        // Modal always captures clicks (it's a fullscreen overlay)
+        // The specific action is determined by handle_click()
+        let _result = self.handle_click(event.x, event.y);
+        crate::event_handler::EventResult::Handled
+    }
+
+    /// Handle keyboard input event
+    ///
+    /// Escape closes the modal, Enter activates primary button.
+    fn handle_keyboard(
+        &mut self,
+        event: crate::event_handler::KeyboardEvent,
+    ) -> crate::event_handler::EventResult {
+        use winit::event::ElementState;
+        use winit::keyboard::KeyCode;
+
+        // Only handle key press, not release
+        if event.state != ElementState::Pressed {
+            return crate::event_handler::EventResult::Ignored;
+        }
+
+        // Map KeyCode to ModalKey
+        let modal_key = match event.key {
+            KeyCode::Escape => ModalKey::Escape,
+            KeyCode::Enter => ModalKey::Enter,
+            KeyCode::Tab => ModalKey::Tab,
+            _ => ModalKey::Other,
+        };
+
+        // Handle the key
+        match self.handle_modal_key(modal_key) {
+            ModalKeyResult::Close => crate::event_handler::EventResult::Handled,
+            ModalKeyResult::ActivatePrimary => crate::event_handler::EventResult::Handled,
+            ModalKeyResult::Navigate => crate::event_handler::EventResult::Handled,
+            ModalKeyResult::Ignored => crate::event_handler::EventResult::Ignored,
+        }
+    }
+
+    /// Handle mouse move event
+    ///
+    /// Modal captures mouse move to prevent hover on underlying elements.
+    fn handle_mouse_move(
+        &mut self,
+        _event: crate::event_handler::MouseMoveEvent,
+    ) -> crate::event_handler::EventResult {
+        // Modal captures all mouse movement
+        crate::event_handler::EventResult::Handled
+    }
+
+    /// Check if the point is inside this modal
+    ///
+    /// Always returns true since modals are fullscreen overlays.
+    fn contains_point(&self, x: f32, y: f32) -> bool {
+        self.contains_point(x, y)
     }
 }

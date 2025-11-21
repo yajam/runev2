@@ -1,7 +1,7 @@
 use super::{Scene, SceneKind};
 use engine_core::{
-    Brush, ColorLinPremul, DisplayList, HitKind, HitResult, HitShape, Hyperlink, Painter,
-    Rect, Viewport,
+    Brush, ColorLinPremul, DisplayList, HitKind, HitResult, HitShape, Hyperlink, Painter, Rect,
+    Viewport,
 };
 
 pub struct HyperlinksScene {

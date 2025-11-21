@@ -167,6 +167,115 @@ fn fs_main(inp: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
+/// SMAA-inspired post-process with separate edge, weight, and resolve passes.
+pub const SMAA_WGSL: &str = r#"
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+struct Params {
+    texel_size: vec2<f32>,
+    _pad: vec2<f32>,
+};
+
+@vertex
+fn vs_full(@builtin(vertex_index) vi: u32) -> VsOut {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>( 3.0, -1.0),
+        vec2<f32>(-1.0,  3.0),
+    );
+    var uv = array<vec2<f32>, 3>(
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(2.0, 0.0),
+        vec2<f32>(0.0, 2.0),
+    );
+    var out: VsOut;
+    out.pos = vec4<f32>(pos[vi], 0.0, 1.0);
+    out.uv = uv[vi];
+    return out;
+}
+
+// --- Edge detection pass ---
+@group(0) @binding(0) var color_tex: texture_2d<f32>;
+@group(0) @binding(1) var color_smp: sampler;
+@group(0) @binding(2) var<uniform> params: Params;
+
+fn luma(c: vec3<f32>) -> f32 {
+    return dot(c, vec3<f32>(0.299, 0.587, 0.114));
+}
+
+@fragment
+fn fs_edges(inp: VsOut) -> @location(0) vec4<f32> {
+    let uv = vec2<f32>(inp.uv.x, 1.0 - inp.uv.y);
+    let texel = params.texel_size;
+    let c = luma(textureSample(color_tex, color_smp, uv).rgb);
+    let l = luma(textureSample(color_tex, color_smp, uv + vec2(-texel.x, 0.0)).rgb);
+    let r = luma(textureSample(color_tex, color_smp, uv + vec2(texel.x, 0.0)).rgb);
+    let u = luma(textureSample(color_tex, color_smp, uv + vec2(0.0, -texel.y)).rgb);
+    let d = luma(textureSample(color_tex, color_smp, uv + vec2(0.0, texel.y)).rgb);
+
+    let dx = abs(r - l);
+    let dy = abs(u - d);
+    let threshold = 0.05;
+    let edge_v = clamp((dx - threshold) * 8.0, 0.0, 1.0);
+    let edge_h = clamp((dy - threshold) * 8.0, 0.0, 1.0);
+    return vec4<f32>(edge_v, edge_h, c, 1.0);
+}
+
+// --- Blend weight pass ---
+@group(0) @binding(0) var edge_tex: texture_2d<f32>;
+@group(0) @binding(1) var edge_smp: sampler;
+@group(0) @binding(2) var<uniform> params_weights: Params;
+
+@fragment
+fn fs_weights(inp: VsOut) -> @location(0) vec4<f32> {
+    let uv = vec2<f32>(inp.uv.x, 1.0 - inp.uv.y);
+    let texel = params_weights.texel_size;
+    let edges = textureSample(edge_tex, edge_smp, uv).rg;
+
+    // Spread weights along the dominant edge axis to approximate line length.
+    var horiz = edges.y;
+    var vert = edges.x;
+
+    let left = textureSample(edge_tex, edge_smp, uv + vec2(-texel.x, 0.0)).y;
+    let right = textureSample(edge_tex, edge_smp, uv + vec2(texel.x, 0.0)).y;
+    let up = textureSample(edge_tex, edge_smp, uv + vec2(0.0, -texel.y)).x;
+    let down = textureSample(edge_tex, edge_smp, uv + vec2(0.0, texel.y)).x;
+
+    horiz = clamp((horiz + left + right) * 0.3333, 0.0, 1.0);
+    vert = clamp((vert + up + down) * 0.3333, 0.0, 1.0);
+
+    // Store weights in RG: R = vertical blend (left/right), G = horizontal blend (up/down)
+    return vec4<f32>(vert, horiz, 0.0, 0.0);
+}
+
+// --- Resolve pass ---
+@group(0) @binding(0) var src_tex: texture_2d<f32>;
+@group(0) @binding(1) var src_smp: sampler;
+@group(0) @binding(2) var weight_tex: texture_2d<f32>;
+@group(0) @binding(3) var weight_smp: sampler;
+@group(0) @binding(4) var<uniform> params_resolve: Params;
+
+@fragment
+fn fs_resolve(inp: VsOut) -> @location(0) vec4<f32> {
+    let uv = vec2<f32>(inp.uv.x, 1.0 - inp.uv.y);
+    let texel = params_resolve.texel_size;
+    let weights = textureSample(weight_tex, weight_smp, uv).rg;
+
+    let base = textureSample(src_tex, src_smp, uv);
+    let left = textureSample(src_tex, src_smp, uv + vec2(-texel.x, 0.0));
+    let right = textureSample(src_tex, src_smp, uv + vec2(texel.x, 0.0));
+    let up = textureSample(src_tex, src_smp, uv + vec2(0.0, -texel.y));
+    let down = textureSample(src_tex, src_smp, uv + vec2(0.0, texel.y));
+
+    let horiz = mix(base, 0.5 * (up + down), weights.y);
+    let vert = mix(base, 0.5 * (left + right), weights.x);
+    return mix(vert, horiz, 0.5);
+}
+"#;
+
 /// Background fill (solid or linear gradient) drawn via fullscreen triangle.
 pub const BACKGROUND_WGSL: &str = r#"
 const MAX_STOPS: u32 = 8u;

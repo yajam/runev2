@@ -1,4 +1,6 @@
+use crate::ir_renderer::HitRegionRegistry;
 use engine_core::{Brush, ColorLinPremul, Rect, RoundedRadii, RoundedRect};
+use rune_ir::view::ViewNodeId;
 use rune_surface::Canvas;
 use rune_surface::shapes;
 
@@ -55,6 +57,11 @@ pub struct Alert {
 }
 
 impl Alert {
+    /// Color used for the alert scrim overlay.
+    pub fn scrim_color(&self) -> ColorLinPremul {
+        ColorLinPremul::from_srgba_u8([0, 0, 0, 96])
+    }
+
     /// Create a new alert with default sizing and styling.
     pub fn new(
         viewport_width: f32,
@@ -154,21 +161,148 @@ impl Alert {
         self.action_rect_for_panel(panel)
     }
 
+    /// Compute scrim bands that darken everything except the alert panel.
+    ///
+    /// Coordinates are in viewport-local space (0,0 is top-left of viewport).
+    pub fn scrim_bands(&self) -> Vec<Rect> {
+        let panel = self.panel_rect();
+
+        let mut bands = Vec::new();
+
+        // Top band (full width, above panel)
+        if panel.y > 0.0 {
+            bands.push(Rect {
+                x: 0.0,
+                y: 0.0,
+                w: self.viewport_width,
+                h: panel.y,
+            });
+        }
+
+        // Bottom band (full width, below panel)
+        let panel_bottom = panel.y + panel.h;
+        if panel_bottom < self.viewport_height {
+            bands.push(Rect {
+                x: 0.0,
+                y: panel_bottom,
+                w: self.viewport_width,
+                h: self.viewport_height - panel_bottom,
+            });
+        }
+
+        // Left band (between top/bottom bands, left of panel)
+        if panel.x > 0.0 {
+            bands.push(Rect {
+                x: 0.0,
+                y: panel.y,
+                w: panel.x,
+                h: panel.h,
+            });
+        }
+
+        // Right band (between top/bottom bands, right of panel)
+        let panel_right = panel.x + panel.w;
+        if panel_right < self.viewport_width {
+            bands.push(Rect {
+                x: panel_right,
+                y: panel.y,
+                w: self.viewport_width - panel_right,
+                h: panel.h,
+            });
+        }
+
+        bands
+    }
+
+    /// Render the complete alert overlay with hit regions (no scrim background).
+    ///
+    /// This is the primary method for rendering alerts in the IR renderer.
+    /// It handles:
+    /// - Panel hit region
+    /// - Alert panel rendering (shadow, panel, title, message, action button)
+    /// - Hit regions for action button and close button
+    /// - Scrim hit regions for dismissal (no visual scrim rendered)
+    pub fn render_overlay(
+        &self,
+        canvas: &mut Canvas,
+        hit_registry: &mut HitRegionRegistry,
+        overlay_id: &ViewNodeId,
+        dismissible: bool,
+        show_close: bool,
+    ) {
+        let panel_rect = self.panel_rect();
+        let overlay_z = self.base_z - 10;
+
+        // 1. Register scrim hit regions for dismissal (no visual scrim for alerts)
+        if dismissible {
+            let scrim_region_id = hit_registry.register(&format!("__scrim__{}", overlay_id));
+            for band in self.scrim_bands() {
+                canvas.hit_region_rect(scrim_region_id, band, overlay_z + 1);
+            }
+        }
+
+        // 2. Register panel hit region
+        let panel_region_id = hit_registry.register(overlay_id);
+        canvas.hit_region_rect(panel_region_id, panel_rect, self.base_z + 50);
+
+        // 3. Render alert panel
+        self.render(canvas);
+
+        // 4. Register hit region for action button
+        if let Some(action_rect) = self.action_rect() {
+            let action_region_id = hit_registry.register(&format!("__ok__{}", overlay_id));
+            canvas.hit_region_rect(action_region_id, action_rect, self.base_z + 60);
+        }
+
+        // 5. Register hit region for close button if shown
+        if show_close {
+            self.render_close_button(canvas, hit_registry, overlay_id, panel_rect);
+        }
+    }
+
+    /// Render a close button in the top-right corner of the panel.
+    fn render_close_button(
+        &self,
+        canvas: &mut Canvas,
+        hit_registry: &mut HitRegionRegistry,
+        overlay_id: &ViewNodeId,
+        panel_rect: Rect,
+    ) {
+        let close_size = 24.0;
+        let close_rect = Rect {
+            x: panel_rect.x + panel_rect.w - close_size - 12.0,
+            y: panel_rect.y + 12.0,
+            w: close_size,
+            h: close_size,
+        };
+
+        let close_bg = ColorLinPremul::from_srgba_u8([240, 240, 240, 255]);
+        canvas.fill_rect(
+            close_rect.x,
+            close_rect.y,
+            close_rect.w,
+            close_rect.h,
+            Brush::Solid(close_bg),
+            self.base_z + 30,
+        );
+
+        let x_color = ColorLinPremul::from_srgba_u8([100, 100, 100, 255]);
+        canvas.draw_text_run(
+            [close_rect.x + 6.0, close_rect.y + close_rect.h - 6.0],
+            "✕".to_string(),
+            14.0,
+            x_color,
+            self.base_z + 31,
+        );
+
+        let close_region_id = hit_registry.register(&format!("__close__{}", overlay_id));
+        canvas.hit_region_rect(close_region_id, close_rect, self.base_z + 40);
+    }
+
     /// Render the alert panel and its contents.
     pub fn render(&self, canvas: &mut Canvas) {
         let z = self.base_z;
         let panel = self.panel_rect();
-
-        // Subtle drop shadow below the panel.
-        let shadow_offset_y = 6.0;
-        canvas.fill_rect(
-            panel.x,
-            panel.y + shadow_offset_y,
-            panel.w,
-            panel.h,
-            Brush::Solid(ColorLinPremul::from_srgba_u8([0, 0, 0, 30])),
-            z - 10,
-        );
 
         let rrect = RoundedRect {
             rect: panel,
@@ -180,17 +314,14 @@ impl Alert {
             },
         };
 
-        // Panel background.
-        canvas.rounded_rect(rrect, Brush::Solid(self.panel_bg), z);
-
-        // Thin border to crispen edges on light backgrounds.
+        // Panel background and border (combined for consistent rounding)
         shapes::draw_rounded_rectangle(
             canvas,
             rrect,
-            None,
+            Some(Brush::Solid(self.panel_bg)),
             Some(1.0),
             Some(Brush::Solid(self.panel_border_color)),
-            z + 1,
+            z,
         );
 
         // Text layout: title + secondary line, vertically centered as a block.
@@ -243,5 +374,25 @@ impl Alert {
                 z + 4,
             );
         }
+    }
+
+    // =========================================================================
+    // EVENT HANDLING METHODS
+    // =========================================================================
+
+    /// Hit test the action button (if it exists)
+    /// Returns true if the click is on the action button
+    pub fn hit_test_action(&self, x: f32, y: f32) -> bool {
+        if let Some(rect) = self.action_rect() {
+            x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h
+        } else {
+            false
+        }
+    }
+
+    /// Handle click event on the alert
+    /// Returns true if the action button was clicked (indicating the alert should be dismissed)
+    pub fn handle_click(&self, x: f32, y: f32) -> bool {
+        self.hit_test_action(x, y)
     }
 }

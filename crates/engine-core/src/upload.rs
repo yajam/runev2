@@ -3,7 +3,9 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::allocator::{BufKey, OwnedBuffer, RenderAllocator};
 use crate::display_list::{Command, DisplayList};
-use crate::scene::{Brush, FillRule, Path, PathCmd, Rect, RoundedRect, Stroke, Transform2D, TextRun};
+use crate::scene::{
+    Brush, FillRule, Path, PathCmd, Rect, RoundedRect, Stroke, TextRun, Transform2D,
+};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
@@ -72,10 +74,26 @@ fn rect_to_verts(rect: Rect, color: [f32; 4], t: Transform2D, z: f32) -> ([Verte
     let p3 = apply_transform([x0, y1], t);
     (
         [
-            Vertex { pos: p0, color, z_index: z },
-            Vertex { pos: p1, color, z_index: z },
-            Vertex { pos: p2, color, z_index: z },
-            Vertex { pos: p3, color, z_index: z },
+            Vertex {
+                pos: p0,
+                color,
+                z_index: z,
+            },
+            Vertex {
+                pos: p1,
+                color,
+                z_index: z,
+            },
+            Vertex {
+                pos: p2,
+                color,
+                z_index: z,
+            },
+            Vertex {
+                pos: p3,
+                color,
+                z_index: z,
+            },
         ],
         [0, 1, 2, 0, 2, 3],
     )
@@ -111,10 +129,26 @@ fn push_rect_linear_gradient(
         let p3 = apply_transform([x0, y1], t);
         let base = vertices.len() as u16;
         vertices.extend_from_slice(&[
-            Vertex { pos: p0, color: c0, z_index: z },
-            Vertex { pos: p1, color: c1, z_index: z },
-            Vertex { pos: p2, color: c1, z_index: z },
-            Vertex { pos: p3, color: c0, z_index: z },
+            Vertex {
+                pos: p0,
+                color: c0,
+                z_index: z,
+            },
+            Vertex {
+                pos: p1,
+                color: c1,
+                z_index: z,
+            },
+            Vertex {
+                pos: p2,
+                color: c1,
+                z_index: z,
+            },
+            Vertex {
+                pos: p3,
+                color: c0,
+                z_index: z,
+            },
         ]);
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
@@ -566,14 +600,46 @@ fn push_rect_stroke(
 
     let base = vertices.len() as u16;
     vertices.extend_from_slice(&[
-        Vertex { pos: o0, color, z_index: z }, // 0
-        Vertex { pos: o1, color, z_index: z }, // 1
-        Vertex { pos: o2, color, z_index: z }, // 2
-        Vertex { pos: o3, color, z_index: z }, // 3
-        Vertex { pos: i0, color, z_index: z }, // 4
-        Vertex { pos: i1, color, z_index: z }, // 5
-        Vertex { pos: i2, color, z_index: z }, // 6
-        Vertex { pos: i3, color, z_index: z }, // 7
+        Vertex {
+            pos: o0,
+            color,
+            z_index: z,
+        }, // 0
+        Vertex {
+            pos: o1,
+            color,
+            z_index: z,
+        }, // 1
+        Vertex {
+            pos: o2,
+            color,
+            z_index: z,
+        }, // 2
+        Vertex {
+            pos: o3,
+            color,
+            z_index: z,
+        }, // 3
+        Vertex {
+            pos: i0,
+            color,
+            z_index: z,
+        }, // 4
+        Vertex {
+            pos: i1,
+            color,
+            z_index: z,
+        }, // 5
+        Vertex {
+            pos: i2,
+            color,
+            z_index: z,
+        }, // 6
+        Vertex {
+            pos: i3,
+            color,
+            z_index: z,
+        }, // 7
     ]);
     // Build ring from quads on each edge
     let idx: [u16; 24] = [
@@ -600,15 +666,7 @@ fn push_rounded_rect_stroke(
         return;
     }
     let path = rounded_rect_to_path(rrect);
-    tessellate_path_stroke(
-        vertices,
-        indices,
-        &path,
-        Stroke { width: w },
-        color,
-        z,
-        t,
-    );
+    tessellate_path_stroke(vertices, indices, &path, Stroke { width: w }, color, z, t);
 }
 
 pub fn upload_display_list(
@@ -913,7 +971,9 @@ pub fn upload_display_list_unified(
             }
 
             // Extract text commands
-            Command::DrawText { run, z, transform, .. } => {
+            Command::DrawText {
+                run, z, transform, ..
+            } => {
                 // Text draws already carry the full world transform.
                 let final_transform = *transform;
                 text_draws.push(ExtractedTextDraw {
@@ -924,7 +984,12 @@ pub fn upload_display_list_unified(
             }
 
             // Extract hyperlink as text + optional underline
-            Command::DrawHyperlink { hyperlink, z, transform, .. } => {
+            Command::DrawHyperlink {
+                hyperlink,
+                z,
+                transform,
+                ..
+            } => {
                 // Hyperlink commands also carry their full world transform.
                 let final_transform = *transform;
 
@@ -944,7 +1009,12 @@ pub fn upload_display_list_unified(
                 // Draw underline if enabled
                 if hyperlink.underline {
                     let underline_color = hyperlink.underline_color.unwrap_or(hyperlink.color);
-                    let color = [underline_color.r, underline_color.g, underline_color.b, underline_color.a];
+                    let color = [
+                        underline_color.r,
+                        underline_color.g,
+                        underline_color.b,
+                        underline_color.a,
+                    ];
 
                     // Estimate text width for underline (simple heuristic).
                     // Use trimmed character count so trailing spaces don't extend the line,

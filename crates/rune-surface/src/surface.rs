@@ -119,6 +119,8 @@ pub struct RuneSurface {
     logical_pixels: bool,
     /// Current DPI scale factor (e.g., 2.0 on Retina).
     dpi_scale: f32,
+    /// When true, run SMAA resolve; when false, favor a direct blit for crisper text.
+    enable_smaa: bool,
     /// Additional UI scale multiplier
     ui_scale: f32,
     /// Optional overlay callback for post-render passes (e.g., SVG overlays)
@@ -145,6 +147,7 @@ impl RuneSurface {
             use_intermediate: true,
             logical_pixels: true,
             dpi_scale: 1.0,
+            enable_smaa: false,
             ui_scale: 1.0,
             overlay: None,
         }
@@ -183,6 +186,10 @@ impl RuneSurface {
     /// Choose whether to use an intermediate texture and blit to the surface.
     pub fn set_use_intermediate(&mut self, use_it: bool) {
         self.use_intermediate = use_it;
+    }
+    /// Enable or disable SMAA. Disabling skips the post-process filter to keep small text crisp.
+    pub fn set_enable_smaa(&mut self, enable: bool) {
+        self.enable_smaa = enable;
     }
     /// Enable or disable logical pixel interpretation.
     pub fn set_logical_pixels(&mut self, on: bool) {
@@ -229,6 +236,8 @@ impl RuneSurface {
             image_draws: Vec::new(),
             dpi_scale: self.dpi_scale,
             clip_stack: vec![None],
+            overlay_draws: Vec::new(),
+            scrim_draws: Vec::new(),
         }
     }
 
@@ -238,6 +247,9 @@ impl RuneSurface {
         self.pass.set_scale_factor(self.dpi_scale);
         self.pass.set_logical_pixels(self.logical_pixels);
         self.pass.set_ui_scale(self.ui_scale);
+
+        // Determine the render target: prefer intermediate when SMAA or Vello-style resizing is on.
+        let use_intermediate = self.enable_smaa || self.use_intermediate;
 
         // Build final display list from painter
         let mut list = canvas.painter.finish();
@@ -251,6 +263,22 @@ impl RuneSurface {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+        let scene_view = if use_intermediate {
+            self.pass
+                .ensure_intermediate_texture(&mut self.allocator, width, height);
+            let scene_target = self
+                .pass
+                .intermediate_texture
+                .as_ref()
+                .expect("intermediate render target not allocated");
+            scene_target
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default())
+        } else {
+            frame
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default())
+        };
 
         // Command encoder
         let mut encoder = self
@@ -278,11 +306,8 @@ impl RuneSurface {
             .ensure_depth_texture(&mut self.allocator, width, height);
 
         // Extract unified scene data (solids + text/image/svg draws) from the display list.
-        let unified_scene = engine_core::upload_display_list_unified(
-            &mut self.allocator,
-            &self.queue,
-            &list,
-        )?;
+        let unified_scene =
+            engine_core::upload_display_list_unified(&mut self.allocator, &self.queue, &list)?;
 
         // Sort SVG draws by z-index
         let mut svg_draws = canvas.svg_draws.clone();
@@ -299,14 +324,14 @@ impl RuneSurface {
         //
         // NOTE: Origins in `canvas.image_draws` are already in logical coordinates;
         // they will be scaled by PassManager via logical_pixels/dpi.
-        let mut prepared_images: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)> =
-            Vec::new();
+        let mut prepared_images: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)> = Vec::new();
         for (path, origin, size, fit, z, transform) in image_draws.iter() {
             // Synchronously load (or fetch from cache) to ensure the texture
             // is available for this frame. This mirrors the demo-app unified
             // path and avoids images only appearing after a later redraw.
-            if let Some((tex_view, img_w, img_h)) =
-                self.pass.load_image_to_view(std::path::Path::new(path), &self.queue)
+            if let Some((tex_view, img_w, img_h)) = self
+                .pass
+                .load_image_to_view(std::path::Path::new(path), &self.queue)
             {
                 drop(tex_view); // Only need dimensions here
                 let transformed_origin = apply_transform_to_point(*origin, *transform);
@@ -388,10 +413,12 @@ impl RuneSurface {
         }
 
         // Unified solids + text/images/SVGs pass
+        let preserve_surface = self.preserve_surface;
+        let direct = self.direct || !use_intermediate;
         self.pass.render_unified(
             &mut encoder,
             &mut self.allocator,
-            &view,
+            &scene_view,
             width,
             height,
             &unified_scene.gpu_scene,
@@ -399,10 +426,53 @@ impl RuneSurface {
             &svg_draws,
             &prepared_images,
             clear_wgpu,
-            self.direct,
+            direct,
             &self.queue,
-            self.preserve_surface,
+            preserve_surface,
         );
+
+        // Render scrims; support both simple rects and stencil cutouts.
+        for scrim in &canvas.scrim_draws {
+            match scrim {
+                crate::ScrimDraw::Rect(rect, color) => {
+                    self.pass.draw_scrim_rect(
+                        &mut encoder,
+                        &scene_view,
+                        width,
+                        height,
+                        *rect,
+                        *color,
+                        &self.queue,
+                    );
+                }
+                crate::ScrimDraw::Cutout { hole, color } => {
+                    self.pass.draw_scrim_with_cutout(
+                        &mut encoder,
+                        &mut self.allocator,
+                        &scene_view,
+                        width,
+                        height,
+                        *hole,
+                        *color,
+                        &self.queue,
+                    );
+                }
+            }
+        }
+
+        // Render overlay rectangles (modal scrims) without depth testing.
+        // These blend over the entire scene without blocking text.
+        for (rect, color) in &canvas.overlay_draws {
+            self.pass.draw_overlay_rect(
+                &mut encoder,
+                &scene_view,
+                width,
+                height,
+                *rect,
+                *color,
+                &self.queue,
+            );
+        }
 
         // Call overlay callback last so overlays (e.g., devtools, debug UI)
         // are guaranteed to draw above all other content.
@@ -410,11 +480,28 @@ impl RuneSurface {
             overlay_fn(
                 &mut self.pass,
                 &mut encoder,
-                &view,
+                &scene_view,
                 &self.queue,
                 width,
                 height,
             );
+        }
+
+        // Resolve to the swapchain: SMAA when enabled, otherwise a nearest-neighbor blit for sharper text.
+        if use_intermediate {
+            if self.enable_smaa {
+                self.pass.apply_smaa(
+                    &mut encoder,
+                    &mut self.allocator,
+                    &scene_view,
+                    &view,
+                    width,
+                    height,
+                    &self.queue,
+                );
+            } else {
+                self.pass.blit_to_surface(&mut encoder, &view);
+            }
         }
 
         // Submit and present

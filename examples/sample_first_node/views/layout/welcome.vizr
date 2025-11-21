@@ -1,0 +1,619 @@
+{
+  "$schema": "../../../../crates/rune-ir/schema/view_document.schema.json",
+  "view_id": "welcome_simple",
+  "root": "root_view",
+  "nodes": [
+    {
+      "id": "root_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 4
+      },
+      "padding": {
+        "top": 32,
+        "right": 48,
+        "bottom": 32,
+        "left": 48
+      },
+      "background": {
+        "type": "linear_gradient",
+        "angle": 135,
+        "stops": [
+          [
+            "#667eea",
+            0
+          ],
+          [
+            "#764ba2",
+            1
+          ]
+        ]
+      },
+      "children": [
+        "card_view"
+      ]
+    },
+    {
+      "id": "card_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 20
+      },
+      "padding": {
+        "top": 28,
+        "right": 32,
+        "bottom": 28,
+        "left": 32
+      },
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "corner_radius": 12,
+      "children": [
+        "title_text",
+        "body_text",
+        "image_section",
+        "name_field_container",
+        "mid_paragraph",
+        "email_input_view",
+        "message_area_view",
+        "file_upload_section",
+        "priority_select_view",
+        "date_picker_view",
+        "transactions_table",
+        "long_paragraph",
+        "docs_link",
+        "action_button",
+        "overlay_buttons_section",
+        "demo_modal",
+        "demo_alert",
+        "demo_confirm"
+      ]
+    },
+    {
+      "id": "mid_paragraph",
+      "node_id": "MIDPARA1",
+      "type": "text",
+      "style": {
+        "color": "#000000",
+        "font_size": 15,
+        "line_height": 22,
+        "padding": {
+          "top": 8,
+          "right": 4,
+          "bottom": 8,
+          "left": 4
+        }
+      }
+    },
+    {
+      "id": "title_text",
+      "node_id": "CARDTXT1",
+      "type": "text",
+      "style": {
+        "color": "#1e293b",
+        "font_size": 32,
+        "line_height": 40
+      }
+    },
+    {
+      "id": "email_input_view",
+      "type": "input_box",
+      "control_id": "email",
+      "form_id": "contact",
+      "placeholder": "Enter your email",
+      "width": 320,
+      "style": {
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "border_width": 1,
+        "border_color": "#94A3B8",
+        "corner_radius": 6,
+        "background": {
+          "type": "solid",
+          "color": "#f5f8ff"
+        }
+      }
+    },
+    {
+      "id": "message_area_view",
+      "type": "text_area",
+      "control_id": "message",
+      "form_id": "contact",
+      "placeholder": "Your message",
+      "width": 520,
+      "style": {
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "border_width": 1,
+        "border_color": "#94A3B8",
+        "corner_radius": 6,
+        "background": {
+          "type": "solid",
+          "color": "#f8fafc"
+        },
+        "height": 140
+      }
+    },
+    {
+      "id": "file_upload_section",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 8
+      },
+      "children": [
+        "file_input_label",
+        "file_input_view"
+      ]
+    },
+    {
+      "id": "file_input_label",
+      "type": "text",
+      "node_id": "FILELBL1",
+      "style": {
+        "color": "#334155",
+        "font_size": 14,
+        "line_height": 20
+      }
+    },
+    {
+      "id": "file_input_view",
+      "type": "file_input",
+      "control_id": "attachments",
+      "form_id": "contact",
+      "placeholder": "Choose files to upload",
+      "multi": true,
+      "width": 520
+    },
+    {
+      "id": "priority_select_view",
+      "type": "select",
+      "control_id": "priority",
+      "form_id": "contact",
+      "placeholder": "Select priority",
+      "width": 260,
+      "options": [
+        {
+          "label": "Low",
+          "value": "low"
+        },
+        {
+          "label": "Medium",
+          "value": "medium",
+          "selected": true
+        },
+        {
+          "label": "High",
+          "value": "high"
+        }
+      ]
+    },
+    {
+      "id": "date_picker_view",
+      "type": "date_picker",
+      "control_id": "event_date",
+      "form_id": "contact",
+      "placeholder": "Select a date",
+      "width": 260,
+      "default_value": "2025-11-21",
+      "style": {
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "border_width": 1,
+        "border_color": "#94A3B8",
+        "corner_radius": 6,
+        "background": {
+          "type": "solid",
+          "color": "#f5f8ff"
+        }
+      }
+    },
+    {
+      "id": "body_text",
+      "node_id": "CARDTXT2",
+      "type": "text",
+      "style": {
+        "color": "#64748b",
+        "font_size": 16,
+        "line_height": 24
+      }
+    },
+    {
+      "id": "image_section",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "justify": "start",
+        "align": "center"
+      },
+      "children": [
+        "welcome_image"
+      ]
+    },
+    {
+      "id": "welcome_image",
+      "node_id": "IMGFRST1",
+      "type": "image",
+      "width": 240,
+      "height": 240,
+      "content_fit": "contain"
+    },
+    {
+      "id": "name_field_container",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 8
+      },
+      "children": [
+        "name_label_view",
+        "name_input_view"
+      ]
+    },
+    {
+      "id": "name_label_view",
+      "type": "text",
+      "node_id": "NAMEIN01",
+      "style": {
+        "color": "#334155",
+        "font_size": 14,
+        "line_height": 20
+      }
+    },
+    {
+      "id": "name_input_view",
+      "type": "input_box",
+      "control_id": "name",
+      "form_id": "contact",
+      "placeholder": "Enter your name",
+      "width": 320,
+      "style": {
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "border_width": 1,
+        "border_color": "#94A3B8",
+        "corner_radius": 6,
+        "background": {
+          "type": "solid",
+          "color": "#f5f8ff"
+        }
+      }
+    },
+    {
+      "id": "long_paragraph",
+      "node_id": "LONGPAR1",
+      "type": "text",
+      "style": {
+        "color": "#334155",
+        "font_size": 16,
+        "line_height": 24,
+        "padding": {
+          "top": 4,
+          "right": 0,
+          "bottom": 4,
+          "left": 0
+        }
+      }
+    },
+    {
+      "id": "docs_link",
+      "node_id": "RUNEDOC1",
+      "type": "link",
+      "style": {
+        "padding": {
+          "top": 2,
+          "right": 0,
+          "bottom": 2,
+          "left": 0
+        }
+      },
+      "label_style": {
+        "color": "#2563eb",
+        "font_size": 16,
+        "line_height": 22
+      }
+    },
+    {
+      "id": "transactions_table",
+      "node_id": "TRANTBL1",
+      "type": "table",
+      "style": {
+        "border_width": 1,
+        "border_color": "#e2e8f0",
+        "corner_radius": 8,
+        "background": {
+          "type": "solid",
+          "color": "#ffffff"
+        }
+      },
+      "header_style": {
+        "color": "#1e293b",
+        "font_size": 14
+      },
+      "cell_style": {
+        "color": "#475569",
+        "font_size": 14
+      },
+      "zebra": true
+    },
+    {
+      "id": "action_button",
+      "node_id": "CARD2BN1",
+      "type": "button",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#3b82f6"
+        },
+        "height": 44,
+        "padding": {
+          "top": 10,
+          "right": 20,
+          "bottom": 10,
+          "left": 20
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#ffffff"
+      }
+    },
+    {
+      "id": "overlay_buttons_section",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "justify": "start",
+        "align": "center",
+        "gap": 16
+      },
+      "padding": {
+        "top": 16,
+        "bottom": 16
+      },
+      "children": [
+        "show_modal_button",
+        "show_alert_button",
+        "show_confirm_button"
+      ]
+    },
+    {
+      "id": "show_modal_button",
+      "node_id": "BTNMODAL",
+      "type": "button",
+      "on_click_intent": "show_modal:demo_modal",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#8b5cf6"
+        },
+        "height": 40,
+        "padding": {
+          "top": 8,
+          "right": 16,
+          "bottom": 8,
+          "left": 16
+        },
+        "corner_radius": 6
+      },
+      "label_style": {
+        "color": "#ffffff"
+      }
+    },
+    {
+      "id": "show_alert_button",
+      "node_id": "BTNALERT",
+      "type": "button",
+      "on_click_intent": "show_alert:demo_alert",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#f59e0b"
+        },
+        "height": 40,
+        "padding": {
+          "top": 8,
+          "right": 16,
+          "bottom": 8,
+          "left": 16
+        },
+        "corner_radius": 6
+      },
+      "label_style": {
+        "color": "#ffffff"
+      }
+    },
+    {
+      "id": "show_confirm_button",
+      "node_id": "BTNCONFI",
+      "type": "button",
+      "on_click_intent": "show_confirm:demo_confirm",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#ef4444"
+        },
+        "height": 40,
+        "padding": {
+          "top": 8,
+          "right": 16,
+          "bottom": 8,
+          "left": 16
+        },
+        "corner_radius": 6
+      },
+      "label_style": {
+        "color": "#ffffff"
+      }
+    },
+    {
+      "id": "demo_modal",
+      "type": "modal",
+      "node_id": "MODAL001",
+      "dismissible": true,
+      "show_close": true,
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "children": [
+        "modal_msg1",
+        "modal_msg2",
+        "modal_btn_cancel",
+        "modal_btn_ok"
+      ]
+    },
+    {
+      "id": "modal_msg1",
+      "type": "text",
+      "node_id": "MDLMSG01",
+      "style": {
+        "color": "#334155",
+        "font_size": 14
+      }
+    },
+    {
+      "id": "modal_msg2",
+      "type": "text",
+      "node_id": "MDLMSG02",
+      "style": {
+        "color": "#64748b",
+        "font_size": 14
+      }
+    },
+    {
+      "id": "modal_btn_cancel",
+      "type": "button",
+      "node_id": "MDLBTNCA",
+      "on_click_intent": "dismiss",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#e5e7eb"
+        }
+      },
+      "label_style": {
+        "color": "#374151"
+      }
+    },
+    {
+      "id": "modal_btn_ok",
+      "type": "button",
+      "node_id": "MDLBTNOK",
+      "on_click_intent": "confirm",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#3b82f6"
+        }
+      },
+      "label_style": {
+        "color": "#ffffff"
+      }
+    },
+    {
+      "id": "demo_alert",
+      "type": "alert",
+      "node_id": "ALERT001",
+      "dismissible": true,
+      "show_close": false,
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      }
+    },
+    {
+      "id": "demo_confirm",
+      "type": "confirm",
+      "node_id": "CONFRM01",
+      "dismissible": false,
+      "show_close": false,
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "children": [
+        "confirm_msg1",
+        "confirm_msg2",
+        "confirm_btn_cancel",
+        "confirm_btn_delete"
+      ]
+    },
+    {
+      "id": "confirm_msg1",
+      "type": "text",
+      "node_id": "CFMMSG01",
+      "style": {
+        "color": "#334155",
+        "font_size": 14
+      }
+    },
+    {
+      "id": "confirm_msg2",
+      "type": "text",
+      "node_id": "CFMMSG02",
+      "style": {
+        "color": "#64748b",
+        "font_size": 14
+      }
+    },
+    {
+      "id": "confirm_btn_cancel",
+      "type": "button",
+      "node_id": "CFMBTNCA",
+      "on_click_intent": "cancel",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#e5e7eb"
+        }
+      },
+      "label_style": {
+        "color": "#374151"
+      }
+    },
+    {
+      "id": "confirm_btn_delete",
+      "type": "button",
+      "node_id": "CFMBTNDE",
+      "on_click_intent": "confirm_delete",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#ef4444"
+        }
+      },
+      "label_style": {
+        "color": "#ffffff"
+      }
+    }
+  ]
+}

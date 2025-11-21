@@ -678,5 +678,4 @@ impl Scene for ImagesScene {
             );
         }
     }
-
 }

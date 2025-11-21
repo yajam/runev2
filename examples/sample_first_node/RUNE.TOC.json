@@ -1,0 +1,14 @@
+{
+  "entries": {
+    "views/data/welcome.json": {
+      "sha256": "5a02a4db93b90c638a1698f29862b4c24c4c4663ec3f2d190d19a5739094f156",
+      "size": 5458,
+      "offset": 0
+    },
+    "views/layout/welcome.vizr": {
+      "sha256": "b9cbf214b10f3bc2ea48843bfc933b1d293cf3d5b7cc40223c2a2c2b12bf1da3",
+      "size": 12900,
+      "offset": 0
+    }
+  }
+}

@@ -1,0 +1,259 @@
+// Example: Recreate the table from the screenshot
+// This shows how to build a payment transactions table matching the reference design
+
+use rune_scene::elements::{Alignment, Column, Table, TableCell, TableRow};
+use engine_core::{ColorLinPremul, Rect};
+use rune_surface::Canvas;
+
+pub fn create_payment_table(canvas: &mut Canvas, z: i32) {
+    // Define columns with appropriate alignment
+    let columns = vec![
+        Column::new("Status")
+            .with_width(150.0)
+            .with_alignment(Alignment::Left),
+        Column::new("Email")
+            .with_width(350.0)
+            .with_alignment(Alignment::Left),
+        Column::new("Amount")
+            .with_width(150.0)
+            .with_alignment(Alignment::Right),
+    ];
+
+    // Create the table
+    let mut table = Table::new(
+        Rect {
+            x: 30.0,
+            y: 30.0,
+            w: 650.0,
+            h: 400.0,
+        },
+        columns,
+    );
+
+    // Add data rows (from screenshot)
+    table.add_row(TableRow::new(vec![
+        TableCell::new("Success"),
+        TableCell::new("ken99@example.com"),
+        TableCell::new("$316.00"),
+    ]));
+
+    table.add_row(TableRow::new(vec![
+        TableCell::new("Success"),
+        TableCell::new("abe45@example.com"),
+        TableCell::new("$242.00"),
+    ]));
+
+    table.add_row(TableRow::new(vec![
+        TableCell::new("Processing"),
+        TableCell::new("monserrat44@example.com"),
+        TableCell::new("$837.00"),
+    ]));
+
+    table.add_row(TableRow::new(vec![
+        TableCell::new("Success"),
+        TableCell::new("silas22@example.com"),
+        TableCell::new("$874.00"),
+    ]));
+
+    table.add_row(TableRow::new(vec![
+        TableCell::new("Failed"),
+        TableCell::new("carmella@example.com"),
+        TableCell::new("$721.00"),
+    ]));
+
+    // Configure styling to match screenshot
+    table.bg_color = ColorLinPremul::from_srgba_u8([255, 255, 255, 255]); // White
+    table.header_bg_color = ColorLinPremul::from_srgba_u8([250, 250, 250, 255]); // Very light gray
+    table.header_text_color = ColorLinPremul::from_srgba_u8([60, 60, 60, 255]); // Dark gray
+    table.header_text_size = 14.0;
+
+    table.cell_text_color = ColorLinPremul::from_srgba_u8([80, 80, 80, 255]); // Medium gray
+    table.cell_text_size = 14.0;
+
+    table.border_color = ColorLinPremul::from_srgba_u8([224, 224, 224, 255]); // Light gray
+    table.border_width = 1.0;
+
+    table.row_height = 60.0; // Generous row height
+    table.cell_padding_x = 16.0;
+    table.cell_padding_y = 12.0;
+
+    table.show_horizontal_lines = true;
+    table.show_vertical_lines = true;
+
+    // Render the table
+    table.render(canvas, z);
+}
+
+// Example: Table with status color coding
+pub fn create_colored_payment_table(canvas: &mut Canvas, z: i32) {
+    let columns = vec![
+        Column::new("Status").with_alignment(Alignment::Left),
+        Column::new("Email").with_alignment(Alignment::Left),
+        Column::new("Amount").with_alignment(Alignment::Right),
+    ];
+
+    let mut table = Table::new(
+        Rect {
+            x: 30.0,
+            y: 30.0,
+            w: 650.0,
+            h: 400.0,
+        },
+        columns,
+    );
+
+    // Color code status cells
+    let success_color = ColorLinPremul::from_srgba_u8([34, 197, 94, 255]); // Green
+    let processing_color = ColorLinPremul::from_srgba_u8([234, 179, 8, 255]); // Yellow/Orange
+    let failed_color = ColorLinPremul::from_srgba_u8([220, 38, 38, 255]); // Red
+
+    table.add_row(TableRow::new(vec![
+        TableCell::new("Success").with_color(success_color),
+        TableCell::new("ken99@example.com"),
+        TableCell::new("$316.00"),
+    ]));
+
+    table.add_row(TableRow::new(vec![
+        TableCell::new("Success").with_color(success_color),
+        TableCell::new("abe45@example.com"),
+        TableCell::new("$242.00"),
+    ]));
+
+    table.add_row(TableRow::new(vec![
+        TableCell::new("Processing").with_color(processing_color),
+        TableCell::new("monserrat44@example.com"),
+        TableCell::new("$837.00"),
+    ]));
+
+    table.add_row(TableRow::new(vec![
+        TableCell::new("Success").with_color(success_color),
+        TableCell::new("silas22@example.com"),
+        TableCell::new("$874.00"),
+    ]));
+
+    table.add_row(TableRow::new(vec![
+        TableCell::new("Failed").with_color(failed_color),
+        TableCell::new("carmella@example.com"),
+        TableCell::new("$721.00"),
+    ]));
+
+    // Style the table
+    table.bg_color = ColorLinPremul::from_srgba_u8([255, 255, 255, 255]);
+    table.header_bg_color = ColorLinPremul::from_srgba_u8([250, 250, 250, 255]);
+    table.border_color = ColorLinPremul::from_srgba_u8([224, 224, 224, 255]);
+    table.row_height = 60.0;
+
+    table.render(canvas, z);
+}
+
+// Example: Table with zebra striping and footer
+pub fn create_zebra_table_with_footer(canvas: &mut Canvas, z: i32) {
+    let columns = vec![
+        Column::new("Status").with_alignment(Alignment::Left),
+        Column::new("Email").with_alignment(Alignment::Left),
+        Column::new("Amount").with_alignment(Alignment::Right),
+    ];
+
+    let rows = vec![
+        TableRow::new(vec![
+            TableCell::new("Success"),
+            TableCell::new("ken99@example.com"),
+            TableCell::new("$316.00"),
+        ]),
+        TableRow::new(vec![
+            TableCell::new("Success"),
+            TableCell::new("abe45@example.com"),
+            TableCell::new("$242.00"),
+        ]),
+        TableRow::new(vec![
+            TableCell::new("Processing"),
+            TableCell::new("monserrat44@example.com"),
+            TableCell::new("$837.00"),
+        ]),
+        TableRow::new(vec![
+            TableCell::new("Success"),
+            TableCell::new("silas22@example.com"),
+            TableCell::new("$874.00"),
+        ]),
+        TableRow::new(vec![
+            TableCell::new("Failed"),
+            TableCell::new("carmella@example.com"),
+            TableCell::new("$721.00"),
+        ]),
+    ];
+
+    let footer = TableRow::new(vec![
+        TableCell::new("Total"),
+        TableCell::new("5 transactions"),
+        TableCell::new("$2,990.00").with_size(16.0), // Larger font for total
+    ]);
+
+    let mut table = Table::new(
+        Rect {
+            x: 30.0,
+            y: 30.0,
+            w: 650.0,
+            h: 450.0,
+        },
+        columns,
+    )
+    .with_rows(rows)
+    .with_footer(footer)
+    .with_zebra_striping(true);
+
+    // Style
+    table.zebra_color = ColorLinPremul::from_srgba_u8([249, 249, 249, 255]);
+    table.footer_text_size = 14.0;
+    table.row_height = 60.0;
+
+    table.render(canvas, z);
+}
+
+// Example: Compact table without grid lines
+pub fn create_compact_table(canvas: &mut Canvas, z: i32) {
+    let columns = vec![
+        Column::new("Status"),
+        Column::new("Email"),
+        Column::new("Amount").with_alignment(Alignment::Right),
+    ];
+
+    let mut table = Table::new(
+        Rect {
+            x: 30.0,
+            y: 30.0,
+            w: 650.0,
+            h: 350.0,
+        },
+        columns,
+    );
+
+    // Add rows
+    table.add_row(TableRow::new(vec![
+        TableCell::new("Success"),
+        TableCell::new("ken99@example.com"),
+        TableCell::new("$316.00"),
+    ]));
+
+    table.add_row(TableRow::new(vec![
+        TableCell::new("Success"),
+        TableCell::new("abe45@example.com"),
+        TableCell::new("$242.00"),
+    ]));
+
+    table.add_row(TableRow::new(vec![
+        TableCell::new("Processing"),
+        TableCell::new("monserrat44@example.com"),
+        TableCell::new("$837.00"),
+    ]));
+
+    // Compact styling - no grid lines, smaller padding
+    table.show_horizontal_lines = false;
+    table.show_vertical_lines = false;
+    table.border_width = 0.0;
+    table.row_height = 40.0;
+    table.cell_padding_x = 12.0;
+    table.cell_padding_y = 8.0;
+    table.header_bg_color = ColorLinPremul::from_srgba_u8([255, 255, 255, 255]); // Same as bg
+
+    table.render(canvas, z);
+}

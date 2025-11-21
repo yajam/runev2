@@ -25,6 +25,9 @@ pub struct TextArea {
     pub text_color: ColorLinPremul,
     pub placeholder: Option<String>,
     pub focused: bool,
+    pub bg_color: ColorLinPremul,
+    pub border_color: ColorLinPremul,
+    pub border_width: f32,
     caret: CaretBlink,
     pub cursor_position: usize,
     scroll_y: f32,
@@ -75,6 +78,9 @@ impl TextArea {
             text_color,
             placeholder,
             focused,
+            bg_color: ColorLinPremul::from_srgba_u8([248, 250, 252, 255]),
+            border_color: ColorLinPremul::from_srgba_u8([148, 163, 184, 255]),
+            border_width: 1.0,
             caret: CaretBlink::new(focused),
             cursor_position: initial_cursor,
             scroll_y: 0.0,
@@ -100,6 +106,35 @@ impl TextArea {
         if old_wrap_width != Some(new_wrap_width) {
             self.rewrap_layout();
         }
+    }
+
+    /// Apply styling from a SurfaceStyle (background/border/padding).
+    pub fn apply_surface_style(&mut self, style: &rune_ir::view::SurfaceStyle) {
+        if let Some(bg) = &style.background {
+            if let rune_ir::view::ViewBackground::Solid { color } = bg {
+                if let Some(parsed) = crate::ir_adapter::parse_color(color) {
+                    self.bg_color = parsed;
+                }
+            }
+        }
+
+        if let Some(color) = style
+            .border_color
+            .as_ref()
+            .and_then(|c| crate::ir_adapter::parse_color(c))
+        {
+            self.border_color = color;
+        }
+
+        if let Some(width) = style.border_width {
+            self.border_width = width as f32;
+        }
+
+        self.padding_x = style.padding.left as f32;
+        self.padding_y = style.padding.top as f32;
+
+        // Recompute wrap width based on new padding.
+        self.set_rect(self.rect);
     }
 
     fn rewrap_layout(&mut self) {
@@ -210,6 +245,12 @@ impl TextArea {
         self.cursor_position = active;
     }
 
+    fn clamp_selection_to_len(selection: &RtSelection, max: usize) -> RtSelection {
+        let anchor = selection.anchor().min(max);
+        let active = selection.active().min(max);
+        RtSelection::new(anchor, active)
+    }
+
     fn with_layout_edit<F>(&mut self, f: F)
     where
         F: FnOnce(
@@ -221,6 +262,11 @@ impl TextArea {
     {
         self.clamp_selection_to_layout();
         let selection_before = self.rt_selection.clone();
+        let normalized_selection = {
+            let a = selection_before.anchor();
+            let b = selection_before.active();
+            RtSelection::new(a.min(b), a.max(b))
+        };
         let size = self.text_size;
         let (new_cursor, new_selection, new_text) = {
             let layout = match self.rt_layout.as_mut() {
@@ -231,7 +277,7 @@ impl TextArea {
                 Ok(f) => f,
                 Err(_) => return,
             };
-            let (new_cursor, new_selection) = f(layout, &font, &selection_before, size);
+            let (new_cursor, new_selection) = f(layout, &font, &normalized_selection, size);
             let new_text = layout.text().to_string();
             (new_cursor, new_selection, new_text)
         };
@@ -277,28 +323,36 @@ impl TextArea {
     }
 
     pub fn delete_before_cursor(&mut self) {
-        if self.text.is_empty() || self.cursor_position == 0 {
-            return;
-        }
-        self.with_layout_edit(|layout, font, selection, size| {
-            let wrap_width = layout.max_line_width().max(100.0);
-            let new_cursor = if selection.is_collapsed() {
-                layout.delete_backward(
-                    selection.active(),
-                    font,
-                    size,
-                    Some(wrap_width),
-                    RtWrapMode::BreakWord,
-                )
-            } else {
-                layout.delete_selection(
+        // If there's a selection, delete it regardless of cursor position
+        if !self.rt_selection.is_collapsed() {
+            self.with_layout_edit(|layout, font, selection, size| {
+                let wrap_width = layout.max_line_width().max(100.0);
+                let new_cursor = layout.delete_selection(
                     selection,
                     font,
                     size,
                     Some(wrap_width),
                     RtWrapMode::BreakWord,
-                )
-            };
+                );
+                (new_cursor, RtSelection::collapsed(new_cursor))
+            });
+            self.preferred_x = None;
+            return;
+        }
+
+        // Otherwise, check if we can delete backward
+        if self.text.is_empty() || self.cursor_position == 0 {
+            return;
+        }
+        self.with_layout_edit(|layout, font, selection, size| {
+            let wrap_width = layout.max_line_width().max(100.0);
+            let new_cursor = layout.delete_backward(
+                selection.active(),
+                font,
+                size,
+                Some(wrap_width),
+                RtWrapMode::BreakWord,
+            );
             (new_cursor, RtSelection::collapsed(new_cursor))
         });
         // Horizontal position may have changed after delete; recompute on next up/down.
@@ -306,28 +360,36 @@ impl TextArea {
     }
 
     pub fn delete_after_cursor(&mut self) {
-        if self.text.is_empty() || self.cursor_position >= self.text.len() {
-            return;
-        }
-        self.with_layout_edit(|layout, font, selection, size| {
-            let wrap_width = layout.max_line_width().max(100.0);
-            let new_cursor = if selection.is_collapsed() {
-                layout.delete_forward(
-                    selection.active(),
-                    font,
-                    size,
-                    Some(wrap_width),
-                    RtWrapMode::BreakWord,
-                )
-            } else {
-                layout.delete_selection(
+        // If there's a selection, delete it regardless of cursor position
+        if !self.rt_selection.is_collapsed() {
+            self.with_layout_edit(|layout, font, selection, size| {
+                let wrap_width = layout.max_line_width().max(100.0);
+                let new_cursor = layout.delete_selection(
                     selection,
                     font,
                     size,
                     Some(wrap_width),
                     RtWrapMode::BreakWord,
-                )
-            };
+                );
+                (new_cursor, RtSelection::collapsed(new_cursor))
+            });
+            self.preferred_x = None;
+            return;
+        }
+
+        // Otherwise, check if we can delete forward
+        if self.text.is_empty() || self.cursor_position >= self.text.len() {
+            return;
+        }
+        self.with_layout_edit(|layout, font, selection, size| {
+            let wrap_width = layout.max_line_width().max(100.0);
+            let new_cursor = layout.delete_forward(
+                selection.active(),
+                font,
+                size,
+                Some(wrap_width),
+                RtWrapMode::BreakWord,
+            );
             (new_cursor, RtSelection::collapsed(new_cursor))
         });
         // Horizontal position may have changed after delete; recompute on next up/down.
@@ -540,8 +602,9 @@ impl TextArea {
                 |offset, x| layout.move_cursor_up(offset, x),
                 self.preferred_x,
             );
-            self.rt_selection = new_selection;
-            self.cursor_position = new_selection.active();
+            let clamped = Self::clamp_selection_to_len(&new_selection, layout.text().len());
+            self.rt_selection = clamped;
+            self.cursor_position = clamped.active();
             self.preferred_x = Some(new_x);
             self.reset_cursor_blink();
         }
@@ -556,8 +619,9 @@ impl TextArea {
                 |offset, x| layout.move_cursor_down(offset, x),
                 self.preferred_x,
             );
-            self.rt_selection = new_selection;
-            self.cursor_position = new_selection.active();
+            let clamped = Self::clamp_selection_to_len(&new_selection, layout.text().len());
+            self.rt_selection = clamped;
+            self.cursor_position = clamped.active();
             self.preferred_x = Some(new_x);
             self.reset_cursor_blink();
         }
@@ -701,6 +765,7 @@ impl TextArea {
         if let Some(layout) = self.rt_layout.as_ref() {
             let point = RtPoint::new(local_x, local_y);
             if let Some(selection) = layout.start_word_selection(point) {
+                // Preserve the anchor/active relationship from the layout
                 self.rt_selection = selection;
                 self.cursor_position = selection.active();
                 self.preferred_x = None;
@@ -720,6 +785,7 @@ impl TextArea {
         if let Some(layout) = self.rt_layout.as_ref() {
             let point = RtPoint::new(local_x, local_y);
             let new_selection = layout.extend_word_selection(&self.rt_selection, point);
+            // Preserve the anchor/active relationship from the layout
             self.rt_selection = new_selection;
             self.cursor_position = new_selection.active();
             self.preferred_x = None;
@@ -734,6 +800,7 @@ impl TextArea {
         if let Some(layout) = self.rt_layout.as_ref() {
             let point = RtPoint::new(local_x, local_y);
             if let Some(selection) = layout.start_line_selection(point) {
+                // Preserve the anchor/active relationship from the layout
                 self.rt_selection = selection;
                 self.cursor_position = selection.active();
                 self.preferred_x = None;
@@ -753,6 +820,7 @@ impl TextArea {
         if let Some(layout) = self.rt_layout.as_ref() {
             let point = RtPoint::new(local_x, local_y);
             let new_selection = layout.extend_line_selection(&self.rt_selection, point);
+            // Preserve the anchor/active relationship from the layout
             self.rt_selection = new_selection;
             self.cursor_position = new_selection.active();
             self.preferred_x = None;
@@ -948,16 +1016,21 @@ impl TextArea {
         };
 
         // Background
-        let bg = Color::rgba(45, 52, 71, 255);
-        canvas.rounded_rect(rrect, Brush::Solid(bg), z);
+        canvas.rounded_rect(rrect, Brush::Solid(self.bg_color), z);
 
         // Border
+        let base_border_color = self.border_color;
+        let base_border_width = self.border_width;
         let border_color = if self.focused {
             Color::rgba(63, 130, 246, 255)
         } else {
-            Color::rgba(80, 90, 110, 255)
+            base_border_color
         };
-        let border_width = if self.focused { 2.0 } else { 1.0 };
+        let border_width = if self.focused {
+            base_border_width.max(2.0)
+        } else {
+            base_border_width
+        };
         shapes::draw_rounded_rectangle(
             canvas,
             rrect,
@@ -1039,11 +1112,20 @@ impl TextArea {
                 }
             }
 
-            // Render caret using shared module
-            if self.focused {
+            // Render caret using shared module (only when no selection)
+            if self.focused && self.rt_selection.is_collapsed() {
                 if let Some(layout) = self.rt_layout.as_ref() {
+                    let baseline_offset = layout
+                        .lines()
+                        .first()
+                        .map(|l| l.baseline_offset)
+                        .unwrap_or(self.text_size * 0.8);
+                    // Baseline position for the first line; cursor_rect carries per-line offsets.
+                    let text_baseline_y = content_y + baseline_offset;
                     let caret_config = CaretRenderConfig {
                         content_rect,
+                        text_baseline_y,
+                        baseline_offset,
                         scroll_x: 0.0,
                         scroll_y: self.scroll_y,
                         color: Color::rgba(63, 130, 246, 255),
@@ -1073,8 +1155,8 @@ impl TextArea {
                 );
             }
 
-            // Render caret at start if focused
-            if self.focused && self.caret.visible {
+            // Render caret at start if focused (only when no selection)
+            if self.focused && self.rt_selection.is_collapsed() && self.caret.visible {
                 let cx = content_x;
                 let cy0 = content_y;
                 let cy1 = content_y + self.text_size * 1.2;
@@ -1090,5 +1172,337 @@ impl TextArea {
         }
 
         canvas.pop_clip();
+    }
+
+    // ===== Focus Management =====
+
+    /// Check if this text area is focused
+    ///
+    /// Returns true if the text area currently has focus.
+    pub fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    /// Set focus state for this text area
+    ///
+    /// Sets the focus state. Focus management is typically handled by
+    /// the event router, which calls this method.
+    /// When focused, the caret becomes visible and keyboard input is accepted.
+    pub fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
+        if focused {
+            self.reset_cursor_blink();
+        }
+    }
+}
+
+// ===== EventHandler Trait Implementation =====
+
+impl crate::event_handler::EventHandler for TextArea {
+    /// Handle mouse click event
+    ///
+    /// Single-click: Position cursor at click location
+    /// Double-click: Select word at click location
+    /// Triple-click: Select entire line at click location
+    fn handle_mouse_click(
+        &mut self,
+        event: crate::event_handler::MouseClickEvent,
+    ) -> crate::event_handler::EventResult {
+        use winit::event::ElementState;
+
+        // Only handle left mouse button
+        if event.button != winit::event::MouseButton::Left {
+            return crate::event_handler::EventResult::Ignored;
+        }
+
+        match event.state {
+            ElementState::Pressed => {
+                // Only start interaction on presses within bounds.
+                if !self.contains_point(event.x, event.y) {
+                    return crate::event_handler::EventResult::Ignored;
+                }
+
+                // Handle different click counts
+                match event.click_count {
+                    1 => {
+                        // Single-click: position cursor
+                        self.start_mouse_selection(event.x, event.y);
+                    }
+                    2 => {
+                        // Double-click: select word
+                        self.start_word_selection(event.x, event.y);
+                    }
+                    3 => {
+                        // Triple-click: select line
+                        self.start_line_selection(event.x, event.y);
+                    }
+                    _ => {
+                        // More than triple-click: treat as single-click
+                        self.start_mouse_selection(event.x, event.y);
+                    }
+                }
+                crate::event_handler::EventResult::Handled
+            }
+            ElementState::Released => {
+                // End mouse selection on release even if the cursor drifted outside.
+                if self.mouse_selecting || self.contains_point(event.x, event.y) {
+                    self.end_mouse_selection();
+                    crate::event_handler::EventResult::Handled
+                } else {
+                    crate::event_handler::EventResult::Ignored
+                }
+            }
+        }
+    }
+
+    /// Handle keyboard input event
+    ///
+    /// Supports full multi-line text editing keyboard shortcuts:
+    /// - Character input: Insert characters (handled via separate character events)
+    /// - Backspace/Delete: Delete characters
+    /// - Arrow keys: Move cursor (with Shift for selection)
+    /// - Arrow Up/Down: Move between lines
+    /// - Cmd/Ctrl+A: Select all
+    /// - Cmd/Ctrl+C: Copy
+    /// - Cmd/Ctrl+X: Cut
+    /// - Cmd/Ctrl+V: Paste
+    /// - Cmd/Ctrl+Z: Undo
+    /// - Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y: Redo
+    /// - Home/End: Move to start/end of line
+    /// - Cmd/Ctrl+Home/End: Move to start/end of document
+    fn handle_keyboard(
+        &mut self,
+        event: crate::event_handler::KeyboardEvent,
+    ) -> crate::event_handler::EventResult {
+        use winit::event::ElementState;
+        use winit::keyboard::{KeyCode, ModifiersState};
+
+        // Only handle key press, not release
+        if event.state != ElementState::Pressed {
+            return crate::event_handler::EventResult::Ignored;
+        }
+
+        // Only handle keyboard events if focused
+        if !self.focused {
+            return crate::event_handler::EventResult::Ignored;
+        }
+
+        let shift = event.modifiers.contains(ModifiersState::SHIFT);
+        let ctrl = event.modifiers.contains(ModifiersState::CONTROL);
+        let alt = event.modifiers.contains(ModifiersState::ALT);
+        let cmd = event.modifiers.contains(ModifiersState::SUPER);
+
+        // Accept either Cmd or Ctrl for primary shortcuts (matches legacy behavior).
+        let modifier = cmd || ctrl;
+
+        // Word movement: Alt (mac) or Ctrl (win/linux); accept either to be resilient.
+        let word_modifier = alt || ctrl;
+
+        match event.key {
+            // Text input is handled separately via ReceivedCharacter event
+            // These are navigation and editing keys only
+            KeyCode::Backspace => {
+                self.delete_before_cursor();
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            KeyCode::Delete => {
+                self.delete_after_cursor();
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            KeyCode::ArrowLeft => {
+                if cmd && shift {
+                    // Cmd+Shift+Left: extend selection to start of line
+                    self.extend_selection_to_line_start();
+                } else if cmd {
+                    // Cmd+Left: move to start of line
+                    self.move_cursor_line_start();
+                } else if shift && word_modifier {
+                    // Shift+Alt+Left (macOS) or Shift+Ctrl+Left (Windows/Linux): Extend selection left by word
+                    self.extend_selection_left_word();
+                } else if word_modifier {
+                    // Alt+Left (macOS) or Ctrl+Left (Windows/Linux): Move cursor left by word
+                    self.move_cursor_left_word();
+                } else if shift {
+                    // Shift+Left: Extend selection left
+                    self.extend_selection_left();
+                } else {
+                    // Left: Move cursor left
+                    self.move_cursor_left();
+                }
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            KeyCode::ArrowRight => {
+                if cmd && shift {
+                    // Cmd+Shift+Right: extend selection to end of line
+                    self.extend_selection_to_line_end();
+                } else if cmd {
+                    // Cmd+Right: move to end of line
+                    self.move_cursor_line_end();
+                } else if shift && word_modifier {
+                    // Shift+Alt+Right (macOS) or Shift+Ctrl+Right (Windows/Linux): Extend selection right by word
+                    self.extend_selection_right_word();
+                } else if word_modifier {
+                    // Alt+Right (macOS) or Ctrl+Right (Windows/Linux): Move cursor right by word
+                    self.move_cursor_right_word();
+                } else if shift {
+                    // Shift+Right: Extend selection right
+                    self.extend_selection_right();
+                } else {
+                    // Right: Move cursor right
+                    self.move_cursor_right();
+                }
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            KeyCode::ArrowUp => {
+                if shift {
+                    // Shift+Up: Extend selection up
+                    self.extend_selection_up();
+                } else {
+                    // Up: Move cursor up
+                    self.move_cursor_up();
+                }
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            KeyCode::ArrowDown => {
+                if shift {
+                    // Shift+Down: Extend selection down
+                    self.extend_selection_down();
+                } else {
+                    // Down: Move cursor down
+                    self.move_cursor_down();
+                }
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            KeyCode::Home => {
+                if modifier && shift {
+                    // Cmd+Shift+Home (macOS) or Ctrl+Shift+Home (Windows/Linux): Extend selection to document start
+                    self.extend_selection_to_document_start();
+                } else if modifier {
+                    // Cmd+Home (macOS) or Ctrl+Home (Windows/Linux): Move to document start
+                    self.move_cursor_to_document_start();
+                } else if shift {
+                    // Shift+Home: Extend selection to line start
+                    self.extend_selection_to_line_start();
+                } else {
+                    // Home: Move to line start
+                    self.move_cursor_line_start();
+                }
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            KeyCode::End => {
+                if modifier && shift {
+                    // Cmd+Shift+End (macOS) or Ctrl+Shift+End (Windows/Linux): Extend selection to document end
+                    self.extend_selection_to_document_end();
+                } else if modifier {
+                    // Cmd+End (macOS) or Ctrl+End (Windows/Linux): Move to document end
+                    self.move_cursor_to_document_end();
+                } else if shift {
+                    // Shift+End: Extend selection to line end
+                    self.extend_selection_to_line_end();
+                } else {
+                    // End: Move to line end
+                    self.move_cursor_line_end();
+                }
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            // Clipboard and editing shortcuts
+            KeyCode::KeyA if modifier => {
+                // Cmd+A (macOS) or Ctrl+A (Windows/Linux): Select all
+                self.select_all();
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            KeyCode::KeyC if modifier => {
+                // Cmd+C (macOS) or Ctrl+C (Windows/Linux): Copy
+                let _ = self.copy_to_clipboard();
+                crate::event_handler::EventResult::Handled
+            }
+
+            KeyCode::KeyX if modifier => {
+                // Cmd+X (macOS) or Ctrl+X (Windows/Linux): Cut
+                let _ = self.cut_to_clipboard();
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            KeyCode::KeyV if modifier => {
+                // Cmd+V (macOS) or Ctrl+V (Windows/Linux): Paste
+                let _ = self.paste_from_clipboard();
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            KeyCode::KeyZ if modifier && shift => {
+                // Cmd+Shift+Z (macOS) or Ctrl+Shift+Z (Windows/Linux): Redo
+                self.redo();
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            KeyCode::KeyZ if modifier => {
+                // Cmd+Z (macOS) or Ctrl+Z (Windows/Linux): Undo
+                self.undo();
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            KeyCode::KeyY if modifier => {
+                // Cmd+Y (macOS) or Ctrl+Y (Windows/Linux): Redo (alternative)
+                self.redo();
+                self.update_scroll();
+                crate::event_handler::EventResult::Handled
+            }
+
+            _ => crate::event_handler::EventResult::Ignored,
+        }
+    }
+
+    /// Handle mouse move event (for text selection)
+    ///
+    /// Extends the current selection when the mouse is dragged with the button held.
+    fn handle_mouse_move(
+        &mut self,
+        event: crate::event_handler::MouseMoveEvent,
+    ) -> crate::event_handler::EventResult {
+        if self.mouse_selecting {
+            self.extend_mouse_selection(event.x, event.y);
+            self.update_scroll();
+            crate::event_handler::EventResult::Handled
+        } else {
+            crate::event_handler::EventResult::Ignored
+        }
+    }
+
+    /// Check if this text area is focused
+    fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    /// Set focus state for this text area
+    fn set_focused(&mut self, focused: bool) {
+        // Call the TextArea's own set_focused method (not recursive)
+        TextArea::set_focused(self, focused);
+    }
+
+    /// Check if the point is inside this text area
+    fn contains_point(&self, x: f32, y: f32) -> bool {
+        self.contains_point(x, y)
     }
 }
