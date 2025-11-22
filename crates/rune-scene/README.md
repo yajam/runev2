@@ -66,43 +66,10 @@ rune-scene/
 ├── src/
 │   ├── lib.rs           # Main entry point with zone rendering
 │   ├── zones.rs         # Zone layout and styling system
-│   ├── viewport_ir.rs   # Viewport IR + UI elements
 │   ├── elements/        # UI element implementations
 │   └── text.rs          # Text rendering utilities
 ```
-
-### Key Modules
-
-#### `zones.rs`
-
-Defines the zone system:
-
-- `ZoneId`: Enum for zone identifiers
-- `ZoneLayout`: Calculates zone rectangles based on window size
-- `ZoneStyle`: Styling configuration for each zone
-- `ZoneManager`: Manages layout and styling for all zones
-
-```rust
-use zones::{ZoneManager, ZoneId};
-
-// Create zone manager
-let mut zone_manager = ZoneManager::new(width, height);
-
-// Get zone rectangle
-let viewport_rect = zone_manager.layout.get_zone(ZoneId::Viewport);
-
-// Resize zones
-zone_manager.resize(new_width, new_height);
-```
-
-#### `viewport_ir.rs`
-
-Contains the viewport IR + UI elements for demonstration (formerly `sample_ui.rs`). This module is evolving into the extended IR implementation for the viewport zone.
-
-Current elements:
-- Text, Checkboxes, Buttons, Radio buttons
-- Input boxes, Text areas, Select dropdowns
-- Labels, Images, Multiline text
+The renderer now uses IR exclusively; legacy viewport samples have been removed.
 
 ## Integration with Engine-Core
 

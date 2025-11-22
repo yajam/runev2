@@ -2,7 +2,7 @@
 
 ## Overview
 
-Successfully integrated `rune-ir` with `rune-scene` to enable IR-based rendering using the existing `home_tab` sample. The system now supports switching between hardcoded elements and IR-rendered content via environment variable.
+Successfully integrated `rune-ir` with `rune-scene` to enable IR-based rendering using the existing `home_tab` sample. IR is now the only supported rendering path (legacy viewport samples removed).
 
 ## What Was Accomplished
 
@@ -24,42 +24,20 @@ Successfully integrated `rune-ir` with `rune-scene` to enable IR-based rendering
   - Graceful fallback to hardcoded sample
   - Console feedback on load success/failure
 
-### 3. Conditional Rendering ✅
-- **File**: `crates/rune-scene/src/lib.rs`
-- **Purpose**: Switch between IR and hardcoded rendering
-- **Features**:
-  - `USE_IR=1` environment variable support
-  - Zero-cost when IR rendering is disabled
-  - Maintains backward compatibility
-  - Shared Canvas/Provider infrastructure
-
-### 4. Documentation ✅
+### 3. Documentation ✅
 Created comprehensive documentation:
 - **`docs/ir-adapter-integration.md`** - Technical architecture
-- **`docs/using-ir-renderer.md`** - User guide
 - **`docs/home-tab-integration.md`** - Home tab specifics
 - **`docs/INTEGRATION-SUMMARY.md`** - This file
 
 ## Usage
 
-### Enable IR Rendering
-```bash
-USE_IR=1 cargo run -p rune-scene
-```
-
-**Expected Output:**
-```
-IR rendering enabled (USE_IR=1)
-Loaded home_tab ViewDocument from: ".../rune-ir/home_tab/views/layout/home.vizr"
-Loaded home_tab DataDocument from: ".../rune-ir/home_tab/views/data/home.json"
-```
-
-### Disable IR Rendering (Default)
+### Run IR Rendering (default)
 ```bash
 cargo run -p rune-scene
 ```
 
-Renders hardcoded elements from `viewport_ir.rs`.
+Loads and renders IR content (home_tab sample by default).
 
 ## Architecture
 
@@ -69,9 +47,8 @@ Renders hardcoded elements from `viewport_ir.rs`.
 │                                                  │
 │  ┌──────────────────────────────────────────┐  │
 │  │  lib.rs                                  │  │
-│  │  - Check USE_IR env var                 │  │
-│  │  - Load home_tab if USE_IR=1            │  │
-│  │  - Conditional rendering logic          │  │
+│  │  - Entry point                          │  │
+│  │  - Calls IR renderer                    │  │
 │  └──────────────────────────────────────────┘  │
 │                    │                             │
 │                    ▼                             │
@@ -105,63 +82,6 @@ Renders hardcoded elements from `viewport_ir.rs`.
 │  ├── views/layout/home.vizr (ViewDocument)     │
 │  └── views/data/home.json   (DataDocument)     │
 └─────────────────────────────────────────────────┘
-```
-
-## Code Flow
-
-### 1. Initialization (lib.rs ~line 85-186)
-```rust
-let use_ir = std::env::var("USE_IR").map(|v| v == "1").unwrap_or(false);
-if use_ir {
-    println!("IR rendering enabled (USE_IR=1)");
-}
-
-let ir_view_doc = if use_ir {
-    Some(Arc::new(sample_ir::load_home_tab_view()))
-} else {
-    None
-};
-```
-
-### 2. Loading (sample_ir.rs)
-```rust
-pub fn load_home_tab_view() -> ViewDocument {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("rune-ir/home_tab/views/layout/home.vizr");
-
-    if let Ok(json) = fs::read_to_string(&path) {
-        if let Ok(view_doc) = serde_json::from_str(&json) {
-            return view_doc;
-        }
-    }
-
-    create_sample_view_document() // Fallback
-}
-```
-
-### 3. Rendering (lib.rs ~line 2542-2646)
-```rust
-let content_height = if use_ir {
-    // IR-based rendering
-    for node in &ir_view_doc.nodes {
-        match &node.kind {
-            ViewNodeKind::Button(spec) => {
-                let button = IrAdapter::button_from_spec(spec, rect, label);
-                button.render(&mut canvas, z_index);
-            }
-            ViewNodeKind::Text(spec) => {
-                let color = IrAdapter::color_from_text_style(&spec.style);
-                canvas.draw_text_run(pos, text, size, color, z_index);
-            }
-            // ...
-        }
-    }
-} else {
-    // Original viewport_ir rendering
-    viewport_ir_lock.render(...)
-};
 ```
 
 ## Home Tab Content
@@ -216,7 +136,6 @@ The `home_tab` sample renders:
 - `crates/rune-scene/src/ir_adapter.rs` - ViewNode conversion
 - `crates/rune-scene/src/sample_ir.rs` - Home tab loading
 - `docs/ir-adapter-integration.md` - Technical docs
-- `docs/using-ir-renderer.md` - User guide
 - `docs/home-tab-integration.md` - Home tab details
 - `docs/INTEGRATION-SUMMARY.md` - This file
 
@@ -284,8 +203,6 @@ Not yet supported:
 ## Testing Checklist
 
 - [x] Build succeeds without errors
-- [x] Default mode (no USE_IR) renders correctly
-- [x] USE_IR=1 loads home_tab files
 - [x] Console shows load messages
 - [x] Fallback works if files missing
 - [x] IR elements render on canvas

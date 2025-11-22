@@ -14,28 +14,12 @@ pub mod event_router;
 pub mod ir_adapter;
 pub mod ir_renderer;
 pub mod layout;
-pub mod manual_render;
 mod persistence;
 pub mod scene;
 pub mod text;
-pub mod viewport_ir;
 pub mod zones;
 
-// Legacy monolithic implementation - being refactored
-mod lib_old;
-
-/// Main entry point - routes to either legacy or IR implementation
-/// based on configuration (rune.toml) or USE_IR environment variable
-///
-/// Accepts: USE_IR=1, USE_IR=true, USE_IR=yes (any case)
+/// Main entry point for IR rendering (sole supported path).
 pub fn run() -> Result<()> {
-    // Load config from rune.toml with environment variable overrides
-    let config = rune_config::RuneConfig::load();
-    let use_ir = config.ir.use_ir;
-
-    if use_ir {
-        ir_renderer::run()
-    } else {
-        lib_old::run()
-    }
+    ir_renderer::run()
 }

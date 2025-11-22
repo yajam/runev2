@@ -65,11 +65,6 @@ scene = "zones"
 # Intermediate Representation (IR) Settings
 # Configure IR rendering mode and diagnostics
 [ir]
-# Use IR rendering mode (vs legacy rendering)
-# The IR mode is the modern, AI-native rendering path
-# Default: true
-# use_ir = true
-
 # Path to a Rune package to load and render
 # Points to a directory containing RUNE.MANIFEST.json
 # Example: "examples/sample_first_node"
