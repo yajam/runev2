@@ -219,21 +219,62 @@ pub(super) fn render_link_element(
 }
 
 /// Render a checkbox element from IR `CheckboxSpec`.
+#[allow(dead_code)]
 pub(super) fn render_checkbox_element(
     canvas: &mut rune_surface::Canvas,
-    _data_doc: &DataDocument,
-    _view_node: &rune_ir::view::ViewNode,
+    data_doc: &DataDocument,
+    view_node: &rune_ir::view::ViewNode,
     spec: &rune_ir::view::CheckboxSpec,
     rect: engine_core::Rect,
     z: i32,
 ) {
     use crate::ir_adapter::IrAdapter;
 
-    let checkbox = IrAdapter::checkbox_from_spec(spec, rect);
+    let label = view_node
+        .node_id
+        .as_ref()
+        .and_then(|node_id| resolve_text_from_data(data_doc, node_id));
+
+    let box_size = spec
+        .size
+        .unwrap_or_else(|| rect.w.min(rect.h) as f64)
+        .max(0.0) as f32;
+
+    let checkbox = IrAdapter::checkbox_from_spec(
+        spec,
+        engine_core::Rect {
+            x: rect.x,
+            y: rect.y,
+            w: box_size,
+            h: box_size,
+        },
+        label,
+    );
     checkbox.render(canvas, z);
 }
 
+/// Compute an expanded hit rectangle so checkbox labels are clickable.
+pub(super) fn checkbox_hit_rect(checkbox: &crate::elements::Checkbox) -> engine_core::Rect {
+    let mut width = checkbox.rect.w.max(0.0);
+    let mut height = checkbox.rect.h.max(0.0);
+
+    if let Some(label) = &checkbox.label {
+        let char_width = checkbox.label_size * 0.5;
+        let label_width = label.len() as f32 * char_width;
+        width += 8.0 + label_width;
+        height = height.max(checkbox.label_size * 1.2);
+    }
+
+    engine_core::Rect {
+        x: checkbox.rect.x,
+        y: checkbox.rect.y,
+        w: width,
+        h: height,
+    }
+}
+
 /// Render a radio button element from IR `RadioSpec`.
+#[allow(dead_code)]
 pub(super) fn render_radio_element(
     canvas: &mut rune_surface::Canvas,
     _data_doc: &DataDocument,
@@ -242,21 +283,29 @@ pub(super) fn render_radio_element(
     rect: engine_core::Rect,
     z: i32,
 ) {
-    let radius = spec
-        .size
-        .unwrap_or_else(|| (rect.w.min(rect.h) / 2.0) as f64) as f32;
-
-    let radio = crate::elements::Radio {
-        center: [rect.x + rect.w * 0.5, rect.y + rect.h * 0.5],
-        radius,
-        selected: spec.default_selected.unwrap_or(false),
-        label: None,
-        label_size: 16.0,
-        label_color: engine_core::ColorLinPremul::from_srgba_u8([240, 240, 240, 255]),
-        focused: false,
-    };
+    let radio = crate::ir_adapter::IrAdapter::radio_from_spec(spec, rect, None);
 
     radio.render(canvas, z);
+}
+
+/// Compute hit rectangle for radio plus its label for easier clicks.
+pub(super) fn radio_hit_rect(radio: &crate::elements::Radio) -> engine_core::Rect {
+    let mut width = radio.radius * 2.0;
+    let mut height = radio.radius * 2.0;
+
+    if let Some(label) = &radio.label {
+        let char_width = radio.label_size * 0.5;
+        let label_width = label.len() as f32 * char_width;
+        width += 8.0 + label_width;
+        height = height.max(radio.label_size * 1.2);
+    }
+
+    engine_core::Rect {
+        x: radio.center[0] - radio.radius,
+        y: radio.center[1] - radio.radius,
+        w: width,
+        h: height,
+    }
 }
 
 /// Render a select element from IR `SelectSpec`.

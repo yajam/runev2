@@ -247,7 +247,7 @@ impl IrRenderer {
             .with_context(|| format!("View node not found: {}", view_node_id))?;
 
         // Convert ViewNode to Taffy style
-        let mut style = self.view_node_to_taffy_style(view_node)?;
+        let mut style = self.view_node_to_taffy_style(view_node, data)?;
 
         // Force root node to fill viewport width and be at least viewport height,
         // while still expanding to fit content (including padding) when taller.
@@ -306,7 +306,7 @@ impl IrRenderer {
     }
 
     /// Convert ViewNode to Taffy Style.
-    fn view_node_to_taffy_style(&self, node: &ViewNode) -> Result<Style> {
+    fn view_node_to_taffy_style(&self, node: &ViewNode, data_doc: &DataDocument) -> Result<Style> {
         match &node.kind {
             ViewNodeKind::FlexContainer(spec) => self.flex_container_style(spec),
             ViewNodeKind::Text(spec) => Ok(self.text_style_from_spec(spec)),
@@ -316,16 +316,18 @@ impl IrRenderer {
             ViewNodeKind::Link(spec) => Ok(self.link_style(spec)),
             ViewNodeKind::InputBox(spec) => Ok(self.input_box_style(spec)),
             ViewNodeKind::TextArea(spec) => Ok(self.text_area_style(spec)),
+            ViewNodeKind::Checkbox(spec) => Ok(self.checkbox_style(spec, node, data_doc)),
+            ViewNodeKind::Radio(spec) => Ok(self.radio_style(spec, node, data_doc)),
             ViewNodeKind::Select(spec) => Ok(self.select_style(spec)),
             ViewNodeKind::FileInput(spec) => Ok(self.file_input_style(spec)),
             ViewNodeKind::DatePicker(spec) => Ok(self.date_picker_style(spec)),
-            ViewNodeKind::Alert(_)
-            | ViewNodeKind::Modal(_)
-            | ViewNodeKind::Confirm(_) => Ok(Style {
-                // Overlays are rendered separately; exclude them from flow layout.
-                display: Display::None,
-                ..Default::default()
-            }),
+            ViewNodeKind::Alert(_) | ViewNodeKind::Modal(_) | ViewNodeKind::Confirm(_) => {
+                Ok(Style {
+                    // Overlays are rendered separately; exclude them from flow layout.
+                    display: Display::None,
+                    ..Default::default()
+                })
+            }
             // Add more as needed
             _ => Ok(Style::default()),
         }
@@ -572,6 +574,101 @@ impl IrRenderer {
         }
 
         style.flex_shrink = 0.0;
+        style
+    }
+
+    /// Checkbox style: fix box size while reserving horizontal room for label text.
+    fn checkbox_style(
+        &self,
+        spec: &rune_ir::view::CheckboxSpec,
+        node: &ViewNode,
+        data_doc: &DataDocument,
+    ) -> Style {
+        let box_size = spec.size.unwrap_or(18.0) as f32;
+
+        let mut style = Style {
+            size: Size {
+                width: dimension(box_size),
+                height: dimension(box_size),
+            },
+            min_size: Size {
+                width: dimension(box_size),
+                height: dimension(box_size),
+            },
+            flex_shrink: 0.0,
+            ..Default::default()
+        };
+
+        if let Some(w) = spec.style.width {
+            style.size.width = dimension(w as f32);
+        }
+        if let Some(h) = spec.style.height {
+            style.size.height = dimension(h as f32);
+            style.min_size.height = dimension(h as f32);
+        }
+
+        // Reserve horizontal space using right margin so labels don't overlap siblings.
+        if let Some(label) = node
+            .node_id
+            .as_ref()
+            .and_then(|nid| elements::resolve_text_from_data(data_doc, nid))
+        {
+            let label_size = 16.0_f32;
+            let char_width = label_size * 0.5;
+            let label_width = label.len() as f32 * char_width;
+            let label_height = label_size * 1.2;
+
+            style.min_size.height = dimension(label_height.max(box_size));
+            style.margin.right = length(label_width + 8.0);
+        }
+
+        style
+    }
+
+    /// Radio style: reserve diameter and label spacing similar to checkboxes.
+    fn radio_style(
+        &self,
+        spec: &rune_ir::view::RadioSpec,
+        node: &ViewNode,
+        data_doc: &DataDocument,
+    ) -> Style {
+        let diameter = spec.size.unwrap_or(18.0) as f32;
+
+        let mut style = Style {
+            size: Size {
+                width: dimension(diameter),
+                height: dimension(diameter),
+            },
+            min_size: Size {
+                width: dimension(diameter),
+                height: dimension(diameter),
+            },
+            flex_shrink: 0.0,
+            ..Default::default()
+        };
+
+        if let Some(w) = spec.style.width {
+            style.size.width = dimension(w as f32);
+        }
+        if let Some(h) = spec.style.height {
+            style.size.height = dimension(h as f32);
+            style.min_size.height = dimension(h as f32);
+        }
+
+        if let Some(label) = node
+            .node_id
+            .as_ref()
+            .and_then(|nid| elements::resolve_text_from_data(data_doc, nid))
+        {
+            let label_size = 16.0_f32;
+            let char_width = label_size * 0.5;
+            let label_width = label.len() as f32 * char_width;
+            let label_height = label_size * 1.2;
+
+            style.min_size.height = dimension(label_height.max(diameter));
+            style.margin.right = length(label_width + 8.0);
+        }
+
         style
     }
 
@@ -945,10 +1042,32 @@ impl IrRenderer {
                 canvas.hit_region_rect(region_id, scene_rect, z + 10);
             }
             ViewNodeKind::Checkbox(spec) => {
-                elements::render_checkbox_element(canvas, data_doc, view_node, spec, scene_rect, z);
+                let checkbox = self.element_state.get_or_create_checkbox(
+                    view_node_id,
+                    view_node,
+                    spec,
+                    scene_rect,
+                    data_doc,
+                );
+                checkbox.render(canvas, z);
+
+                let region_id = self.hit_registry.register(view_node_id);
+                let hit_rect = elements::checkbox_hit_rect(checkbox);
+                canvas.hit_region_rect(region_id, hit_rect, z + 10);
             }
             ViewNodeKind::Radio(spec) => {
-                elements::render_radio_element(canvas, data_doc, view_node, spec, scene_rect, z);
+                let radio = self.element_state.get_or_create_radio(
+                    view_node_id,
+                    view_node,
+                    spec,
+                    scene_rect,
+                    data_doc,
+                );
+                radio.render(canvas, z);
+
+                let region_id = self.hit_registry.register(view_node_id);
+                let hit_rect = elements::radio_hit_rect(radio);
+                canvas.hit_region_rect(region_id, hit_rect, z + 10);
             }
             ViewNodeKind::Select(spec) => {
                 // Use stateful select so dropdown toggles and focus persist
@@ -969,9 +1088,9 @@ impl IrRenderer {
                 }
             }
             ViewNodeKind::FileInput(spec) => {
-                let file_input = self
-                    .element_state
-                    .get_or_create_file_input(view_node_id, spec, scene_rect);
+                let file_input =
+                    self.element_state
+                        .get_or_create_file_input(view_node_id, spec, scene_rect);
                 file_input.render(canvas, z);
 
                 let region_id = self.hit_registry.register(view_node_id);

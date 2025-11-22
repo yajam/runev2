@@ -787,6 +787,8 @@ pub struct CheckboxSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<f64>,
     #[serde(default)]
+    pub style: SurfaceStyle,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub control_id: Option<String>,
     #[serde(default)]
@@ -806,6 +808,8 @@ pub struct RadioSpec {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<f64>,
+    #[serde(default)]
+    pub style: SurfaceStyle,
     /// Radio group name (controls exclusivity)
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]

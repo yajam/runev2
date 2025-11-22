@@ -5,7 +5,7 @@ Features
 - [x] Hyperlink element
 - [NP] Box in elements - use canvas.draw_rect
 - [x] File input was not added
-- [ ] All elements should take dynamic parameters for styling
+- [x] All elements should take dynamic parameters for styling
 - [x] Add Rune-ir
 - [x] Rune-layout using taffy
 - [ ] Address input, forward, backward, refresh implementation in toolbar
@@ -14,6 +14,8 @@ Features
 - [ ] Port Boa, csslightning (canonical)
 - [ ] Test gradients in layers
 - [x] Full svg vector support
+- [ ] Multi select
+- [ ] Custom widgets through IR blocks using primitives
 - [ ] wire to wasm, fetch, form submission
 - [ ] Pdf export
 - [ ] Elements, Console and Network implementation in devtools
@@ -22,12 +24,14 @@ Features
 - [ ] Theming support dark mode, light mode system mode
 - [ ] Native menus support
 - [ ] Web page rendering
+- [ ] Fallback theough headless CEF
 
 IR Porting
 
 - [x] Input, text, textarea, buttons, label, hyperlinks, Table
 - [x] Image, Select, datepicker, fileinput
 - [x] Alert, modal, confirm
+- [x] Checkboxes, Radio buttons
 - [~] Scroll horizontal and vertical
 
 Bugs
@@ -48,3 +52,7 @@ Improvements
 - [ ] Implement a scrollbar
 - [ ] Refactor and move viewport_ir as a second demo-app
 - [ ] Text must ALWAYS be rendered in a linear (unorm) format, with premultiplied alpha, into a linear color attachment.
+
+Testing
+
+- BIDI testing

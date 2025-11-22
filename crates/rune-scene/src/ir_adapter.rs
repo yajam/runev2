@@ -1,7 +1,7 @@
 //! Adapter module to map rune-ir ViewNodes to rune-scene elements.
 //!
 //! This module provides conversion functions from rune-ir's ViewDocument/ViewNode
-//! types to the element types used in viewport_ir.rs (Button, Checkbox, InputBox, etc.).
+//! types to the element types used by the IR renderer (Button, Checkbox, InputBox, etc.).
 //!
 //! # Architecture Note
 //!
@@ -14,7 +14,9 @@
 //! Content resolution from DataDocument should be handled by the caller.
 
 use engine_core::{ColorLinPremul, Rect};
-use rune_ir::view::{ButtonSpec, CheckboxSpec, FlexContainerSpec, TextStyle, ViewBackground};
+use rune_ir::view::{
+    ButtonSpec, CheckboxSpec, FlexContainerSpec, RadioSpec, SurfaceStyle, TextStyle, ViewBackground,
+};
 
 use crate::elements;
 
@@ -71,14 +73,57 @@ impl IrAdapter {
     ///
     /// CheckboxSpec only contains size and form metadata. Labels are typically
     /// separate Text nodes in the ViewDocument.
-    pub fn checkbox_from_spec(spec: &CheckboxSpec, rect: Rect) -> elements::Checkbox {
+    pub fn checkbox_from_spec(
+        spec: &CheckboxSpec,
+        rect: Rect,
+        label: Option<String>,
+    ) -> elements::Checkbox {
+        let defaults = surface_colors(
+            &spec.style,
+            ColorLinPremul::from_srgba_u8([245, 247, 250, 255]),
+            ColorLinPremul::from_srgba_u8([200, 208, 216, 255]),
+        );
+
         elements::Checkbox {
             rect,
             checked: spec.default_checked.unwrap_or(false),
             focused: false,
-            label: None, // Labels are separate Text nodes
+            label,
             label_size: 16.0,
-            color: ColorLinPremul::from_srgba_u8([240, 240, 240, 255]),
+            label_color: ColorLinPremul::from_srgba_u8([51, 65, 85, 255]),
+            box_fill: defaults.fill,
+            border_color: defaults.border,
+            border_width: defaults.border_width,
+            check_color: ColorLinPremul::from_srgba_u8([63, 130, 246, 255]),
+        }
+    }
+
+    /// Convert a RadioSpec to a Radio element.
+    pub fn radio_from_spec(spec: &RadioSpec, rect: Rect, label: Option<String>) -> elements::Radio {
+        let defaults = surface_colors(
+            &spec.style,
+            ColorLinPremul::from_srgba_u8([245, 247, 250, 255]),
+            ColorLinPremul::from_srgba_u8([200, 208, 216, 255]),
+        );
+
+        let diameter = spec
+            .size
+            .unwrap_or_else(|| rect.w.min(rect.h).max(1.0) as f64)
+            .max(1.0) as f32;
+        let radius = diameter * 0.5;
+
+        elements::Radio {
+            center: [rect.x + rect.w * 0.5, rect.y + rect.h * 0.5],
+            radius,
+            selected: spec.default_selected.unwrap_or(false),
+            label,
+            label_size: 16.0,
+            label_color: ColorLinPremul::from_srgba_u8([51, 65, 85, 255]),
+            bg: defaults.fill,
+            border_color: defaults.border,
+            border_width: defaults.border_width,
+            dot_color: ColorLinPremul::from_srgba_u8([63, 130, 246, 255]),
+            focused: false,
         }
     }
 
@@ -103,7 +148,7 @@ impl IrAdapter {
 }
 
 /// Parse a ViewBackground to extract a solid color (if present).
-fn parse_background_color(bg: &ViewBackground) -> Option<ColorLinPremul> {
+pub(crate) fn parse_background_color(bg: &ViewBackground) -> Option<ColorLinPremul> {
     match bg {
         ViewBackground::Solid { color } => parse_color(color),
         _ => None,
@@ -177,6 +222,38 @@ pub fn parse_color(color_str: &str) -> Option<ColorLinPremul> {
         "magenta" => Some(ColorLinPremul::from_srgba_u8([255, 0, 255, 255])),
         "gray" | "grey" => Some(ColorLinPremul::from_srgba_u8([128, 128, 128, 255])),
         _ => None,
+    }
+}
+
+pub(crate) struct SurfaceDefaults {
+    pub fill: ColorLinPremul,
+    pub border: ColorLinPremul,
+    pub border_width: f32,
+}
+
+pub(crate) fn surface_colors(
+    style: &SurfaceStyle,
+    default_fill: ColorLinPremul,
+    default_border: ColorLinPremul,
+) -> SurfaceDefaults {
+    let fill = style
+        .background
+        .as_ref()
+        .and_then(parse_background_color)
+        .unwrap_or(default_fill);
+
+    let border = style
+        .border_color
+        .as_ref()
+        .and_then(|c| parse_color(c))
+        .unwrap_or(default_border);
+
+    let border_width = style.border_width.unwrap_or(1.0) as f32;
+
+    SurfaceDefaults {
+        fill,
+        border,
+        border_width,
     }
 }
 

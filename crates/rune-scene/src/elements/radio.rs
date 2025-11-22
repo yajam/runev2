@@ -9,32 +9,45 @@ pub struct Radio {
     pub label: Option<String>,
     pub label_size: f32,
     pub label_color: ColorLinPremul,
+    pub bg: ColorLinPremul,
+    pub border_color: ColorLinPremul,
+    pub border_width: f32,
+    pub dot_color: ColorLinPremul,
     pub focused: bool,
 }
 
 impl Radio {
     pub fn render(&self, canvas: &mut Canvas, z: i32) {
         // Base circle background
-        let bg = Color::rgba(45, 52, 71, 255);
-        canvas.ellipse(self.center, [self.radius, self.radius], Brush::Solid(bg), z);
-
-        // Border circle
-        let border_color = Color::rgba(80, 90, 110, 255);
-        shapes::draw_ellipse(
-            canvas,
+        canvas.ellipse(
             self.center,
             [self.radius, self.radius],
-            None,
-            Some(1.0),
-            Some(Brush::Solid(border_color)),
-            z + 1,
+            Brush::Solid(self.bg),
+            z,
         );
+
+        // Border circle
+        if self.border_width > 0.0 {
+            shapes::draw_ellipse(
+                canvas,
+                self.center,
+                [self.radius, self.radius],
+                None,
+                Some(self.border_width),
+                Some(Brush::Solid(self.border_color)),
+                z + 1,
+            );
+        }
 
         // Selected inner dot
         if self.selected {
             let inner = self.radius * 0.6;
-            let col = Color::rgba(63, 130, 246, 255);
-            canvas.ellipse(self.center, [inner, inner], Brush::Solid(col), z + 2);
+            canvas.ellipse(
+                self.center,
+                [inner, inner],
+                Brush::Solid(self.dot_color),
+                z + 2,
+            );
         }
 
         // Focus ring

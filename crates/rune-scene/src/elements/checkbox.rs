@@ -7,14 +7,18 @@ pub struct Checkbox {
     pub focused: bool,
     pub label: Option<String>,
     pub label_size: f32,
-    pub color: ColorLinPremul,
+    pub label_color: ColorLinPremul,
+    pub box_fill: ColorLinPremul,
+    pub border_color: ColorLinPremul,
+    pub border_width: f32,
+    pub check_color: ColorLinPremul,
 }
 
 impl Checkbox {
     // UI rendering for the checkbox
     pub fn render(&self, canvas: &mut Canvas, z: i32) {
         // Box with small rounded corners; draw fill then stroke so the border sits on top
-        let base_fill = Brush::Solid(Color::rgba(240, 240, 240, 255));
+        let base_fill = Brush::Solid(self.box_fill);
         let base_rect = self.rect;
         canvas.fill_rect(
             base_rect.x,
@@ -24,9 +28,24 @@ impl Checkbox {
             base_fill,
             z,
         );
-        // Top edge accent line, matching ui.rs
-        let top_edge = Brush::Solid(Color::rgba(180, 180, 180, 255));
-        canvas.fill_rect(base_rect.x, base_rect.y, base_rect.w, 1.0, top_edge, z + 1);
+        // Subtle border so unfocused state is still defined
+        if self.border_width > 0.0 {
+            let border_rr = RoundedRect {
+                rect: base_rect,
+                radii: RoundedRadii {
+                    tl: 2.0,
+                    tr: 2.0,
+                    br: 2.0,
+                    bl: 2.0,
+                },
+            };
+            canvas.stroke_rounded_rect(
+                border_rr,
+                self.border_width,
+                Brush::Solid(self.border_color),
+                z + 1,
+            );
+        }
         // Focus outline (inside border)
         if self.focused {
             // Rounded focus outline to match demo-app ui.rs
@@ -67,11 +86,7 @@ impl Checkbox {
                     bl: 1.5,
                 },
             };
-            canvas.rounded_rect(
-                inner_rr,
-                Brush::Solid(Color::rgba(63, 130, 246, 255)),
-                z + 2,
-            );
+            canvas.rounded_rect(inner_rr, Brush::Solid(self.check_color), z + 2);
 
             // Use the canonical SVG checkmark and center it in the inner rect.
             // Scale it relative to the inner width so it appears larger and
@@ -100,7 +115,7 @@ impl Checkbox {
                 [tx, ty],
                 text.clone(),
                 self.label_size,
-                self.color, // Use the color passed in, which should be light colored
+                self.label_color, // Use the color passed in, which should be light colored
                 z + 3,
             );
         }

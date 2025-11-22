@@ -90,13 +90,13 @@ pub struct Modal {
     /// Base z-index (overlay and panel will use z and z+increments)
     pub base_z: i32,
 
-/// Whether to draw the panel shadow
-pub show_shadow: bool,
+    /// Whether to draw the panel shadow
+    pub show_shadow: bool,
 
-/// Whether clicking on the background scrim (outside the panel)
-/// should close the modal. This is only used by higher-level
-/// hit-testing code; the renderer itself is unaware of this flag.
-pub close_on_background_click: bool,
+    /// Whether clicking on the background scrim (outside the panel)
+    /// should close the modal. This is only used by higher-level
+    /// hit-testing code; the renderer itself is unaware of this flag.
+    pub close_on_background_click: bool,
 }
 
 impl Modal {

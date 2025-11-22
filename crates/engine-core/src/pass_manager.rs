@@ -1881,11 +1881,15 @@ impl PassManager {
                 timestamp_writes: None,
             });
             pass.set_stencil_reference(0);
-            self.scrim_stencil
-                .record(&mut pass, &vp_bg_scrim, &qvbuf, &qibuf, quad_idx.len() as u32);
+            self.scrim_stencil.record(
+                &mut pass,
+                &vp_bg_scrim,
+                &qvbuf,
+                &qibuf,
+                quad_idx.len() as u32,
+            );
         }
     }
-
 
     /// Draw a filled rounded rectangle directly onto the target using the solid_direct pipeline.
     /// Uses premultiplied linear color.

@@ -33,7 +33,7 @@ use engine_core::{ColorLinPremul, Rect};
 use rune_ir::data::document::DataDocument;
 use rune_ir::view::{
     ButtonSpec, CheckboxSpec, DatePickerSpec, FileInputSpec, InputBoxSpec, RadioSpec, SelectSpec,
-    TextAreaSpec, ViewNodeId,
+    TextAreaSpec, ViewNode, ViewNodeId,
 };
 use std::collections::HashMap;
 
@@ -92,6 +92,12 @@ pub struct IrElementState {
     /// Radio button elements
     radios: HashMap<ViewNodeId, elements::Radio>,
 
+    /// Map of radio view node -> group id
+    radio_groups: HashMap<ViewNodeId, String>,
+
+    /// Map of radio group id -> member view nodes
+    radio_group_members: HashMap<String, Vec<ViewNodeId>>,
+
     /// Select/dropdown elements
     selects: HashMap<ViewNodeId, elements::Select>,
 
@@ -121,6 +127,8 @@ impl IrElementState {
             buttons: HashMap::new(),
             checkboxes: HashMap::new(),
             radios: HashMap::new(),
+            radio_groups: HashMap::new(),
+            radio_group_members: HashMap::new(),
             selects: HashMap::new(),
             date_pickers: HashMap::new(),
             file_inputs: HashMap::new(),
@@ -137,6 +145,8 @@ impl IrElementState {
         self.buttons.clear();
         self.checkboxes.clear();
         self.radios.clear();
+        self.radio_groups.clear();
+        self.radio_group_members.clear();
         self.selects.clear();
         self.date_pickers.clear();
         self.file_inputs.clear();
@@ -294,36 +304,145 @@ impl IrElementState {
     pub fn get_or_create_checkbox(
         &mut self,
         view_node_id: &ViewNodeId,
+        view_node: &ViewNode,
         spec: &CheckboxSpec,
         rect: Rect,
+        data_doc: &DataDocument,
     ) -> &mut elements::Checkbox {
-        self.checkboxes
+        let label = view_node
+            .node_id
+            .as_ref()
+            .and_then(|node_id| super::elements::resolve_text_from_data(data_doc, node_id));
+
+        let colors = crate::ir_adapter::surface_colors(
+            &spec.style,
+            ColorLinPremul::from_srgba_u8([245, 247, 250, 255]),
+            ColorLinPremul::from_srgba_u8([200, 208, 216, 255]),
+        );
+
+        let box_size = spec
+            .size
+            .unwrap_or_else(|| rect.w.min(rect.h) as f64)
+            .max(0.0) as f32;
+
+        let checkbox = self
+            .checkboxes
             .entry(view_node_id.clone())
-            .or_insert_with(|| crate::ir_adapter::IrAdapter::checkbox_from_spec(spec, rect))
+            .or_insert_with(|| {
+                crate::ir_adapter::IrAdapter::checkbox_from_spec(
+                    spec,
+                    Rect {
+                        x: rect.x,
+                        y: rect.y,
+                        w: box_size,
+                        h: box_size,
+                    },
+                    label.clone(),
+                )
+            });
+
+        // Keep layout in sync with Taffy output; preserve user-driven checked state.
+        checkbox.rect.x = rect.x;
+        checkbox.rect.y = rect.y;
+        checkbox.rect.w = box_size;
+        checkbox.rect.h = box_size;
+        checkbox.label = label;
+        checkbox.box_fill = colors.fill;
+        checkbox.border_color = colors.border;
+        checkbox.border_width = colors.border_width;
+        checkbox.label_color = ColorLinPremul::from_srgba_u8([51, 65, 85, 255]);
+        checkbox.check_color = ColorLinPremul::from_srgba_u8([63, 130, 246, 255]);
+        checkbox
     }
 
     /// Get or create a Radio button element for the given ViewNode
     pub fn get_or_create_radio(
         &mut self,
         view_node_id: &ViewNodeId,
+        view_node: &ViewNode,
         spec: &RadioSpec,
         rect: Rect,
+        data_doc: &DataDocument,
     ) -> &mut elements::Radio {
-        self.radios.entry(view_node_id.clone()).or_insert_with(|| {
-            let radius =
-                spec.size
-                    .unwrap_or_else(|| (rect.w.min(rect.h) / 2.0) as f64) as f32;
+        let label = view_node
+            .node_id
+            .as_ref()
+            .and_then(|node_id| super::elements::resolve_text_from_data(data_doc, node_id));
 
-            elements::Radio {
-                center: [rect.x + rect.w * 0.5, rect.y + rect.h * 0.5],
-                radius,
-                selected: spec.default_selected.unwrap_or(false),
-                label: None,
-                label_size: 16.0,
-                label_color: ColorLinPremul::from_srgba_u8([240, 240, 240, 255]),
-                focused: false,
+        let colors = crate::ir_adapter::surface_colors(
+            &spec.style,
+            ColorLinPremul::from_srgba_u8([245, 247, 250, 255]),
+            ColorLinPremul::from_srgba_u8([200, 208, 216, 255]),
+        );
+
+        let diameter = spec
+            .size
+            .unwrap_or_else(|| rect.w.min(rect.h).max(1.0) as f64)
+            .max(1.0) as f32;
+        let radius = diameter * 0.5;
+
+        let selected_after_creation = {
+            let entry = self.radios.entry(view_node_id.clone()).or_insert_with(|| {
+                crate::ir_adapter::IrAdapter::radio_from_spec(
+                    spec,
+                    Rect {
+                        x: rect.x,
+                        y: rect.y,
+                        w: diameter,
+                        h: diameter,
+                    },
+                    label.clone(),
+                )
+            });
+
+            // Keep layout and metadata in sync.
+            entry.center = [rect.x + rect.w * 0.5, rect.y + rect.h * 0.5];
+            entry.radius = radius;
+            entry.label = label;
+            entry.bg = colors.fill;
+            entry.border_color = colors.border;
+            entry.border_width = colors.border_width;
+            entry.label_color = ColorLinPremul::from_srgba_u8([51, 65, 85, 255]);
+            entry.dot_color = ColorLinPremul::from_srgba_u8([63, 130, 246, 255]);
+            entry.selected
+        };
+
+        // Track radio group membership for mutual exclusivity.
+        if let Some(group) = &spec.group {
+            self.radio_groups
+                .insert(view_node_id.clone(), group.clone());
+            let members = self
+                .radio_group_members
+                .entry(group.clone())
+                .or_insert_with(Vec::new);
+            if !members.contains(view_node_id) {
+                members.push(view_node_id.clone());
             }
-        })
+        }
+
+        if selected_after_creation {
+            self.deselect_other_radios(view_node_id);
+        }
+
+        self.radios
+            .get_mut(view_node_id)
+            .expect("radio should exist after insertion")
+    }
+
+    fn deselect_other_radios(&mut self, view_node_id: &ViewNodeId) {
+        let Some(group_id) = self.radio_groups.get(view_node_id) else {
+            return;
+        };
+
+        if let Some(members) = self.radio_group_members.get(group_id) {
+            for other in members {
+                if other != view_node_id {
+                    if let Some(radio) = self.radios.get_mut(other) {
+                        radio.selected = false;
+                    }
+                }
+            }
+        }
     }
 
     /// Get or create a Select element for the given ViewNode
@@ -792,7 +911,8 @@ impl IrElementState {
             let result = radio.handle_mouse_click(event);
             if result.is_handled() {
                 self.set_focus(view_node_id.clone(), IrElementType::Radio);
-                // Deselect all other radios in the same group (TODO: implement radio groups)
+                self.deselect_other_radios(view_node_id);
+                self.dirty = true;
                 return EventResult::Handled;
             }
         }
@@ -864,9 +984,11 @@ impl IrElementState {
                     }
                 }
                 IrElementType::Radio => {
-                    if let Some(radio) = self.radios.get_mut(view_node_id) {
+                    let focused_id = view_node_id.clone();
+                    if let Some(radio) = self.radios.get_mut(&focused_id) {
                         let result = radio.handle_keyboard(event);
                         if result.is_handled() {
+                            self.deselect_other_radios(&focused_id);
                             self.dirty = true;
                         }
                         return result;
