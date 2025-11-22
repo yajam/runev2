@@ -65,6 +65,8 @@
         "email_input_view",
         "message_area_view",
         "file_upload_section",
+        "subscription_section",
+        "frequency_section",
         "priority_select_view",
         "date_picker_view",
         "transactions_table",
@@ -182,6 +184,171 @@
       "placeholder": "Choose files to upload",
       "multi": true,
       "width": 520
+    },
+    {
+      "id": "subscription_section",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 8
+      },
+      "children": [
+        "subscribe_label",
+        "subscription_options"
+      ]
+    },
+    {
+      "id": "subscribe_label",
+      "type": "text",
+      "node_id": "SBSCB001",
+      "style": {
+        "color": "#334155",
+        "font_size": 14,
+        "line_height": 20
+      }
+    },
+    {
+      "id": "subscription_options",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "justify": "start",
+        "align": "center",
+        "gap": 16
+      },
+      "children": [
+        "weekly_checkbox",
+        "monthly_checkbox"
+      ]
+    },
+    {
+      "id": "weekly_checkbox",
+      "type": "checkbox",
+      "node_id": "SBSCBWK1",
+      "control_id": "newsletter_weekly",
+      "form_id": "contact",
+      "size": 18,
+      "default_checked": true,
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#f8fafc"
+        },
+        "border_color": "#cbd5e1",
+        "border_width": 1
+      }
+    },
+    {
+      "id": "monthly_checkbox",
+      "type": "checkbox",
+      "node_id": "SBSCBMN1",
+      "control_id": "newsletter_monthly",
+      "form_id": "contact",
+      "size": 18,
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#f8fafc"
+        },
+        "border_color": "#cbd5e1",
+        "border_width": 1
+      }
+    },
+    {
+      "id": "frequency_section",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 8
+      },
+      "children": [
+        "frequency_label",
+        "frequency_options"
+      ]
+    },
+    {
+      "id": "frequency_label",
+      "type": "text",
+      "node_id": "RRFREQHD",
+      "style": {
+        "color": "#334155",
+        "font_size": 14,
+        "line_height": 20
+      }
+    },
+    {
+      "id": "frequency_options",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "justify": "start",
+        "align": "center",
+        "gap": 16
+      },
+      "children": [
+        "daily_radio",
+        "weekly_radio",
+        "monthly_radio"
+      ]
+    },
+    {
+      "id": "daily_radio",
+      "type": "radio",
+      "node_id": "RRFREQDA",
+      "control_id": "frequency",
+      "form_id": "contact",
+      "group": "frequency",
+      "value": "daily",
+      "size": 18,
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#f8fafc"
+        },
+        "border_color": "#cbd5e1",
+        "border_width": 1
+      }
+    },
+    {
+      "id": "weekly_radio",
+      "type": "radio",
+      "node_id": "RRFREQWK",
+      "control_id": "frequency",
+      "form_id": "contact",
+      "group": "frequency",
+      "value": "weekly",
+      "default_selected": true,
+      "size": 18,
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#f8fafc"
+        },
+        "border_color": "#cbd5e1",
+        "border_width": 1
+      }
+    },
+    {
+      "id": "monthly_radio",
+      "type": "radio",
+      "node_id": "RRFREQMN",
+      "control_id": "frequency",
+      "form_id": "contact",
+      "group": "frequency",
+      "value": "monthly",
+      "size": 18,
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#f8fafc"
+        },
+        "border_color": "#cbd5e1",
+        "border_width": 1
+      }
     },
     {
       "id": "priority_select_view",
