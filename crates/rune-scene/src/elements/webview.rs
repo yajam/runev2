@@ -27,19 +27,11 @@ use rune_cef::{
     MouseEvent, MouseEventKind, WgpuTextureTarget,
 };
 
-/// Global storage for external WebView pixel data and layout info.
-/// This is used when CEF is managed externally (e.g., from Xcode/FFI).
-mod external_pixels {
+/// Global storage for WebView layout info and native CEF view state.
+/// Used for native NSView-based CEF rendering (not OSR).
+mod webview_state {
     use std::ffi::c_void;
     use std::sync::Mutex;
-
-    /// External pixel data for WebView rendering (OSR mode).
-    pub struct ExternalWebViewPixels {
-        pub pixels: Vec<u8>,
-        pub width: u32,
-        pub height: u32,
-        pub dirty: bool,
-    }
 
     /// WebView position in scene coordinates (set during layout).
     pub struct WebViewRect {
@@ -63,7 +55,6 @@ mod external_pixels {
     unsafe impl Send for NativeCefView {}
     unsafe impl Sync for NativeCefView {}
 
-    static EXTERNAL_PIXELS: Mutex<Option<ExternalWebViewPixels>> = Mutex::new(None);
     static WEBVIEW_RECT: Mutex<Option<WebViewRect>> = Mutex::new(None);
     static NATIVE_CEF_VIEW: Mutex<Option<NativeCefView>> = Mutex::new(None);
 
@@ -152,65 +143,6 @@ mod external_pixels {
         }
     }
 
-    /// Set external pixel data for WebView rendering.
-    /// The pixels should be in BGRA format (CEF native format).
-    pub fn set_pixels(pixels: Vec<u8>, width: u32, height: u32) {
-        if let Ok(mut guard) = EXTERNAL_PIXELS.lock() {
-            *guard = Some(ExternalWebViewPixels {
-                pixels,
-                width,
-                height,
-                dirty: true,
-            });
-        }
-    }
-
-    /// Get the external pixel data if available.
-    pub fn get_pixels() -> Option<(Vec<u8>, u32, u32)> {
-        if let Ok(guard) = EXTERNAL_PIXELS.lock() {
-            guard.as_ref().map(|p| (p.pixels.clone(), p.width, p.height))
-        } else {
-            None
-        }
-    }
-
-    /// Take the external pixel data only if a new frame has been uploaded.
-    ///
-    /// This moves the underlying pixel buffer out of the global storage so
-    /// callers can upload it to the GPU without an extra clone. When no new
-    /// frame is available (dirty == false), this returns None and leaves the
-    /// stored pixels intact so the previous GPU texture can continue to be used.
-    pub fn take_pixels_if_dirty() -> Option<(Vec<u8>, u32, u32)> {
-        if let Ok(mut guard) = EXTERNAL_PIXELS.lock() {
-            if let Some(mut p) = guard.take() {
-                if p.dirty {
-                    p.dirty = false;
-                    return Some((p.pixels, p.width, p.height));
-                } else {
-                    // Put it back unchanged if not dirty so size information is preserved.
-                    *guard = Some(p);
-                }
-            }
-        }
-        None
-    }
-
-    /// Check if external pixels are available.
-    pub fn has_pixels() -> bool {
-        if let Ok(guard) = EXTERNAL_PIXELS.lock() {
-            guard.is_some()
-        } else {
-            false
-        }
-    }
-
-    /// Clear the external pixel data.
-    pub fn clear() {
-        if let Ok(mut guard) = EXTERNAL_PIXELS.lock() {
-            *guard = None;
-        }
-    }
-
     /// Set the WebView rect (called during layout).
     pub fn set_rect(x: f32, y: f32, w: f32, h: f32) {
         if let Ok(mut guard) = WEBVIEW_RECT.lock() {
@@ -228,71 +160,45 @@ mod external_pixels {
     }
 }
 
-/// Set external pixel data for WebView rendering (BGRA format - CEF native).
-pub fn set_external_pixels(pixels: Vec<u8>, width: u32, height: u32) {
-    external_pixels::set_pixels(pixels, width, height);
-}
+// ===== WebView Layout API =====
 
 /// Set the WebView rect in scene coordinates.
 pub fn set_webview_rect(x: f32, y: f32, w: f32, h: f32) {
-    external_pixels::set_rect(x, y, w, h);
+    webview_state::set_rect(x, y, w, h);
 }
 
 /// Get the WebView rect in scene coordinates.
 pub fn get_webview_rect() -> Option<(f32, f32, f32, f32)> {
-    external_pixels::get_rect()
-}
-
-/// Get the external pixel data if available.
-pub fn get_external_pixels() -> Option<(Vec<u8>, u32, u32)> {
-    external_pixels::get_pixels()
-}
-
-/// Take the external pixel data for WebView rendering if a new frame is available.
-///
-/// This avoids cloning the pixel buffer and allows a render pass to upload
-/// the latest CEF frame directly to a GPU texture.
-pub fn take_external_pixels_if_dirty() -> Option<(Vec<u8>, u32, u32)> {
-    external_pixels::take_pixels_if_dirty()
-}
-
-/// Check if external pixels are available.
-pub fn has_external_pixels() -> bool {
-    external_pixels::has_pixels()
-}
-
-/// Clear the external pixel data.
-pub fn clear_external_pixels() {
-    external_pixels::clear();
+    webview_state::get_rect()
 }
 
 // ===== Native CEF View API (NSView-based rendering) =====
 
 /// Set the native CEF view handle (NSView*).
-/// This switches from OSR mode to native NSView-based rendering.
+/// Used for native NSView-based CEF rendering.
 pub fn set_native_cef_view(view: *mut std::ffi::c_void) {
-    external_pixels::set_native_view(view);
+    webview_state::set_native_view(view);
 }
 
 /// Get the native CEF view handle if set.
 pub fn get_native_cef_view() -> Option<*mut std::ffi::c_void> {
-    external_pixels::get_native_view()
+    webview_state::get_native_view()
 }
 
 /// Check if native CEF view mode is active.
 pub fn has_native_cef_view() -> bool {
-    external_pixels::has_native_view()
+    webview_state::has_native_view()
 }
 
 /// Update the position of the native CEF view based on viewport layout.
 /// This should be called when the WebView rect changes in the layout.
 pub fn position_native_cef_view(x: f32, y: f32, width: f32, height: f32) {
-    external_pixels::position_native_view(x, y, width, height);
+    webview_state::position_native_view(x, y, width, height);
 }
 
 /// Get the current native CEF view rect.
 pub fn get_native_cef_view_rect() -> Option<(f32, f32, f32, f32)> {
-    external_pixels::get_native_view_rect()
+    webview_state::get_native_view_rect()
 }
 
 /// Set a callback to be invoked when the native CEF view position changes.
@@ -300,7 +206,7 @@ pub fn get_native_cef_view_rect() -> Option<(f32, f32, f32, f32)> {
 pub fn set_native_cef_view_position_callback(
     callback: extern "C" fn(*mut std::ffi::c_void, f32, f32, f32, f32),
 ) {
-    external_pixels::set_position_callback(callback);
+    webview_state::set_position_callback(callback);
 }
 
 /// Embedded web browser view element.

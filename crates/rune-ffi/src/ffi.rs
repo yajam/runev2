@@ -67,37 +67,8 @@ pub extern "C" fn rune_ffi_shutdown() {
     set_renderer(None);
 }
 
-/// Upload pixel data from CEF for a WebView element.
-///
-/// # Arguments
-/// * `webview_id` - Identifier for the WebView element (currently unused, reserved for multi-webview support)
-/// * `pixels` - Pointer to pixel data in BGRA format
-/// * `width` - Width in pixels
-/// * `height` - Height in pixels
-/// * `stride` - Bytes per row (usually width * 4)
-#[unsafe(no_mangle)]
-pub extern "C" fn rune_ffi_upload_webview_pixels(
-    _webview_id: *const c_char,
-    pixels: *const u8,
-    width: u32,
-    height: u32,
-    stride: u32,
-) {
-    if pixels.is_null() || width == 0 || height == 0 {
-        return;
-    }
-
-    // Calculate expected size
-    let expected_size = (height * stride) as usize;
-
-    // Create slice from raw pointer
-    let pixel_slice = unsafe { std::slice::from_raw_parts(pixels, expected_size) };
-
-    // Upload to the global WebView texture
-    with_renderer(|r| {
-        r.upload_webview_pixels(pixel_slice, width, height);
-    });
-}
+// NOTE: rune_ffi_upload_webview_pixels removed - now using native NSView-based CEF rendering
+// instead of OSR pixel uploads. See docs/NSview.md for architecture details.
 
 /// Resize the viewport.
 ///

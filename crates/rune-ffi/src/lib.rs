@@ -21,8 +21,6 @@ use engine_core::HitIndex;
 use rune_ir::{data::document::DataDocument, view::ViewDocument};
 use rune_scene::ir_renderer::{render_frame_with_zones, IrRenderer};
 use rune_scene::zones::ZoneManager;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Once;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -714,54 +712,8 @@ impl AppRenderer {
         }
     }
 
-    /// Upload WebView pixels from CEF
-    pub fn upload_webview_pixels(&mut self, pixels: &[u8], width: u32, height: u32) {
-        log::debug!(
-            "upload_webview_pixels: {}x{}, {} bytes",
-            width,
-            height,
-            pixels.len()
-        );
-
-        // Optional debug path: allow freezing the WebView texture after
-        // a few frames while the rest of the scene continues to redraw.
-        // Enable via RUNE_FREEZE_WEBVIEW_PIXELS=1 to diagnose whether
-        // later CEF frames are causing the disappearance.
-        static FREEZE_PIXELS_ENABLED: AtomicBool = AtomicBool::new(false);
-        static INIT_FREEZE_PIXELS: Once = Once::new();
-        static WEBVIEW_FRAME_COUNT: AtomicU32 = AtomicU32::new(0);
-
-        INIT_FREEZE_PIXELS.call_once(|| {
-            if let Ok(val) = std::env::var("RUNE_FREEZE_WEBVIEW_PIXELS") {
-                let enabled = val == "1" || val.eq_ignore_ascii_case("true");
-                FREEZE_PIXELS_ENABLED.store(enabled, Ordering::Relaxed);
-                if enabled {
-                    log::info!("upload_webview_pixels: RUNE_FREEZE_WEBVIEW_PIXELS enabled");
-                }
-            }
-        });
-
-        if FREEZE_PIXELS_ENABLED.load(Ordering::Relaxed) {
-            let frame = WEBVIEW_FRAME_COUNT.fetch_add(1, Ordering::Relaxed);
-            // After 120 frames, ignore further CEF uploads so the last
-            // good WebView texture stays static.
-            if frame > 120 {
-                return;
-            }
-        }
-
-        // Pass BGRA pixels directly - the GPU texture is now BGRA format
-        // to match CEF's native output and avoid CPU-side conversion.
-        // Force opaque alpha to prevent disappearing frames.
-        let mut bgra_pixels = pixels.to_vec();
-        for chunk in bgra_pixels.chunks_exact_mut(4) {
-            chunk[3] = 255; // Force opaque alpha
-        }
-
-        // Store in the rune-scene external pixels storage (BGRA format)
-        rune_scene::elements::webview::set_external_pixels(bgra_pixels, width, height);
-        self.needs_redraw = true;
-    }
+    // NOTE: upload_webview_pixels removed - now using native NSView-based CEF rendering
+    // instead of OSR pixel uploads. See docs/NSview.md for architecture details.
 
     /// Check if redraw is needed
     pub fn needs_redraw(&self) -> bool {
