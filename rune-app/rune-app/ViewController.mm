@@ -250,19 +250,15 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
 
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)canBecomeKeyView { return YES; }
+- (BOOL)isFlipped { return YES; } // Match CEF's coordinate system
 
-// Let CEF's internal view handle scroll events naturally
-- (void)scrollWheel:(NSEvent *)event {
-    // Forward to subviews (CEF's internal browser view)
-    [super scrollWheel:event];
+// Enable smooth trackpad scrolling gestures
+- (BOOL)wantsScrollEventsForSwipeTrackingOnAxis:(NSEventGestureAxis)axis {
+    return YES;
 }
 
-// Ensure mouse events reach CEF's internal view
-- (NSView *)hitTest:(NSPoint)point {
-    // Let CEF's child view handle hits
-    NSView *hit = [super hitTest:point];
-    return hit ? hit : self;
-}
+// Don't interfere with scroll events - let them pass through naturally to CEF's child view
+// CEF creates its own internal view hierarchy that handles scrolling
 
 @end
 
