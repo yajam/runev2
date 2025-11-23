@@ -11,6 +11,8 @@ pub struct CaretRenderConfig {
     pub text_baseline_y: f32,
     /// Baseline offset from the layout (line.baseline_offset)
     pub baseline_offset: f32,
+    /// Horizontal alignment offset applied to the text content
+    pub align_x: f32,
     /// Horizontal scroll offset (0.0 for TextArea)
     pub scroll_x: f32,
     /// Vertical scroll offset (0.0 for InputBox)
@@ -42,7 +44,7 @@ pub fn render_caret(
     };
 
     // Transform to screen coordinates
-    let cx = config.content_rect.x - config.scroll_x + cursor_rect.x;
+    let cx = config.content_rect.x + config.align_x - config.scroll_x + cursor_rect.x;
     let cy0 = config.text_baseline_y - config.baseline_offset + cursor_rect.y - config.scroll_y;
     let cy1 = cy0 + cursor_rect.height;
 

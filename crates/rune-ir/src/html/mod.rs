@@ -974,6 +974,7 @@ impl TranslatorState {
                         widget_id: Some(widget_id),
                         kind: ViewNodeKind::InputBox(InputBoxSpec {
                             width,
+                            text_style: TextStyle::default(),
                             placeholder,
                             input_type,
                             control_id,
@@ -1005,6 +1006,8 @@ impl TranslatorState {
                         widget_id: Some(widget_id),
                         kind: ViewNodeKind::TextArea(TextAreaSpec {
                             width,
+                            style: SurfaceStyle::default(),
+                            text_style: TextStyle::default(),
                             placeholder,
                             control_id,
                             form_id: None,

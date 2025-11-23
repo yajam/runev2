@@ -7,8 +7,11 @@ use rune_surface::shapes::{self};
 pub struct Select {
     pub rect: Rect,
     pub label: String,
+    pub placeholder: String,
     pub label_size: f32,
     pub label_color: ColorLinPremul,
+    pub placeholder_color: ColorLinPremul,
+    pub is_placeholder: bool,
     pub open: bool,
     pub focused: bool,
     pub options: Vec<String>,
@@ -65,11 +68,16 @@ impl Select {
             self.rect.x + self.padding_left,
             self.rect.y + self.padding_top + content_h * 0.5 + self.label_size * 0.35,
         ];
+        let (text, color) = if self.is_placeholder {
+            (&self.placeholder, self.placeholder_color)
+        } else {
+            (&self.label, self.label_color)
+        };
         canvas.draw_text_run(
             tp,
-            self.label.clone(),
+            text.clone(),
             self.label_size,
-            self.label_color,
+            color,
             z + 2,
         );
 
@@ -322,6 +330,7 @@ impl Select {
 
                 // Update label to show selected option
                 self.label = self.options[option_idx].clone();
+                self.is_placeholder = false;
 
                 // Close the dropdown
                 self.open = false;
@@ -380,43 +389,45 @@ impl Select {
                     SelectKeyResult::Opened
                 } else if !self.options.is_empty() {
                     // Navigate to next option
-                    let new_index = match self.selected_index {
-                        Some(idx) => {
-                            if idx + 1 < self.options.len() {
-                                idx + 1
-                            } else {
-                                idx
-                            }
-                        }
-                        None => 0,
-                    };
-                    self.selected_index = Some(new_index);
-                    self.label = self.options[new_index].clone();
-                    SelectKeyResult::Navigated
-                } else {
-                    SelectKeyResult::Ignored
+            let new_index = match self.selected_index {
+                Some(idx) => {
+                    if idx + 1 < self.options.len() {
+                        idx + 1
+                    } else {
+                        idx
+                    }
                 }
-            }
+                None => 0,
+            };
+            self.selected_index = Some(new_index);
+            self.label = self.options[new_index].clone();
+            self.is_placeholder = false;
+            SelectKeyResult::Navigated
+        } else {
+            SelectKeyResult::Ignored
+        }
+    }
             SelectKey::ArrowUp => {
                 if self.open && !self.options.is_empty() {
                     // Navigate to previous option
-                    let new_index = match self.selected_index {
-                        Some(idx) => {
-                            if idx > 0 {
-                                idx - 1
-                            } else {
-                                idx
-                            }
-                        }
-                        None => 0,
-                    };
-                    self.selected_index = Some(new_index);
-                    self.label = self.options[new_index].clone();
-                    SelectKeyResult::Navigated
-                } else {
-                    SelectKeyResult::Ignored
+            let new_index = match self.selected_index {
+                Some(idx) => {
+                    if idx > 0 {
+                        idx - 1
+                    } else {
+                        idx
+                    }
                 }
-            }
+                None => 0,
+            };
+            self.selected_index = Some(new_index);
+            self.label = self.options[new_index].clone();
+            self.is_placeholder = false;
+            SelectKeyResult::Navigated
+        } else {
+            SelectKeyResult::Ignored
+        }
+    }
             SelectKey::Enter => {
                 if self.open {
                     // Close dropdown and confirm selection
@@ -503,7 +514,11 @@ impl Select {
         if let Some(idx) = index {
             if idx < self.options.len() {
                 self.label = self.options[idx].clone();
+                self.is_placeholder = false;
             }
+        } else {
+            self.label = self.placeholder.clone();
+            self.is_placeholder = true;
         }
     }
 

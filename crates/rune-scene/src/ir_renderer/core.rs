@@ -5,7 +5,10 @@ use std::collections::HashMap;
 use anyhow::{Context as AnyhowContext, Result};
 use rune_ir::{
     data::document::DataDocument,
-    view::{FlexContainerSpec, LayoutDirection, ViewDocument, ViewNode, ViewNodeId, ViewNodeKind},
+    view::{
+        FlexContainerSpec, FormContainerSpec, LayoutDirection, ViewDocument, ViewNode, ViewNodeId,
+        ViewNodeKind,
+    },
 };
 use taffy::prelude::*;
 
@@ -64,6 +67,8 @@ pub struct IrRenderer {
 
     /// Last rendered content height in scene space (used for scrolling)
     pub(super) last_content_height: f32,
+    /// Last rendered content width in scene space (used for horizontal scrolling)
+    pub(super) last_content_width: f32,
 
     /// Current content height (layout extent) for element positioning like popups
     pub(super) current_content_height: f32,
@@ -85,6 +90,7 @@ impl IrRenderer {
             last_view_signature: None,
             last_layout_size: None,
             last_content_height: 0.0,
+            last_content_width: 0.0,
             current_content_height: 800.0,
             element_state: super::state::IrElementState::new(),
             hit_registry: super::hit_region::HitRegionRegistry::new(),
@@ -117,9 +123,10 @@ impl IrRenderer {
         width: f32,
         layout_height: f32,
         viewport_height: f32,
-        scroll_offset: f32,
+        scroll_offset_x: f32,
+        scroll_offset_y: f32,
         provider: &dyn engine_core::TextProvider,
-    ) -> Result<f32> {
+    ) -> Result<(f32, f32)> {
         let debug_logging = std::env::var("RUNE_IR_DEBUG")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
             .unwrap_or(false);
@@ -188,8 +195,10 @@ impl IrRenderer {
             eprintln!("Starting recursive render...");
         }
         self.last_content_height = 0.0;
-        // Use layout extent (not just visible viewport) so popups decide with full content space.
-        self.current_content_height = layout_height;
+        self.last_content_width = 0.0;
+        // Base popup positioning on the visible viewport height so it doesn't depend
+        // on prior content measurements or render feedback.
+        self.current_content_height = viewport_height;
 
         self.render_view_node_with_elements(
             canvas,
@@ -207,16 +216,18 @@ impl IrRenderer {
             view_doc,
             width,
             viewport_height,
-            scroll_offset,
+            scroll_offset_x,
+            scroll_offset_y,
             provider,
         )?;
 
         let content_height = (self.last_content_height - offset_y).max(layout_height);
+        let content_width = (self.last_content_width - offset_x).max(width);
 
         if debug_logging {
             eprintln!("=== render_ir_document END ===\n");
         }
-        Ok(content_height)
+        Ok((content_height, content_width))
     }
 
     /// Render IR content into a `Canvas` at origin (0,0).
@@ -228,9 +239,9 @@ impl IrRenderer {
         width: f32,
         height: f32,
         provider: &dyn engine_core::TextProvider,
-    ) -> Result<f32> {
+    ) -> Result<(f32, f32)> {
         self.render_canvas_at_offset(
-            canvas, data_doc, view_doc, 0.0, 0.0, width, height, height, 0.0, provider,
+            canvas, data_doc, view_doc, 0.0, 0.0, width, height, height, 0.0, 0.0, provider,
         )
     }
 
@@ -253,7 +264,7 @@ impl IrRenderer {
         // while still expanding to fit content (including padding) when taller.
         if is_root {
             style.size.width = percent(1.0);
-            style.size.height = auto_dimension();
+            style.size.height = percent(1.0);
             style.min_size.width = percent(1.0);
             style.min_size.height = percent(1.0);
         }
@@ -309,6 +320,7 @@ impl IrRenderer {
     fn view_node_to_taffy_style(&self, node: &ViewNode, data_doc: &DataDocument) -> Result<Style> {
         match &node.kind {
             ViewNodeKind::FlexContainer(spec) => self.flex_container_style(spec),
+            ViewNodeKind::FormContainer(spec) => self.form_container_style(spec),
             ViewNodeKind::Text(spec) => Ok(self.text_style_from_spec(spec)),
             ViewNodeKind::Button(spec) => Ok(self.button_style(spec)),
             ViewNodeKind::Image(spec) => Ok(self.image_style(spec)),
@@ -492,7 +504,7 @@ impl IrRenderer {
                     .map(|h| dimension(h as f32))
                     .unwrap_or(auto_dimension()),
             },
-            align_self: Some(AlignSelf::Stretch),
+            align_self: None, // Let parent align_items decide unless explicitly set in style.
             flex_shrink: 0.0,
             ..Default::default()
         }
@@ -517,6 +529,52 @@ impl IrRenderer {
         }
 
         style
+    }
+
+    /// Convert FormContainerSpec to Taffy Style (same flex defaults as containers).
+    fn form_container_style(&self, spec: &FormContainerSpec) -> Result<Style> {
+        Ok(Style {
+            display: Display::Flex,
+            flex_direction: match spec.layout.direction {
+                LayoutDirection::Row => FlexDirection::Row,
+                LayoutDirection::Column => FlexDirection::Column,
+            },
+            align_items: layout_align_to_taffy(spec.layout.align),
+            justify_content: layout_justify_to_taffy(spec.layout.justify),
+            flex_wrap: if spec.layout.wrap {
+                FlexWrap::Wrap
+            } else {
+                FlexWrap::NoWrap
+            },
+            gap: Size {
+                width: length_percentage(spec.layout.gap as f32),
+                height: length_percentage(spec.layout.gap as f32),
+            },
+            padding: taffy::Rect {
+                left: length_percentage(spec.padding.left as f32),
+                right: length_percentage(spec.padding.right as f32),
+                top: length_percentage(spec.padding.top as f32),
+                bottom: length_percentage(spec.padding.bottom as f32),
+            },
+            margin: taffy::Rect {
+                left: length(spec.margin.left as f32),
+                right: length(spec.margin.right as f32),
+                top: length(spec.margin.top as f32),
+                bottom: length(spec.margin.bottom as f32),
+            },
+            size: Size {
+                width: spec
+                    .width
+                    .map(|w| dimension(w as f32))
+                    .unwrap_or(auto_dimension()),
+                height: spec
+                    .height
+                    .map(|h| dimension(h as f32))
+                    .unwrap_or(auto_dimension()),
+            },
+            flex_shrink: 0.0,
+            ..Default::default()
+        })
     }
 
     /// InputBox style combines SurfaceStyle with width fallback and default height.
@@ -560,15 +618,15 @@ impl IrRenderer {
 
     /// TextArea style combines SurfaceStyle with width/height defaults.
     fn text_area_style(&self, spec: &rune_ir::view::TextAreaSpec) -> Style {
-        let mut style = Style::default();
+        let mut style = self.surface_style(&spec.style);
 
         if let Some(w) = spec.width {
             style.size.width = dimension(w as f32);
         }
 
-        // Give text areas a reasonable height if not specified.
+        // Give text areas a reasonable height if not specified in style.
         if matches!(style.size.height, Dimension::Auto) {
-            let h = 140.0_f32;
+            let h = spec.style.height.unwrap_or(140.0) as f32;
             style.size.height = dimension(h);
             style.min_size.height = dimension(h);
         }
@@ -945,6 +1003,7 @@ impl IrRenderer {
 
         // Track rendered bounds to compute scrollable content height.
         self.last_content_height = self.last_content_height.max(scene_rect.y + scene_rect.h);
+        self.last_content_width = self.last_content_width.max(scene_rect.x + scene_rect.w);
 
         let node_type = match &view_node.kind {
             ViewNodeKind::FlexContainer(_) => "FlexContainer",
@@ -1153,7 +1212,8 @@ impl IrRenderer {
         view_doc: &ViewDocument,
         viewport_width: f32,
         viewport_height: f32,
-        scroll_offset: f32,
+        scroll_offset_x: f32,
+        scroll_offset_y: f32,
         _provider: &dyn engine_core::TextProvider,
     ) -> Result<()> {
         use engine_core::Transform2D;
@@ -1169,7 +1229,7 @@ impl IrRenderer {
 
         // Counteract the scroll transform so overlays stay fixed relative to the viewport.
         // The viewport position is handled by the canvas transform stack (set by runner.rs).
-        canvas.push_transform(Transform2D::translate(0.0, scroll_offset));
+        canvas.push_transform(Transform2D::translate(scroll_offset_x, scroll_offset_y));
 
         for (overlay_index, active_overlay) in active_overlays.iter().enumerate() {
             let overlay_z = overlay_base_z + (overlay_index as i32 * 100);

@@ -8,9 +8,9 @@
       "type": "flex_container",
       "layout": {
         "direction": "column",
-        "justify": "start",
+        "justify": "center",
         "align": "center",
-        "gap": 0
+        "gap": 16
       },
       "padding": {
         "top": 0,
@@ -24,29 +24,68 @@
         "bottom": 0,
         "left": 0
       },
-      "background": {
-        "type": "linear_gradient",
-        "angle": 0,
-        "stops": [
-          [
-            "#346fb4",
-            0
-          ],
-          [
-            "#1e4599",
-            1
-          ]
-        ]
+      "children": [
+        "content_stack"
+      ]
+    },
+    {
+      "id": "content_stack",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "center",
+        "align": "center",
+        "gap": 12
+      },
+      "width": 680,
+      "margin_left_auto": true,
+      "margin_right_auto": true,
+      "padding": {
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "margin": {
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
       },
       "children": [
-        "hero_image"
+        "hero_image",
+        "greeting_text",
+        "chat_input"
       ]
     },
     {
       "id": "hero_image",
       "node_id": "HMTB0001",
       "type": "image",
-      "content_fit": "fill"
+      "content_fit": "contain",
+      "width": 200,
+      "height": 200
+    },
+    {
+      "id": "greeting_text",
+      "node_id": "HMTB0002",
+      "type": "text",
+      "text_style": {
+        "text_align": "center",
+        "font_size": 18,
+        "color": "#ffffff"
+      }
+    },
+    {
+      "id": "chat_input",
+      "type": "input_box",
+      "width": 560,
+      "placeholder": "Ask Peco anything...",
+      "text_style": {
+        "color": "#ffffff",
+        "font_size": 14,
+        "text_align": "center"
+      }
     }
   ]
 }

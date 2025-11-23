@@ -536,7 +536,7 @@ pub struct ScrollBehavior {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextSpec {
-    #[serde(default)]
+    #[serde(default, rename = "text_style", alias = "style")]
     pub style: TextStyle,
 }
 
@@ -742,6 +742,8 @@ pub struct InputBoxSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<f64>,
     #[serde(default)]
+    pub text_style: TextStyle,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
     #[serde(default)]
@@ -768,6 +770,10 @@ pub struct TextAreaSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<f64>,
     #[serde(default)]
+    pub style: SurfaceStyle,
+    #[serde(default)]
+    pub text_style: TextStyle,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
     #[serde(default)]
@@ -786,6 +792,13 @@ pub struct CheckboxSpec {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<f64>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_style: Option<TextStyle>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Optional label color when using inline labels (hex/rgb/rgba string).
+    pub label_color: Option<String>,
     #[serde(default)]
     pub style: SurfaceStyle,
     #[serde(default)]
@@ -809,6 +822,13 @@ pub struct RadioSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<f64>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_style: Option<TextStyle>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Optional label color when using inline labels (hex/rgb/rgba string).
+    pub label_color: Option<String>,
+    #[serde(default)]
     pub style: SurfaceStyle,
     /// Radio group name (controls exclusivity)
     #[serde(default)]
@@ -828,6 +848,8 @@ pub struct RadioSpec {
 pub struct SelectSpec {
     #[serde(default)]
     pub style: SurfaceStyle,
+    #[serde(default)]
+    pub label_style: TextStyle,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<f64>,
@@ -870,6 +892,8 @@ pub struct FileInputSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<f64>,
     #[serde(default)]
+    pub label_style: TextStyle,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
     #[serde(default)]
@@ -888,6 +912,8 @@ pub struct FileInputSpec {
 pub struct DatePickerSpec {
     #[serde(default)]
     pub style: SurfaceStyle,
+    #[serde(default)]
+    pub label_style: TextStyle,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<f64>,

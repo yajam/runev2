@@ -78,6 +78,21 @@ impl IrAdapter {
         rect: Rect,
         label: Option<String>,
     ) -> elements::Checkbox {
+        let label_color = spec
+            .label_style
+            .as_ref()
+            .and_then(|s| s.color.as_ref())
+            .and_then(|c| parse_color(c))
+            .or_else(|| {
+                spec.label_color.as_ref().and_then(|c| parse_color(c))
+            })
+            .unwrap_or_else(|| ColorLinPremul::from_srgba_u8([51, 65, 85, 255]));
+        let label_size = spec
+            .label_style
+            .as_ref()
+            .and_then(|s| s.font_size)
+            .unwrap_or(16.0) as f32;
+
         let defaults = surface_colors(
             &spec.style,
             ColorLinPremul::from_srgba_u8([245, 247, 250, 255]),
@@ -89,8 +104,8 @@ impl IrAdapter {
             checked: spec.default_checked.unwrap_or(false),
             focused: false,
             label,
-            label_size: 16.0,
-            label_color: ColorLinPremul::from_srgba_u8([51, 65, 85, 255]),
+            label_size,
+            label_color,
             box_fill: defaults.fill,
             border_color: defaults.border,
             border_width: defaults.border_width,
@@ -100,6 +115,23 @@ impl IrAdapter {
 
     /// Convert a RadioSpec to a Radio element.
     pub fn radio_from_spec(spec: &RadioSpec, rect: Rect, label: Option<String>) -> elements::Radio {
+        let label_color = spec
+            .label_style
+            .as_ref()
+            .and_then(|s| s.color.as_ref())
+            .and_then(|c| parse_color(c))
+            .or_else(|| {
+                spec.label_color
+                    .as_ref()
+                    .and_then(|c| parse_color(c))
+            })
+            .unwrap_or_else(|| ColorLinPremul::from_srgba_u8([51, 65, 85, 255]));
+        let label_size = spec
+            .label_style
+            .as_ref()
+            .and_then(|s| s.font_size)
+            .unwrap_or(16.0) as f32;
+
         let defaults = surface_colors(
             &spec.style,
             ColorLinPremul::from_srgba_u8([245, 247, 250, 255]),
@@ -117,8 +149,8 @@ impl IrAdapter {
             radius,
             selected: spec.default_selected.unwrap_or(false),
             label,
-            label_size: 16.0,
-            label_color: ColorLinPremul::from_srgba_u8([51, 65, 85, 255]),
+            label_size,
+            label_color,
             bg: defaults.fill,
             border_color: defaults.border,
             border_width: defaults.border_width,

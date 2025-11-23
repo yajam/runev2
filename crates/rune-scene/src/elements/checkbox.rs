@@ -110,7 +110,7 @@ impl Checkbox {
         // Label
         if let Some(text) = &self.label {
             let tx = self.rect.x + self.rect.w + 8.0;
-            let ty = self.rect.y + self.rect.h * 0.5 + self.label_size * 0.35;
+            let ty = self.rect.y + self.rect.h * 0.5 + self.label_size * 0.32;
             canvas.draw_text_run(
                 [tx, ty],
                 text.clone(),

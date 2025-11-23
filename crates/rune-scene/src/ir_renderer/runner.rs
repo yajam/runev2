@@ -183,8 +183,8 @@ pub fn run() -> Result<()> {
                     let viewport = zone_manager.layout.viewport;
                     // NOTE: Keep event coords in the same viewport-local space used for rendering
                     // (apply viewport origin + scroll here, not inside elements), or hit testing breaks.
-                    let scene_x = logical_x - viewport.x;
-                    let scene_y = logical_y - viewport.y + zone_manager.viewport.scroll_offset;
+                    let scene_x = logical_x - viewport.x + zone_manager.viewport.scroll_offset_x;
+                    let scene_y = logical_y - viewport.y + zone_manager.viewport.scroll_offset_y;
 
                     use crate::event_handler::MouseMoveEvent;
                     let move_event = MouseMoveEvent {
@@ -203,15 +203,15 @@ pub fn run() -> Result<()> {
                 WindowEvent::MouseWheel { delta, .. } => {
                     use winit::event::MouseScrollDelta;
 
-                    let scroll_delta = match delta {
-                        MouseScrollDelta::LineDelta(_x, y) => y * 20.0,
-                        MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+                    let (scroll_x, scroll_y) = match delta {
+                        MouseScrollDelta::LineDelta(x, y) => (x * 20.0, y * 20.0),
+                        MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
                     };
 
                     let viewport_rect = zone_manager.layout.get_zone(crate::zones::ZoneId::Viewport);
                     zone_manager
                         .viewport
-                        .scroll(-scroll_delta, viewport_rect.h);
+                        .scroll(-scroll_x, -scroll_y, viewport_rect.w, viewport_rect.h);
                     needs_redraw = true;
                     window.request_redraw();
                 }
@@ -242,9 +242,10 @@ pub fn run() -> Result<()> {
 
                             // Calculate scene coordinates for select overlay check
                             let viewport = zone_manager.layout.viewport;
-                            let scene_x = logical_x - viewport.x;
+                            let scene_x =
+                                logical_x - viewport.x + zone_manager.viewport.scroll_offset_x;
                             let scene_y =
-                                logical_y - viewport.y + zone_manager.viewport.scroll_offset;
+                                logical_y - viewport.y + zone_manager.viewport.scroll_offset_y;
 
                             // Close open select dropdowns unless clicking on their overlay
                             ir_renderer
@@ -473,10 +474,11 @@ pub fn run() -> Result<()> {
 
                                                     let viewport = zone_manager.layout.viewport;
                                                     let scene_x =
-                                                        logical_x - viewport.x;
+                                                        logical_x - viewport.x
+                                                            + zone_manager.viewport.scroll_offset_x;
                                                     let scene_y = logical_y
                                                         - viewport.y
-                                                        + zone_manager.viewport.scroll_offset;
+                                                        + zone_manager.viewport.scroll_offset_y;
 
                                                     let event = MouseClickEvent {
                                                         button: winit::event::MouseButton::Left,
@@ -533,9 +535,10 @@ pub fn run() -> Result<()> {
                                 let logical_x = cursor_x / scale_factor;
                                 let logical_y = cursor_y / scale_factor;
                                 let viewport = zone_manager.layout.viewport;
-                                let scene_x = logical_x - viewport.x;
+                                let scene_x =
+                                    logical_x - viewport.x + zone_manager.viewport.scroll_offset_x;
                                 let scene_y =
-                                    logical_y - viewport.y + zone_manager.viewport.scroll_offset;
+                                    logical_y - viewport.y + zone_manager.viewport.scroll_offset_y;
 
                                 use crate::event_handler::MouseClickEvent;
                                 let release_event = MouseClickEvent {
@@ -910,7 +913,9 @@ fn render_zones(
     for zone_id in [ZoneId::Viewport, ZoneId::Toolbar, ZoneId::Sidebar] {
         let z = match zone_id {
             ZoneId::Toolbar => 9000,
-            _ => 0,
+            ZoneId::Sidebar => 8000, // Sidebar should sit above viewport content
+            ZoneId::Viewport => 0,
+            ZoneId::DevTools => 9500, // not rendered here, but keep ordering explicit
         };
         // Draw borders slightly above backgrounds so content can sit
         // between them in z-order (e.g. IR backgrounds inside viewport).
@@ -1005,23 +1010,24 @@ fn render_frame_with_zones(
         h: viewport_rect.h,
     });
     canvas.push_transform(Transform2D::translate(
-        0.0,
-        -zone_manager.viewport.scroll_offset,
+        -zone_manager.viewport.scroll_offset_x,
+        -zone_manager.viewport.scroll_offset_y,
     ));
 
-    // Render using the larger of current viewport height and last known content
-    // height so root backgrounds fill the full scroll extent.
-    let render_height = zone_manager.viewport.content_height.max(viewport_rect.h);
-    let content_height = ir_renderer.render_canvas_at_offset(
+    // Compute layout using the visible viewport height so coordinates stay anchored
+    // to the viewport instead of feeding back the previous frame's content height.
+    let layout_height = viewport_rect.h;
+    let (content_height, content_width) = ir_renderer.render_canvas_at_offset(
         &mut canvas,
         data_doc,
         view_doc,
         0.0,
         0.0,
         viewport_rect.w,
-        render_height,
+        layout_height,
         viewport_rect.h,
-        zone_manager.viewport.scroll_offset,
+        zone_manager.viewport.scroll_offset_x,
+        zone_manager.viewport.scroll_offset_y,
         provider.as_ref(),
     )?;
 
@@ -1031,7 +1037,7 @@ fn render_frame_with_zones(
 
     zone_manager
         .viewport
-        .set_content_height(content_height, viewport_rect.h);
+        .set_content_size(content_width, content_height, viewport_rect.w, viewport_rect.h);
 
     // Render toolbar with navigation controls and address bar,
     // matching the legacy implementation's layout behavior.

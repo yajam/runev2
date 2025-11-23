@@ -103,7 +103,9 @@
           "items": { "$ref": "#/$defs/ViewNodeId" }
         },
         "style": { "$ref": "#/$defs/ViewNodeStyle" },
+        "text_style": { "$ref": "#/$defs/TextStyle" },
         "label_style": { "$ref": "#/$defs/TextStyle" },
+        "label_color": { "type": "string" },
         "placements": {
           "type": "array",
           "items": { "$ref": "#/$defs/GridItemPlacement" }
@@ -343,6 +345,7 @@
             "properties": {
               "placeholder": { "type": "string" },
               "control_id": { "type": "string" },
+              "text_style": { "$ref": "#/$defs/TextStyle" },
               "width": { "type": "number" },
               "form_id": { "type": "string" },
               "default_value": { "type": "string" },
@@ -364,8 +367,10 @@
           "if": { "properties": { "type": { "const": "text_area" } } },
           "then": {
             "properties": {
+              "style": { "$ref": "#/$defs/SurfaceStyle" },
               "placeholder": { "type": "string" },
               "control_id": { "type": "string" },
+              "text_style": { "$ref": "#/$defs/TextStyle" },
               "width": { "type": "number" },
               "form_id": { "type": "string" },
               "default_value": { "type": "string" }
@@ -378,6 +383,8 @@
             "properties": {
               "control_id": { "type": "string" },
               "form_id": { "type": "string" },
+              "label_style": { "$ref": "#/$defs/TextStyle" },
+              "label_color": { "type": "string" },
               "value": { "type": ["string", "null"] },
               "default_checked": { "type": "boolean" },
               "size": { "type": "number" },
@@ -390,6 +397,8 @@
           "then": {
             "properties": {
               "group": { "type": "string" },
+              "label_style": { "$ref": "#/$defs/TextStyle" },
+              "label_color": { "type": "string" },
               "value": { "type": ["string", "null"] },
               "default_selected": { "type": "boolean" },
               "size": { "type": "number" },
@@ -404,6 +413,7 @@
               "placeholder": { "type": "string" },
               "control_id": { "type": "string" },
               "form_id": { "type": "string" },
+              "label_style": { "$ref": "#/$defs/TextStyle" },
               "multi": { "type": "boolean" },
               "width": { "type": "number" }
             }
@@ -414,6 +424,7 @@
           "then": {
             "properties": {
               "style": { "$ref": "#/$defs/SurfaceStyle" },
+              "label_style": { "$ref": "#/$defs/TextStyle" },
               "placeholder": { "type": "string" },
               "search_placeholder": { "type": "string" },
               "control_id": { "type": "string" },
@@ -431,6 +442,7 @@
           "then": {
             "properties": {
               "style": { "$ref": "#/$defs/SurfaceStyle" },
+              "label_style": { "$ref": "#/$defs/TextStyle" },
               "placeholder": { "type": "string" },
               "control_id": { "type": "string" },
               "form_id": { "type": "string" },

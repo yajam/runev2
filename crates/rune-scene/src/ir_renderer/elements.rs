@@ -4,7 +4,7 @@ use super::hit_region::HitRegionRegistry;
 use crate::elements::{Alert, AlertPosition, ConfirmDialog, Modal, ModalButton};
 use engine_core::ColorLinPremul;
 use rune_ir::data::document::DataDocument;
-use rune_ir::view::{OverlayContainerSpec, OverlayPosition, ViewNodeId};
+use rune_ir::view::{OverlayContainerSpec, OverlayPosition, TextAlign, ViewNodeId};
 
 /// Render a generic background for any element that exposes a single
 /// `ViewBackground` field (FlexContainer, GridContainer, FormContainer, overlays, etc).
@@ -96,11 +96,27 @@ pub(super) fn render_text_element(
         },
     );
 
+    let content_width = (rect.w - pad_x - pad_right).max(0.0);
+    let align = spec
+        .style
+        .text_align
+        .unwrap_or(rune_ir::view::TextAlign::Start);
+    let approx_line_width = |line: &str| line.chars().count() as f32 * size * 0.55;
+
     let base_y = (rect.y + pad_y + lines.ascent).round();
-    let base_x = (rect.x + pad_x).round();
+    let base_x = rect.x + pad_x;
     for (i, line) in lines.lines.iter().enumerate() {
         let y = base_y + (i as f32) * lines.line_height;
-        canvas.draw_text_run([base_x, y], line.clone(), size, color, z);
+        let line_width = approx_line_width(line);
+        let aligned_x = match align {
+            rune_ir::view::TextAlign::Center => {
+                base_x + (content_width - line_width).max(0.0) * 0.5
+            }
+            rune_ir::view::TextAlign::End => base_x + (content_width - line_width).max(0.0),
+            rune_ir::view::TextAlign::Start => base_x,
+        };
+
+        canvas.draw_text_run([aligned_x.round(), y], line.clone(), size, color, z);
     }
 }
 
@@ -318,22 +334,33 @@ pub(super) fn render_select_element(
 ) {
     let options: Vec<String> = spec.options.iter().map(|opt| opt.label.clone()).collect();
 
-    let selected_index = spec
-        .options
-        .iter()
-        .position(|opt| opt.selected)
-        .or_else(|| if options.is_empty() { None } else { Some(0) });
-
-    let label = selected_index
-        .and_then(|idx| options.get(idx).cloned())
-        .or_else(|| spec.placeholder.clone())
-        .unwrap_or_default();
+    let selected_index = spec.options.iter().position(|opt| opt.selected);
+    let placeholder = spec
+        .placeholder
+        .clone()
+        .unwrap_or_else(|| "Select an option".to_string());
+    let label_style = spec.label_style.clone();
+    let label_color = crate::ir_adapter::IrAdapter::color_from_text_style(&label_style);
+    let placeholder_color = engine_core::ColorLinPremul {
+        r: label_color.r,
+        g: label_color.g,
+        b: label_color.b,
+        a: label_color.a * 0.6,
+    };
+    let label_size = crate::ir_adapter::IrAdapter::font_size_from_text_style(&label_style);
+    let (label, is_placeholder) = match selected_index {
+        Some(idx) if idx < options.len() => (options[idx].clone(), false),
+        _ => (placeholder.clone(), true),
+    };
 
     let mut select = crate::elements::Select {
         rect,
         label,
-        label_size: 16.0,
-        label_color: engine_core::ColorLinPremul::from_srgba_u8([20, 24, 30, 255]),
+        placeholder,
+        label_size,
+        label_color,
+        placeholder_color,
+        is_placeholder,
         open: false,
         focused: false,
         options,
@@ -368,10 +395,11 @@ pub(super) fn render_input_box_element(
     use engine_core::{Brush, Color, RoundedRadii, RoundedRect};
     use rune_surface::shapes;
 
-    // Styling driven by spec.style with sensible defaults
+    // Styling driven by spec.style/text_style with sensible defaults
     let radius = spec.style.corner_radius.unwrap_or(6.0) as f32;
     let padding = spec.style.padding;
-    let text_size = 16.0;
+    let text_size = spec.text_style.font_size.unwrap_or(16.0) as f32;
+    let text_color = crate::ir_adapter::IrAdapter::color_from_text_style(&spec.text_style);
 
     let rrect = RoundedRect {
         rect,
@@ -426,25 +454,38 @@ pub(super) fn render_input_box_element(
     let placeholder = spec.placeholder.clone();
     // Center text vertically within the content box
     let content_height = rect.h - (padding.top as f32 + padding.bottom as f32);
-    let text_y = rect.y + padding.top as f32 + (content_height - text_size) * 0.5 + text_size * 0.8;
-    let text_x = rect.x + padding.left as f32;
+    let text_y =
+        rect.y + padding.top as f32 + (content_height - text_size) * 0.5 + text_size * 0.8;
+
+    // Approximate text width so we can honor text_align on inputs.
+    // This mirrors the simple heuristic used in elements::Button (0.5em per char).
+    let compute_x = |text: &str| {
+        let approx_width = text.len() as f32 * text_size * 0.5;
+        let content_width = (rect.w - padding.left as f32 - padding.right as f32).max(0.0);
+        match spec.text_style.text_align.unwrap_or(TextAlign::Start) {
+            TextAlign::Center => {
+                rect.x + padding.left as f32 + (content_width - approx_width).max(0.0) * 0.5
+            }
+            TextAlign::End => {
+                rect.x + padding.left as f32 + (content_width - approx_width).max(0.0)
+            }
+            TextAlign::Start => rect.x + padding.left as f32,
+        }
+    };
 
     if !value.is_empty() {
-        canvas.draw_text_run(
-            [text_x, text_y],
-            value,
-            text_size,
-            engine_core::ColorLinPremul::from_srgba_u8([51, 65, 85, 255]),
-            z + 2,
-        );
+        let text_x = compute_x(&value);
+        canvas.draw_text_run([text_x, text_y], value, text_size, text_color, z + 2);
     } else if let Some(ph) = placeholder {
-        canvas.draw_text_run(
-            [text_x, text_y],
-            ph,
-            text_size,
-            engine_core::ColorLinPremul::from_srgba_u8([148, 163, 184, 255]),
-            z + 2,
-        );
+        // Soften placeholder color relative to text
+        let placeholder_color = engine_core::ColorLinPremul {
+            r: text_color.r,
+            g: text_color.g,
+            b: text_color.b,
+            a: text_color.a * 0.6,
+        };
+        let text_x = compute_x(&ph);
+        canvas.draw_text_run([text_x, text_y], ph, text_size, placeholder_color, z + 2);
     }
 }
 
@@ -458,34 +499,8 @@ pub(super) fn render_text_area_element(
     rect: engine_core::Rect,
     z: i32,
 ) {
-    use engine_core::{Brush, Color, RoundedRadii, RoundedRect};
-    use rune_surface::shapes;
-
-    let radius = 6.0;
-    let rrect = RoundedRect {
-        rect,
-        radii: RoundedRadii {
-            tl: radius,
-            tr: radius,
-            br: radius,
-            bl: radius,
-        },
-    };
-
-    // Background
-    let bg = Color::rgba(45, 52, 71, 255);
-    canvas.rounded_rect(rrect, Brush::Solid(bg), z);
-
-    // Border
-    let border_color = Color::rgba(80, 90, 110, 255);
-    shapes::draw_rounded_rectangle(
-        canvas,
-        rrect,
-        None,
-        Some(1.0),
-        Some(Brush::Solid(border_color)),
-        z + 1,
-    );
+    let pad = 12.0;
+    // Background: none by default (respect "no background" when not provided)
 
     let value = if let Some(node_id) = &view_node.node_id {
         resolve_text_from_data(data_doc, node_id)
@@ -496,23 +511,24 @@ pub(super) fn render_text_area_element(
     };
 
     let placeholder = spec.placeholder.clone();
-    let text_size = 16.0;
+    let text_size = spec.text_style.font_size.unwrap_or(16.0) as f32;
+    let text_color = crate::ir_adapter::IrAdapter::color_from_text_style(&spec.text_style);
+    let placeholder_color = engine_core::ColorLinPremul {
+        r: text_color.r,
+        g: text_color.g,
+        b: text_color.b,
+        a: text_color.a * 0.6,
+    };
     let line_height = text_size * 1.3;
-    let mut y = rect.y + 12.0 + text_size;
-    let x = rect.x + 12.0;
+    let mut y = rect.y + pad + text_size;
+    let x = rect.x + pad;
 
     if !value.is_empty() {
         for line in value.lines() {
             if y > rect.y + rect.h {
                 break;
             }
-            canvas.draw_text_run(
-                [x, y],
-                line.to_string(),
-                text_size,
-                engine_core::ColorLinPremul::from_srgba_u8([240, 240, 240, 255]),
-                z + 2,
-            );
+            canvas.draw_text_run([x, y], line.to_string(), text_size, text_color, z + 2);
             y += line_height;
         }
     } else if let Some(ph) = placeholder {
@@ -520,7 +536,7 @@ pub(super) fn render_text_area_element(
             [x, y],
             ph,
             text_size,
-            engine_core::ColorLinPremul::from_srgba_u8([120, 120, 130, 255]),
+            placeholder_color,
             z + 2,
         );
     }
