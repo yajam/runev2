@@ -12,6 +12,7 @@ members = [
     "crates/engine-core",
     "crates/engine-shaders",
     "crates/demo-app",
+    "crates/cef-demo",
     "crates/rune-surface",
     "crates/rune-window",
     "crates/rune-scene",
@@ -20,6 +21,7 @@ members = [
     "crates/rune-ir",
     "crates/rune-io",
     "crates/rune-config",
+    "crates/rune-cef",
 ]
 resolver = "2"
 

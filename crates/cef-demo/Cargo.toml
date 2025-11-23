@@ -1,0 +1,25 @@
+[package]
+name = "cef-demo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[[bin]]
+name = "cef-demo"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+wgpu = { workspace = true }
+winit = { workspace = true }
+pollster = { workspace = true }
+bytemuck = { workspace = true }
+rune-cef = { path = "../rune-cef" }
+log = "0.4"
+env_logger = "0.11"
+once_cell = "1.19"
+parking_lot = "0.12"

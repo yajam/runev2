@@ -1,1 +1,22 @@
-/target
+target/
+
+# CEF binary distribution (download separately)
+cef/
+vendor/cef/
+
+# CEF test app (reference only, not for production)
+cef-test/
+
+# CEF app build artifacts
+cef-app/lib/
+cef-app/cef
+
+# Log files
+*.log
+
+# Xcode
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.xcodeproj/project.xcworkspace/
+!*.xcodeproj/project.pbxproj
