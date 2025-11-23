@@ -21,16 +21,11 @@
     },
     {
       "id": "main_webview",
-      "type": "webview",
-      "url": "https://example.com",
+      "type": "web_view",
+      "url": "https://www.google.com",
       "webview_id": "mainweb1",
       "javascript_enabled": true,
-      "scale_factor": 1.0,
-      "style": {
-        "width": 800,
-        "height": 600,
-        "corner_radius": 8
-      }
+      "scale_factor": 1
     }
   ]
 }

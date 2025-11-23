@@ -1,5 +1,6 @@
 pub mod common;
 pub mod devtools;
+pub mod render;
 pub mod sidebar;
 pub mod toolbar;
 pub mod viewport;
@@ -15,6 +16,7 @@ pub use toolbar::{
     ADDRESS_BAR_REGION_ID, BACK_BUTTON_REGION_ID, DEVTOOLS_BUTTON_REGION_ID,
     FORWARD_BUTTON_REGION_ID, REFRESH_BUTTON_REGION_ID, TOGGLE_BUTTON_REGION_ID, Toolbar,
 };
+pub use render::render_zones;
 pub use viewport::Viewport;
 
 /// Zone manager for rendering and interaction

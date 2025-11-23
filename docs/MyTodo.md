@@ -63,6 +63,7 @@ Testing
 - [ ] Video/Audio subsystem (core missing block)
 - [ ] A11y subsystem completion
 - [ ] Full input/focus model (pointer capture, inertial scroll, tab order)
+- [ ] CEF main-thread initialization wired into winit backend (current rune-app + rune-ffi path is a stop-gap until CEF OSR is fully hosted from the winit-owned window/surface)
 - [ ] JS runtime → DOM mutation + events integration
 - [ ] Download manager
 - [ ] GPU device lost recovery
@@ -70,3 +71,13 @@ Testing
 - [ ] Platform parity for Wayland/macOS/Windows IME & scaling
 - [ ] Testing suite (layout/text/gpu/event/IR)
 - [ ] Developer tooling & CI
+
+---
+
+### CEF / rune-app integration summary
+
+Problem: Today `rune-scene` assumes a winit-owned window/event loop and owns the `wgpu::Surface`, while the CEF sample (`cef-app` / `rune-app`) assumes a Cocoa-owned NSWindow, CEF main-thread initialization, and a `CAMetalLayer` provided to Rust. There is no unified path where Rune both owns the window and hosts CEF OSR on the same main thread, so we cannot yet run “Rune window + Rune compositor + CEF WebView element” purely from the winit backend.
+
+Stopgap: `rune-app` embeds Rune via `rune-ffi` as a pure renderer: Cocoa/CEF own the window and message loop, and pass a `CAMetalLayer` plus mouse/keyboard/text events and an OSR pixel buffer (for WebView textures) into the Rune compositor. This keeps all of the complex CEF bootstrap and helper processes inside the existing Xcode project, at the cost of re-implementing the window/input glue that the winit runner already has.
+
+Potential solution: Long term, move CEF initialization and OSR hosting into a dedicated “CEF backend” wired directly into `rune-scene`’s winit runner (via the `webview-cef` / `rune-cef` path). That means: initializing CEF on the main thread behind a reusable abstraction, integrating its message pumping with winit’s event loop, and wiring WebView frames into the Rune compositor and hit-testing from the winit-owned `wgpu::Surface`. Once that path is stable, `rune-app` can become a thin wrapper around the winit-based Rune binary, and the current `rune-ffi` + Cocoa glue can be retired or kept only as an embedding option.*** End Patch*** ```

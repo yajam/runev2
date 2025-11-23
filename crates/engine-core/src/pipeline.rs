@@ -1717,6 +1717,14 @@ impl ImageRenderer {
             source: wgpu::ShaderSource::Wgsl(engine_shaders::IMAGE_WGSL.into()),
         });
 
+        // Optional debug/escape hatch: allow disabling depth testing for images.
+        // When RUNE_IMAGE_NO_DEPTH=1, raster images (including WebView textures)
+        // are rendered without depth testing so they always blend on top.
+        let disable_depth = std::env::var("RUNE_IMAGE_NO_DEPTH")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+
         // Viewport uniform group (matches solids layout)
         let vp_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("image-vp-bgl"),
@@ -1776,6 +1784,18 @@ impl ImageRenderer {
             push_constant_ranges: &[],
         });
 
+        let depth_stencil = if disable_depth {
+            None
+        } else {
+            Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            })
+        };
+
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("image-pipeline"),
             layout: Some(&layout),
@@ -1809,13 +1829,7 @@ impl ImageRenderer {
                 })],
             }),
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
+            depth_stencil,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });

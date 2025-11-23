@@ -16,9 +16,11 @@ rune-scene = { path = "../rune-scene" }
 rune-surface = { path = "../rune-surface" }
 rune-ir = { path = "../rune-ir" }
 engine-core = { path = "../engine-core" }
+winit = { workspace = true }
 wgpu = { workspace = true }
 pollster = { workspace = true }
 anyhow = { workspace = true }
+rune-config = { path = "../rune-config" }
 parking_lot = "0.12"
 once_cell = "1.19"
 log = "0.4"

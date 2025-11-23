@@ -4148,11 +4148,13 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "pollster 0.3.0",
+ "rune-config",
  "rune-ir",
  "rune-scene",
  "rune-surface",
  "serde_json",
  "wgpu",
+ "winit",
 ]
 
 [[package]]

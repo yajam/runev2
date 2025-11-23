@@ -9,6 +9,7 @@
 //! - Mouse and keyboard event forwarding to the browser
 //! - Texture-based rendering for integration with wgpu pipeline
 //! - Resize handling with automatic texture recreation
+//! - External texture mode for FFI integration (CEF managed by host app)
 //!
 //! # Usage
 //!
@@ -25,6 +26,115 @@ use rune_cef::{
     HeadlessBuilder, HeadlessRenderer, KeyEvent, KeyEventKind, Modifiers, MouseButton,
     MouseEvent, MouseEventKind, WgpuTextureTarget,
 };
+
+/// Global storage for external WebView pixel data and layout info.
+/// This is used when CEF is managed externally (e.g., from Xcode/FFI).
+mod external_pixels {
+    use std::sync::Mutex;
+
+    /// External pixel data for WebView rendering.
+    pub struct ExternalWebViewPixels {
+        pub pixels: Vec<u8>,
+        pub width: u32,
+        pub height: u32,
+        pub dirty: bool,
+    }
+
+    /// WebView position in scene coordinates (set during layout).
+    pub struct WebViewRect {
+        pub x: f32,
+        pub y: f32,
+        pub w: f32,
+        pub h: f32,
+    }
+
+    static EXTERNAL_PIXELS: Mutex<Option<ExternalWebViewPixels>> = Mutex::new(None);
+    static WEBVIEW_RECT: Mutex<Option<WebViewRect>> = Mutex::new(None);
+
+    /// Set external pixel data for WebView rendering.
+    /// The pixels should be in RGBA format.
+    pub fn set_pixels(pixels: Vec<u8>, width: u32, height: u32) {
+        if let Ok(mut guard) = EXTERNAL_PIXELS.lock() {
+            *guard = Some(ExternalWebViewPixels {
+                pixels,
+                width,
+                height,
+                dirty: true,
+            });
+        }
+    }
+
+    /// Get the external pixel data if available.
+    pub fn get_pixels() -> Option<(Vec<u8>, u32, u32)> {
+        if let Ok(guard) = EXTERNAL_PIXELS.lock() {
+            guard.as_ref().map(|p| (p.pixels.clone(), p.width, p.height))
+        } else {
+            None
+        }
+    }
+
+    /// Check if external pixels are available.
+    pub fn has_pixels() -> bool {
+        if let Ok(guard) = EXTERNAL_PIXELS.lock() {
+            guard.is_some()
+        } else {
+            false
+        }
+    }
+
+    /// Clear the external pixel data.
+    pub fn clear() {
+        if let Ok(mut guard) = EXTERNAL_PIXELS.lock() {
+            *guard = None;
+        }
+    }
+
+    /// Set the WebView rect (called during layout).
+    pub fn set_rect(x: f32, y: f32, w: f32, h: f32) {
+        if let Ok(mut guard) = WEBVIEW_RECT.lock() {
+            *guard = Some(WebViewRect { x, y, w, h });
+        }
+    }
+
+    /// Get the WebView rect if available.
+    pub fn get_rect() -> Option<(f32, f32, f32, f32)> {
+        if let Ok(guard) = WEBVIEW_RECT.lock() {
+            guard.as_ref().map(|r| (r.x, r.y, r.w, r.h))
+        } else {
+            None
+        }
+    }
+}
+
+/// Set external pixel data for WebView rendering (RGBA format).
+pub fn set_external_pixels(pixels: Vec<u8>, width: u32, height: u32) {
+    external_pixels::set_pixels(pixels, width, height);
+}
+
+/// Set the WebView rect in scene coordinates.
+pub fn set_webview_rect(x: f32, y: f32, w: f32, h: f32) {
+    external_pixels::set_rect(x, y, w, h);
+}
+
+/// Get the WebView rect in scene coordinates.
+pub fn get_webview_rect() -> Option<(f32, f32, f32, f32)> {
+    external_pixels::get_rect()
+}
+
+/// Get the external pixel data if available.
+pub fn get_external_pixels() -> Option<(Vec<u8>, u32, u32)> {
+    external_pixels::get_pixels()
+}
+
+/// Check if external pixels are available.
+pub fn has_external_pixels() -> bool {
+    external_pixels::has_pixels()
+}
+
+/// Clear the external pixel data.
+pub fn clear_external_pixels() {
+    external_pixels::clear();
+}
 
 /// Embedded web browser view element.
 ///
@@ -448,11 +558,13 @@ impl WebView {
         button: MouseButton,
         modifiers: Modifiers,
     ) {
+        // Convert coords before borrowing renderer to avoid borrow conflict
+        let (local_x, local_y) = self.to_local_coords(x, y);
+
         let Some(ref mut renderer) = self.renderer else {
             return;
         };
 
-        let (local_x, local_y) = self.to_local_coords(x, y);
         let event = MouseEvent {
             x: local_x,
             y: local_y,

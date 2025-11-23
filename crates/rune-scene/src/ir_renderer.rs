@@ -19,7 +19,7 @@ mod text_measure;
 
 pub use core::IrRenderer;
 pub use hit_region::HitRegionRegistry;
-pub use runner::run;
+pub use runner::{render_frame_with_zones, run};
 pub use state::{IrElementState, IrElementType};
 
 use rune_ir::{data::document::DataDocument, view::ViewDocument};

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 
@@ -20,6 +20,25 @@ fn apply_transform_to_point(point: [f32; 2], transform: Transform2D) -> [f32; 2]
     let x = point[0];
     let y = point[1];
     [a * x + c * y + e, b * x + d * y + f]
+}
+
+/// Storage for the last rendered raw image rect (used for hit testing WebViews).
+static LAST_RAW_IMAGE_RECT: Mutex<Option<(f32, f32, f32, f32)>> = Mutex::new(None);
+
+/// Set the last raw image rect (called during rendering).
+fn set_last_raw_image_rect(x: f32, y: f32, w: f32, h: f32) {
+    if let Ok(mut guard) = LAST_RAW_IMAGE_RECT.lock() {
+        *guard = Some((x, y, w, h));
+    }
+}
+
+/// Get the last raw image rect (for hit testing from FFI).
+pub fn get_last_raw_image_rect() -> Option<(f32, f32, f32, f32)> {
+    if let Ok(guard) = LAST_RAW_IMAGE_RECT.lock() {
+        *guard
+    } else {
+        None
+    }
 }
 
 /// Overlay callback signature: called after main rendering with full PassManager access.
@@ -234,6 +253,7 @@ impl RuneSurface {
             glyph_draws: Vec::new(),
             svg_draws: Vec::new(),
             image_draws: Vec::new(),
+            raw_image_draws: Vec::new(),
             dpi_scale: self.dpi_scale,
             clip_stack: vec![None],
             overlay_draws: Vec::new(),
@@ -354,6 +374,91 @@ impl RuneSurface {
                 );
                 prepared_images.push((resolved_path.clone(), render_origin, render_size, *z));
             }
+        }
+
+        // Process raw image draws (e.g., WebView CEF pixels)
+        for (i, raw_draw) in canvas.raw_image_draws.iter().enumerate() {
+            if raw_draw.pixels.is_empty() || raw_draw.src_width == 0 || raw_draw.src_height == 0 {
+                continue;
+            }
+
+            // Use a fixed path for webview texture - it gets updated each frame
+            let raw_path = std::path::PathBuf::from(format!("__webview_texture_{}__", i));
+
+            // Try to reuse existing texture if it's the same size, otherwise create new.
+            // This avoids destroying textures that may still be in use by the GPU.
+            let need_new_texture = if let Some((_, cached_w, cached_h)) =
+                self.pass.try_get_image_view(&raw_path)
+            {
+                // Texture exists - check if size matches
+                cached_w != raw_draw.src_width || cached_h != raw_draw.src_height
+            } else {
+                true
+            };
+
+            if need_new_texture {
+                // Create a new texture
+                let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("raw-image-texture"),
+                    size: wgpu::Extent3d {
+                        width: raw_draw.src_width,
+                        height: raw_draw.src_height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+
+                // Store in image cache
+                self.pass.store_loaded_image(
+                    &raw_path,
+                    Arc::new(texture),
+                    raw_draw.src_width,
+                    raw_draw.src_height,
+                );
+            }
+
+            // Get the texture from cache and upload pixels to it
+            if let Some((tex, _, _)) = self.pass.get_cached_texture(&raw_path) {
+                self.queue.write_texture(
+                    wgpu::ImageCopyTexture {
+                        texture: &tex,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &raw_draw.pixels,
+                    wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(raw_draw.src_width * 4),
+                        rows_per_image: Some(raw_draw.src_height),
+                    },
+                    wgpu::Extent3d {
+                        width: raw_draw.src_width,
+                        height: raw_draw.src_height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+
+            // Apply the canvas transform to the origin - same as regular images.
+            // The origin from draw_raw_image is in local (viewport) coordinates and
+            // needs to be transformed to screen coordinates.
+            let transformed_origin = apply_transform_to_point(raw_draw.origin, raw_draw.transform);
+
+            // Store the transformed rect for hit testing (accessible via get_last_raw_image_rect)
+            set_last_raw_image_rect(
+                transformed_origin[0],
+                transformed_origin[1],
+                raw_draw.dst_size[0],
+                raw_draw.dst_size[1],
+            );
+
+            prepared_images.push((raw_path, transformed_origin, raw_draw.dst_size, raw_draw.z));
         }
 
         // Merge glyphs supplied explicitly via Canvas (draw_text_run/draw_text_direct)

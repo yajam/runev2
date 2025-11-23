@@ -1,40 +1,46 @@
-// AppDelegate.m - Rune Scene application delegate
-
 #import "AppDelegate.h"
 #import "ViewController.h"
+#import <Cocoa/Cocoa.h>
 
-@implementation AppDelegate {
-    NSWindow* _window;
-    ViewController* _viewController;
+@implementation AppDelegate
+
+bool finishedLaunching;
+bool contextInitialized;
+
+- (void)nextInitializationStep {
+    @synchronized(self){
+        if (finishedLaunching && contextInitialized) {
+            NSStoryboard *storyBoard = [NSStoryboard storyboardWithName:@"Main" bundle:nil];
+            NSWindowController *windowController = [storyBoard instantiateInitialController];
+            [windowController showWindow:self];
+
+            // Resize initial window to fill the visible bounds of its screen.
+            NSWindow *window = windowController.window;
+            if (window) {
+                NSScreen *screen = window.screen ?: [NSScreen mainScreen];
+                if (screen) {
+                    NSRect visibleFrame = screen.visibleFrame;
+                    [window setFrame:visibleFrame display:YES];
+                }
+            }
+        }
+    }
 }
 
-- (void)applicationDidFinishLaunching:(NSNotification *)notification {
-    // Create main window
-    NSRect frame = NSMakeRect(100, 100, 1280, 720);
-    NSWindowStyleMask style = NSWindowStyleMaskTitled |
-                              NSWindowStyleMaskClosable |
-                              NSWindowStyleMaskMiniaturizable |
-                              NSWindowStyleMaskResizable;
-
-    _window = [[NSWindow alloc] initWithContentRect:frame
-                                          styleMask:style
-                                            backing:NSBackingStoreBuffered
-                                              defer:NO];
-
-    [_window setTitle:@"Rune Scene"];
-    [_window setMinSize:NSMakeSize(640, 480)];
-
-    // Create view controller
-    _viewController = [[ViewController alloc] init];
-    [_window setContentViewController:_viewController];
-
-    // Show window
-    [_window makeKeyAndOrderFront:nil];
-    [NSApp activateIgnoringOtherApps:YES];
+- (void)cefContextInitialized {
+    contextInitialized = true;
+    [self nextInitializationStep];
+   
 }
 
-- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
-    return YES;
+- (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
+    finishedLaunching = true;
+    [self nextInitializationStep];
 }
+
+- (void)applicationWillTerminate:(NSNotification *)aNotification {
+    // Insert code here to tear down your application
+}
+
 
 @end

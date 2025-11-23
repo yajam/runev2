@@ -21,7 +21,6 @@ pub mod selection_renderer;
 pub mod table;
 pub mod text;
 pub mod text_area;
-#[cfg(feature = "webview-cef")]
 pub mod webview;
 
 pub use alert::{Alert, AlertPosition};
@@ -43,3 +42,5 @@ pub use text::Text;
 pub use text_area::TextArea;
 #[cfg(feature = "webview-cef")]
 pub use webview::WebView;
+// Export external pixel functions for FFI use (always available)
+pub use webview::{clear_external_pixels, get_external_pixels, has_external_pixels, set_external_pixels};

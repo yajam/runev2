@@ -1,6 +1,5 @@
-// AppDelegate.h - Rune Scene application delegate
-
 #import <Cocoa/Cocoa.h>
 
 @interface AppDelegate : NSObject <NSApplicationDelegate>
+-(void)cefContextInitialized;
 @end

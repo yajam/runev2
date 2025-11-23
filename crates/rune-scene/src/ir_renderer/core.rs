@@ -113,7 +113,10 @@ impl IrRenderer {
     }
 
     /// Render IR content into a `Canvas` at a given offset/size.
-    pub(crate) fn render_canvas_at_offset(
+    ///
+    /// This is the primary rendering method for embedding IR content within
+    /// a viewport. Returns (content_height, content_width) on success.
+    pub fn render_canvas_at_offset(
         &mut self,
         canvas: &mut rune_surface::Canvas,
         data_doc: &DataDocument,
@@ -809,16 +812,18 @@ impl IrRenderer {
         style
     }
 
-    /// WebView style: honor explicit width/height, otherwise use sensible defaults
+    /// WebView style: honor explicit width/height, otherwise fill available space
     fn webview_style(&self, spec: &rune_ir::view::WebViewSpec) -> Style {
         let mut style = self.surface_style(&spec.style);
 
-        // Use explicit dimensions if provided, otherwise default to a reasonable size
+        // Use explicit dimensions if provided, otherwise default to full width/height
         if matches!(style.size.width, Dimension::Auto) {
             style.size.width = percent(1.0); // Full width by default
         }
         if matches!(style.size.height, Dimension::Auto) {
-            style.size.height = dimension(400.0); // Default height
+            // Fill the parent height (viewport) by default so WebView
+            // content occupies the full vertical space of its zone.
+            style.size.height = percent(1.0);
         }
         if matches!(style.min_size.width, Dimension::Auto) {
             style.min_size.width = dimension(100.0);
@@ -1224,26 +1229,64 @@ impl IrRenderer {
             }
             #[cfg(not(feature = "webview-cef"))]
             ViewNodeKind::WebView(_spec) => {
-                // WebView support requires the webview-cef feature
-                // Render a placeholder box
-                let placeholder_color = engine_core::ColorLinPremul::from_srgba_u8([200, 200, 200, 255]);
-                canvas.fill_rect(
-                    scene_rect.x,
-                    scene_rect.y,
+                // Store the WebView rect for FFI queries (size and position).
+                // Apply the canvas transform to get screen coordinates (same as draw_raw_image).
+                // This allows FFI hit testing to work correctly even before pixels arrive.
+                let transform = canvas.current_transform();
+                let [a, b, c, d, e, f] = transform.m;
+                let screen_x = a * scene_rect.x + c * scene_rect.y + e;
+                let screen_y = b * scene_rect.x + d * scene_rect.y + f;
+                crate::elements::webview::set_webview_rect(
+                    screen_x,
+                    screen_y,
                     scene_rect.w,
                     scene_rect.h,
-                    engine_core::Brush::Solid(placeholder_color),
-                    z,
                 );
-                // Draw "WebView not available" text
-                let text_color = engine_core::ColorLinPremul::from_srgba_u8([100, 100, 100, 255]);
-                canvas.draw_text_run(
-                    [scene_rect.x + 10.0, scene_rect.y + 20.0],
-                    "WebView requires webview-cef feature".to_string(),
-                    12.0,
-                    text_color,
-                    z + 1,
-                );
+
+                // Check if external pixels are available (from FFI/Xcode-managed CEF)
+                if let Some((pixels, src_width, src_height)) =
+                    crate::elements::webview::get_external_pixels()
+                {
+                    // Render the CEF pixels using raw image draw.
+                    // Use a z-index that's above normal IR content (which starts at 0)
+                    // but below chrome elements like toolbar (9000) and devtools (9500).
+                    // The shader clamps z to [-10000, 10000] so don't exceed that range.
+                    let webview_z = 500;
+                    canvas.draw_raw_image(
+                        pixels,
+                        src_width,
+                        src_height,
+                        [scene_rect.x, scene_rect.y],
+                        [scene_rect.w, scene_rect.h],
+                        webview_z,
+                    );
+
+                    // Register hit region for the webview
+                    let region_id = self.hit_registry.register(view_node_id);
+                    canvas.hit_region_rect(region_id, scene_rect, webview_z + 10);
+                } else {
+                    // WebView support requires either webview-cef feature or external pixels
+                    // Render a placeholder box
+                    let placeholder_color =
+                        engine_core::ColorLinPremul::from_srgba_u8([240, 240, 240, 255]);
+                    canvas.fill_rect(
+                        scene_rect.x,
+                        scene_rect.y,
+                        scene_rect.w,
+                        scene_rect.h,
+                        engine_core::Brush::Solid(placeholder_color),
+                        z,
+                    );
+                    // Draw "Loading WebView..." text
+                    let text_color = engine_core::ColorLinPremul::from_srgba_u8([100, 100, 100, 255]);
+                    canvas.draw_text_run(
+                        [scene_rect.x + scene_rect.w * 0.5 - 50.0, scene_rect.y + scene_rect.h * 0.5],
+                        "Loading WebView...".to_string(),
+                        14.0,
+                        text_color,
+                        z + 1,
+                    );
+                }
             }
             ViewNodeKind::Alert(_) | ViewNodeKind::Modal(_) | ViewNodeKind::Confirm(_) => {
                 // Overlays are rendered separately in a post-render pass

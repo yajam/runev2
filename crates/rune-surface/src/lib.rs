@@ -4,8 +4,8 @@ mod canvas;
 pub mod shapes;
 mod surface;
 
-pub use canvas::{Canvas, ImageFitMode, ScrimDraw};
-pub use surface::RuneSurface;
+pub use canvas::{Canvas, ImageFitMode, RawImageDraw, ScrimDraw};
+pub use surface::{get_last_raw_image_rect, RuneSurface};
 
 /// Resolve an asset path by checking multiple locations:
 /// 1. Absolute path (as-is)

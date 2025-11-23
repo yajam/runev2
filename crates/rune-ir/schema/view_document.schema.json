@@ -63,7 +63,7 @@
             "alert",
             "modal",
             "confirm",
-            "webview"
+            "web_view"
           ]
         },
         "layout": {

@@ -1,4 +1,12 @@
-// ViewController.mm - Rune Scene rendering with Rust/wgpu
+// ViewController.mm - CEF browser with Rust/wgpu rendering
+// CEF pixels are uploaded to Rust for GPU texture rendering
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Weverything"
+#import "include/cef_app.h"
+#import "include/cef_browser.h"
+#import "include/cef_client.h"
+#pragma clang diagnostic pop
 
 #import <Cocoa/Cocoa.h>
 #import <Metal/Metal.h>
@@ -7,61 +15,105 @@
 #import "ViewController.h"
 #import "../rune_ffi.h"
 
-// Custom view with CAMetalLayer for Rust/wgpu rendering
-@interface RuneRenderView : NSView
-@property (nonatomic) CGSize viewSize;
+@class RustRenderView;
+
+#pragma mark - CEF Handler
+
+class CefHandler : public CefClient, public CefRenderHandler, public CefLifeSpanHandler {
+public:
+    CefRefPtr<CefBrowser> cefBrowser;
+    RustRenderView* __weak view;
+    CGSize webviewSize;
+    float scaleFactor;
+
+    CefHandler(RustRenderView* renderView) : view(renderView), webviewSize(CGSizeMake(800, 600)), scaleFactor(2.0) {}
+
+    virtual CefRefPtr<CefRenderHandler> GetRenderHandler() override { return this; }
+    virtual CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
+    virtual void OnAfterCreated(CefRefPtr<CefBrowser> browser) override { this->cefBrowser = browser; }
+
+    virtual void GetViewRect(CefRefPtr<CefBrowser> browser, CefRect& rect) override {
+        // Return size in logical pixels - CEF will multiply by scale factor
+        rect.Set(0, 0, (int)webviewSize.width, (int)webviewSize.height);
+    }
+
+    virtual bool GetScreenInfo(CefRefPtr<CefBrowser> browser, CefScreenInfo& screenInfo) override {
+        screenInfo.device_scale_factor = scaleFactor;
+        return true;
+    }
+
+    virtual void OnPaint(CefRefPtr<CefBrowser> browser,
+                         PaintElementType type,
+                         const RectList& dirtyRects,
+                         const void* buffer,
+                         int width,
+                         int height) override;
+
+private:
+    IMPLEMENT_REFCOUNTING(CefHandler);
+};
+
+#pragma mark - Rust Render View
+
+@interface RustRenderView : NSView
 @property (nonatomic) float scaleFactor;
 @property (nonatomic, weak) id resizeDelegate;
+- (void)uploadCefPixels:(const void*)buffer width:(int)width height:(int)height;
 @end
 
-@protocol RuneRenderViewResizeDelegate
+@protocol RustRenderViewResizeDelegate
 - (void)renderViewDidResize;
+- (void)rustRendererInitialized;
+- (void)forwardMouseDown:(NSEvent*)event point:(NSPoint)point;
+- (void)forwardMouseUp:(NSEvent*)event point:(NSPoint)point;
+- (void)forwardMouseMove:(NSEvent*)event point:(NSPoint)point;
+- (void)forwardMouseDrag:(NSEvent*)event point:(NSPoint)point;
 @end
 
-@implementation RuneRenderView {
+@implementation RustRenderView {
     CAMetalLayer* _metalLayer;
     CVDisplayLinkRef _displayLink;
     BOOL _initialized;
-}
-
-+ (Class)layerClass {
-    return [CAMetalLayer class];
+    NSTrackingArea* _trackingArea;
 }
 
 - (instancetype)initWithFrame:(NSRect)frameRect {
     self = [super initWithFrame:frameRect];
     if (self) {
-        [self setupLayer];
+        self.wantsLayer = YES;
+        self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize;
+
+        _metalLayer = [CAMetalLayer layer];
+        _metalLayer.device = MTLCreateSystemDefaultDevice();
+        _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        _metalLayer.framebufferOnly = NO;
+        self.layer = _metalLayer;
+        _initialized = NO;
+
+        // Set up tracking area for mouse move events
+        [self updateTrackingAreas];
     }
     return self;
 }
 
-- (instancetype)initWithCoder:(NSCoder *)coder {
-    self = [super initWithCoder:coder];
-    if (self) {
-        [self setupLayer];
+- (void)updateTrackingAreas {
+    if (_trackingArea) {
+        [self removeTrackingArea:_trackingArea];
     }
-    return self;
-}
 
-- (void)setupLayer {
-    self.wantsLayer = YES;
-    self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize;
-
-    _metalLayer = [CAMetalLayer layer];
-    _metalLayer.device = MTLCreateSystemDefaultDevice();
-    _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
-    _metalLayer.framebufferOnly = NO;
-    self.layer = _metalLayer;
-
-    _initialized = NO;
+    NSTrackingAreaOptions options = NSTrackingMouseMoved | NSTrackingMouseEnteredAndExited |
+                                    NSTrackingActiveInKeyWindow | NSTrackingInVisibleRect;
+    _trackingArea = [[NSTrackingArea alloc] initWithRect:self.bounds
+                                                 options:options
+                                                   owner:self
+                                                userInfo:nil];
+    [self addTrackingArea:_trackingArea];
 }
 
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
 
     if (self.window && !_initialized) {
-        // Initialize Rust renderer
         _scaleFactor = self.window.backingScaleFactor;
         CGSize size = self.bounds.size;
         uint32_t width = (uint32_t)(size.width * _scaleFactor);
@@ -69,29 +121,21 @@
 
         _metalLayer.contentsScale = _scaleFactor;
         _metalLayer.drawableSize = CGSizeMake(width, height);
-        _viewSize = size;
 
-        // Get the package path (can be configured via command line or hardcoded)
-        NSString* packagePath = nil;
-        NSArray* args = [[NSProcessInfo processInfo] arguments];
-        for (NSUInteger i = 1; i < args.count; i++) {
-            NSString* arg = args[i];
-            if ([arg hasPrefix:@"--package="]) {
-                packagePath = [arg substringFromIndex:10];
-                break;
-            }
-        }
+        const char *packagePath = getenv("RUNE_PACKAGE_PATH");
+        const char *pathArg = (packagePath && packagePath[0] != 0) ? packagePath : NULL;
 
-        const char* pathCStr = packagePath ? [packagePath UTF8String] : NULL;
-
-        if (rune_init(width, height, _scaleFactor, (__bridge void*)_metalLayer, pathCStr)) {
+        if (rune_ffi_init(width, height, _scaleFactor, (__bridge void*)_metalLayer, pathArg)) {
             NSLog(@"Rust renderer initialized: %dx%d scale=%.1f", width, height, _scaleFactor);
             _initialized = YES;
 
-            // Start display link
             CVDisplayLinkCreateWithActiveCGDisplays(&_displayLink);
             CVDisplayLinkSetOutputCallback(_displayLink, &displayLinkCallback, (__bridge void*)self);
             CVDisplayLinkStart(_displayLink);
+
+            if ([self.resizeDelegate respondsToSelector:@selector(rustRendererInitialized)]) {
+                [self.resizeDelegate rustRendererInitialized];
+            }
         } else {
             NSLog(@"Failed to initialize Rust renderer");
         }
@@ -104,10 +148,11 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
                                     CVOptionFlags flagsIn,
                                     CVOptionFlags* flagsOut,
                                     void* context) {
-    @autoreleasepool {
-        // Render directly - wgpu/Metal is thread-safe
-        rune_render();
-    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        @autoreleasepool {
+            rune_ffi_render();
+        }
+    });
     return kCVReturnSuccess;
 }
 
@@ -120,15 +165,19 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
         uint32_t height = (uint32_t)(newSize.height * _scaleFactor);
 
         _metalLayer.drawableSize = CGSizeMake(width, height);
-        _viewSize = newSize;
+        rune_ffi_resize(width, height);
 
-        rune_resize(width, height);
-
-        // Notify delegate
         if ([self.resizeDelegate respondsToSelector:@selector(renderViewDidResize)]) {
             [self.resizeDelegate renderViewDidResize];
         }
     }
+}
+
+- (void)uploadCefPixels:(const void*)buffer width:(int)width height:(int)height {
+    if (!buffer || width <= 0 || height <= 0 || !_initialized) return;
+
+    // CEF is on main thread in windowless mode - call directly
+    rune_ffi_upload_webview_pixels(NULL, (const uint8_t*)buffer, (uint32_t)width, (uint32_t)height, (uint32_t)width * 4);
 }
 
 - (void)dealloc {
@@ -136,77 +185,315 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
         CVDisplayLinkStop(_displayLink);
         CVDisplayLinkRelease(_displayLink);
     }
-    rune_shutdown();
+    rune_ffi_shutdown();
 }
 
-- (BOOL)acceptsFirstResponder {
-    return YES;
-}
-
-- (NSPoint)getClickPointForEvent:(NSEvent*)event {
-    NSPoint windowLocal = [event locationInWindow];
-    NSPoint contentLocal = [self convertPoint:windowLocal fromView:nil];
-
-    NSPoint point;
-    point.x = contentLocal.x * _scaleFactor;
-    point.y = ([self frame].size.height - contentLocal.y) * _scaleFactor;
-    return point;
-}
-
-- (void)mouseDown:(NSEvent *)event {
-    NSPoint point = [self getClickPointForEvent:event];
-    rune_mouse_click(point.x, point.y, true);
-}
-
-- (void)mouseUp:(NSEvent *)event {
-    NSPoint point = [self getClickPointForEvent:event];
-    rune_mouse_click(point.x, point.y, false);
-}
-
-- (void)mouseMoved:(NSEvent *)event {
-    NSPoint point = [self getClickPointForEvent:event];
-    rune_mouse_move(point.x, point.y);
-}
-
-- (void)mouseDragged:(NSEvent *)event {
-    NSPoint point = [self getClickPointForEvent:event];
-    rune_mouse_move(point.x, point.y);
-}
+- (BOOL)acceptsFirstResponder { return YES; }
 
 - (void)keyDown:(NSEvent *)event {
-    rune_key_event([event keyCode], true);
+    if (!_initialized) { [super keyDown:event]; return; }
+    rune_ffi_key_event(event.keyCode, true);
+    NSString *chars = [event characters];
+    if (chars.length > 0) {
+        const char *utf8 = [chars UTF8String];
+        if (utf8 && utf8[0] != 0) rune_ffi_text_input(utf8);
+    }
 }
 
 - (void)keyUp:(NSEvent *)event {
-    rune_key_event([event keyCode], false);
+    if (!_initialized) { [super keyUp:event]; return; }
+    rune_ffi_key_event(event.keyCode, false);
+}
+
+- (void)mouseDown:(NSEvent *)event {
+    [self.window makeFirstResponder:self];
+    NSPoint p = [self flipPoint:[self convertPoint:[event locationInWindow] fromView:nil]];
+    rune_ffi_mouse_click(p.x * _scaleFactor, p.y * _scaleFactor, true);
+
+    // Forward to CEF if in WebView
+    if ([self.resizeDelegate respondsToSelector:@selector(forwardMouseDown:point:)]) {
+        [(id)self.resizeDelegate forwardMouseDown:event point:p];
+    }
+}
+
+- (void)mouseUp:(NSEvent *)event {
+    NSPoint p = [self flipPoint:[self convertPoint:[event locationInWindow] fromView:nil]];
+    rune_ffi_mouse_click(p.x * _scaleFactor, p.y * _scaleFactor, false);
+
+    if ([self.resizeDelegate respondsToSelector:@selector(forwardMouseUp:point:)]) {
+        [(id)self.resizeDelegate forwardMouseUp:event point:p];
+    }
+}
+
+- (void)mouseMoved:(NSEvent *)event {
+    NSPoint p = [self flipPoint:[self convertPoint:[event locationInWindow] fromView:nil]];
+    rune_ffi_mouse_move(p.x * _scaleFactor, p.y * _scaleFactor);
+
+    if ([self.resizeDelegate respondsToSelector:@selector(forwardMouseMove:point:)]) {
+        [(id)self.resizeDelegate forwardMouseMove:event point:p];
+    }
+}
+
+- (void)mouseDragged:(NSEvent *)event {
+    NSPoint p = [self flipPoint:[self convertPoint:[event locationInWindow] fromView:nil]];
+    rune_ffi_mouse_move(p.x * _scaleFactor, p.y * _scaleFactor);
+
+    if ([self.resizeDelegate respondsToSelector:@selector(forwardMouseDrag:point:)]) {
+        [(id)self.resizeDelegate forwardMouseDrag:event point:p];
+    }
+}
+
+- (NSPoint)flipPoint:(NSPoint)p {
+    return NSMakePoint(p.x, self.bounds.size.height - p.y);
 }
 
 @end
 
-// ViewController
-@interface ViewController() <RuneRenderViewResizeDelegate>
-@property (nonatomic, strong) RuneRenderView* renderView;
+// CEF OnPaint implementation
+void CefHandler::OnPaint(CefRefPtr<CefBrowser> browser,
+                         PaintElementType type,
+                         const RectList& dirtyRects,
+                         const void* buffer,
+                         int width,
+                         int height) {
+    RustRenderView* v = view;
+    if (v) {
+        [v uploadCefPixels:buffer width:width height:height];
+    }
+}
+
+#pragma mark - ViewController
+
+@interface ViewController() <RustRenderViewResizeDelegate>
+@property (nonatomic, strong) RustRenderView* renderView;
+@property (nonatomic, strong) NSTimer* resizeTimer;
 @end
 
-@implementation ViewController
-
-- (void)loadView {
-    // Create an empty view as the base
-    self.view = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 1280, 720)];
+@implementation ViewController {
+    CefRefPtr<CefHandler> cefHandler;
+    CGRect _lastWebViewRect;  // Cached WebView rect in logical coords
+    BOOL _mouseInWebView;     // Track if mouse is inside WebView for enter/leave events
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    // Create render view
-    _renderView = [[RuneRenderView alloc] initWithFrame:self.view.bounds];
+    _renderView = [[RustRenderView alloc] initWithFrame:self.view.bounds];
     _renderView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     _renderView.resizeDelegate = self;
     [self.view addSubview:_renderView];
+
+    cefHandler = new CefHandler(_renderView);
+    _lastWebViewRect = CGRectZero;
+    _mouseInWebView = NO;
+}
+
+- (void)rustRendererInitialized {
+    cefHandler->scaleFactor = _renderView.scaleFactor;
+
+    // Force multiple renders to ensure layout is computed and rect is stored
+    // The first render computes layout, subsequent renders store the transformed rect
+    rune_ffi_render();
+    rune_ffi_render();
+    rune_ffi_render();
+
+    // Now try to get the size - if not available, poll until it is
+    [self createCefBrowserWhenLayoutReady:0];
+}
+
+- (void)createCefBrowserWhenLayoutReady:(int)attempt {
+    float x = 0, y = 0;
+    uint32_t w = 0, h = 0;
+
+    // Check if layout-computed size is available
+    BOOL hasLayout = rune_ffi_get_webview_position(&x, &y) && rune_ffi_get_webview_size(&w, &h) && w > 0 && h > 0;
+
+    if (hasLayout) {
+        // x, y are in logical pixels from FFI (already transformed), w, h are logical pixels
+        // No scale conversion needed - all values are in logical coords
+        NSLog(@"Got layout-computed WebView size: %dx%d at (%.1f, %.1f) [logical]", w, h, x, y);
+        _lastWebViewRect = CGRectMake(x, y, (float)w, (float)h);
+        [self createCefBrowserWithSize:CGSizeMake(w, h)];
+    } else if (attempt < 10) {
+        // Not ready yet, render another frame and try again
+        NSLog(@"Layout not ready (attempt %d), rendering and retrying...", attempt);
+        rune_ffi_render();
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.05 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self createCefBrowserWhenLayoutReady:attempt + 1];
+        });
+    } else {
+        // Give up and use spec size
+        rune_ffi_get_webview_size(&w, &h);
+        NSLog(@"Layout timeout, using spec WebView size: %dx%d", w, h);
+        [self createCefBrowserWithSize:CGSizeMake(w, h)];
+    }
+}
+
+- (void)createCefBrowserWithSize:(CGSize)size {
+    cefHandler->webviewSize = size;
+
+    // Get URL
+    char* urlCStr = rune_ffi_get_webview_url();
+    NSString* url = urlCStr ? [NSString stringWithUTF8String:urlCStr] : @"https://www.google.com";
+    if (urlCStr) rune_ffi_free_string(urlCStr);
+
+    NSLog(@"Creating CEF browser: %.0fx%.0f URL=%@", size.width, size.height, url);
+
+    // Create browser with correct size
+    CefWindowInfo info;
+    info.SetAsWindowless([self.view.window windowRef]);
+    CefBrowserSettings settings;
+    CefBrowserHost::CreateBrowser(info, cefHandler, [url UTF8String], settings, nullptr, nullptr);
+}
+
+- (void)syncCefSizeWithLayout {
+    float x = 0, y = 0;
+    uint32_t w = 0, h = 0;
+
+    if (rune_ffi_get_webview_position(&x, &y) && rune_ffi_get_webview_size(&w, &h) && w > 0 && h > 0) {
+        // x, y are already in logical pixels from FFI (transformed coords)
+        _lastWebViewRect = CGRectMake(x, y, (float)w, (float)h);
+
+        // Update CEF size if changed
+        if ((int)cefHandler->webviewSize.width != (int)w || (int)cefHandler->webviewSize.height != (int)h) {
+            NSLog(@"Updating CEF size: %dx%d -> %dx%d", (int)cefHandler->webviewSize.width, (int)cefHandler->webviewSize.height, w, h);
+            cefHandler->webviewSize = CGSizeMake(w, h);
+
+            if (cefHandler->cefBrowser && cefHandler->cefBrowser.get()) {
+                cefHandler->cefBrowser->GetHost()->WasResized();
+                cefHandler->cefBrowser->GetHost()->Invalidate(PET_VIEW);
+            }
+        }
+    }
 }
 
 - (void)renderViewDidResize {
-    rune_request_redraw();
+    [self.resizeTimer invalidate];
+    self.resizeTimer = [NSTimer scheduledTimerWithTimeInterval:0.1
+                                                        target:self
+                                                      selector:@selector(syncCefSizeWithLayout)
+                                                      userInfo:nil
+                                                       repeats:NO];
+}
+
+#pragma mark - Mouse Event Forwarding to CEF
+
+- (BOOL)isPointInWebView:(NSPoint)point localPoint:(NSPoint*)local {
+    if (CGRectIsEmpty(_lastWebViewRect)) {
+        NSLog(@"isPointInWebView: rect is empty");
+        return NO;
+    }
+
+    // Debug: log first click to verify coordinate systems
+    static BOOL logged = NO;
+    if (!logged) {
+        NSLog(@"isPointInWebView: point=(%.1f, %.1f) rect=(%.1f, %.1f, %.1f, %.1f)",
+              point.x, point.y,
+              _lastWebViewRect.origin.x, _lastWebViewRect.origin.y,
+              _lastWebViewRect.size.width, _lastWebViewRect.size.height);
+        logged = YES;
+    }
+
+    if (CGRectContainsPoint(_lastWebViewRect, point)) {
+        if (local) {
+            local->x = point.x - _lastWebViewRect.origin.x;
+            local->y = point.y - _lastWebViewRect.origin.y;
+        }
+        return YES;
+    }
+    return NO;
+}
+
+- (int)modifiersForEvent:(NSEvent*)event {
+    int m = 0;
+    NSUInteger flags = [event modifierFlags];
+    if (flags & NSEventModifierFlagControl) m |= EVENTFLAG_CONTROL_DOWN;
+    if (flags & NSEventModifierFlagShift) m |= EVENTFLAG_SHIFT_DOWN;
+    if (flags & NSEventModifierFlagOption) m |= EVENTFLAG_ALT_DOWN;
+    if (flags & NSEventModifierFlagCommand) m |= EVENTFLAG_COMMAND_DOWN;
+
+    switch ([event type]) {
+        case NSEventTypeLeftMouseDown:
+        case NSEventTypeLeftMouseUp:
+        case NSEventTypeLeftMouseDragged:
+            m |= EVENTFLAG_LEFT_MOUSE_BUTTON;
+            break;
+        case NSEventTypeRightMouseDown:
+        case NSEventTypeRightMouseUp:
+            m |= EVENTFLAG_RIGHT_MOUSE_BUTTON;
+            break;
+        default:
+            break;
+    }
+    return m;
+}
+
+- (void)sendCefMouseClick:(NSPoint)local event:(NSEvent*)event isUp:(BOOL)isUp {
+    if (!cefHandler->cefBrowser) return;
+
+    CefMouseEvent me;
+    me.x = (int)local.x;
+    me.y = (int)local.y;
+    me.modifiers = [self modifiersForEvent:event];
+
+    CefBrowserHost::MouseButtonType btn = MBT_LEFT;
+    if ([event type] == NSEventTypeRightMouseDown || [event type] == NSEventTypeRightMouseUp) {
+        btn = MBT_RIGHT;
+    }
+
+    cefHandler->cefBrowser->GetHost()->SendMouseClickEvent(me, btn, isUp, 1);
+}
+
+- (void)sendCefMouseMove:(NSPoint)local event:(NSEvent*)event mouseLeave:(BOOL)leave {
+    if (!cefHandler->cefBrowser) return;
+
+    CefMouseEvent me;
+    me.x = (int)local.x;
+    me.y = (int)local.y;
+    me.modifiers = [self modifiersForEvent:event];
+
+    cefHandler->cefBrowser->GetHost()->SendMouseMoveEvent(me, leave);
+}
+
+#pragma mark - Mouse Event Forwarding from RustRenderView
+
+- (void)forwardMouseDown:(NSEvent*)event point:(NSPoint)point {
+    NSPoint local;
+    if ([self isPointInWebView:point localPoint:&local]) {
+        NSLog(@"forwardMouseDown: view=(%.1f, %.1f) -> cef=(%.1f, %.1f)", point.x, point.y, local.x, local.y);
+        [self sendCefMouseClick:local event:event isUp:NO];
+    }
+}
+
+- (void)forwardMouseUp:(NSEvent*)event point:(NSPoint)point {
+    NSPoint local;
+    if ([self isPointInWebView:point localPoint:&local]) {
+        [self sendCefMouseClick:local event:event isUp:YES];
+    }
+}
+
+- (void)forwardMouseMove:(NSEvent*)event point:(NSPoint)point {
+    NSPoint local;
+    BOOL inWebView = [self isPointInWebView:point localPoint:&local];
+
+    if (inWebView) {
+        if (!_mouseInWebView) {
+            // Mouse entered WebView
+            _mouseInWebView = YES;
+        }
+        [self sendCefMouseMove:local event:event mouseLeave:NO];
+    } else if (_mouseInWebView) {
+        // Mouse left WebView - send leave event
+        _mouseInWebView = NO;
+        [self sendCefMouseMove:NSMakePoint(0, 0) event:event mouseLeave:YES];
+    }
+}
+
+- (void)forwardMouseDrag:(NSEvent*)event point:(NSPoint)point {
+    NSPoint local;
+    if ([self isPointInWebView:point localPoint:&local]) {
+        [self sendCefMouseMove:local event:event mouseLeave:NO];
+    }
 }
 
 @end
