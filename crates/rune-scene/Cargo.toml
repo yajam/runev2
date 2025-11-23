@@ -31,6 +31,8 @@ rune-config = { path = "../rune-config" }
 tracing = "0.1"
 serde = { workspace = true }
 dirs = "5"
+urlencoding = "2"
+log = "0.4"
 # Optional CEF integration for WebView elements
 rune-cef = { path = "../rune-cef", optional = true }
 

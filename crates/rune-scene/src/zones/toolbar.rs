@@ -6,11 +6,18 @@ use engine_core::{ColorLinPremul, Rect};
 pub struct Toolbar {
     pub style: ZoneStyle,
     pub address_bar: InputBox,
+    /// Whether the page is currently loading
+    pub is_loading: bool,
+    /// Loading indicator blink state
+    loading_icon_visible: bool,
+    /// Blink timer accumulator
+    blink_time: f32,
 }
 
 impl Toolbar {
     pub fn new() -> Self {
         // Create address bar input box (will be resized on first render)
+        // Start with empty URL - will be updated when CEF loads the home tab
         let address_bar = InputBox::new(
             Rect {
                 x: 0.0,
@@ -18,7 +25,7 @@ impl Toolbar {
                 w: 400.0,
                 h: 32.0,
             },
-            "https://example.com".to_string(),
+            String::new(),
             14.0,
             ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
             Some("Enter address...".to_string()),
@@ -28,7 +35,40 @@ impl Toolbar {
         Self {
             style: Self::default_style(),
             address_bar,
+            is_loading: false,
+            loading_icon_visible: true,
+            blink_time: 0.0,
         }
+    }
+
+    /// Set loading state
+    pub fn set_loading(&mut self, loading: bool) {
+        if loading && !self.is_loading {
+            // Starting to load - reset blink state
+            self.loading_icon_visible = true;
+            self.blink_time = 0.0;
+        }
+        self.is_loading = loading;
+    }
+
+    /// Update loading indicator blink (call each frame while loading).
+    /// Uses ~16ms frame time assumption for 60fps.
+    pub fn update_loading_blink(&mut self) {
+        if self.is_loading {
+            const BLINK_INTERVAL: f32 = 0.3; // 300ms on/off cycle
+            const FRAME_TIME: f32 = 1.0 / 60.0; // ~16ms
+
+            self.blink_time += FRAME_TIME;
+            if self.blink_time >= BLINK_INTERVAL {
+                self.blink_time -= BLINK_INTERVAL;
+                self.loading_icon_visible = !self.loading_icon_visible;
+            }
+        }
+    }
+
+    /// Check if loading icon should be visible this frame
+    pub fn is_loading_icon_visible(&self) -> bool {
+        self.is_loading && self.loading_icon_visible
     }
 
     pub fn default_style() -> ZoneStyle {
@@ -144,7 +184,7 @@ impl Toolbar {
         self.address_bar.render(canvas, 10200, provider);
         x += address_width + SECTION_GAP;
 
-        // 5. Refresh button (after address bar)
+        // 5. Refresh/Spinner button (after address bar)
         let refresh_rect = Rect {
             x,
             y: center_y,
@@ -152,13 +192,29 @@ impl Toolbar {
             h: BUTTON_SIZE,
         };
         canvas.hit_region_rect(REFRESH_BUTTON_REGION_ID, refresh_rect, 10150);
-        canvas.draw_svg_styled(
-            "images/refresh.svg",
-            [x, center_y],
-            [BUTTON_SIZE, BUTTON_SIZE],
-            icon_style.clone(),
-            10200,
-        );
+
+        if self.is_loading {
+            // Draw blinking loader icon while loading (clicking stops the load)
+            // Only draw when visible (blink on phase)
+            if self.loading_icon_visible {
+                canvas.draw_svg_styled(
+                    "images/loader.svg",
+                    [x, center_y],
+                    [BUTTON_SIZE, BUTTON_SIZE],
+                    icon_style.clone(),
+                    10200,
+                );
+            }
+        } else {
+            // Draw static refresh icon
+            canvas.draw_svg_styled(
+                "images/refresh.svg",
+                [x, center_y],
+                [BUTTON_SIZE, BUTTON_SIZE],
+                icon_style.clone(),
+                10200,
+            );
+        }
 
         // 6. DevTools button (right edge)
         let devtools_x = toolbar_rect.w - BUTTON_SIZE - MARGIN;

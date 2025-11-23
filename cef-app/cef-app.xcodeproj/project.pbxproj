@@ -446,6 +446,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = E4856BB825552D6900E02BBF /* Build configuration list for PBXNativeTarget "cef-app" */;
 			buildPhases = (
+				E5D1B0012A0DDEAD00C0FFEE /* Run build-rust */,
 				E4856B8A25552D6800E02BBF /* Sources */,
 				E4856B8B25552D6800E02BBF /* Frameworks */,
 				E4856B8C25552D6800E02BBF /* Resources */,
@@ -782,6 +783,23 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		E5D1B0012A0DDEAD00C0FFEE /* Run build-rust */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"$SRCROOT/build-rust.sh\"\\n";
+		};
 		E485701D25583DB500E02BBF /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;

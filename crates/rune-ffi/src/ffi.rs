@@ -316,3 +316,166 @@ pub extern "C" fn rune_ffi_get_webview_rect(
 
     false
 }
+
+// ============================================================================
+// Navigation FFI Functions
+// ============================================================================
+
+/// Navigation command types for the native side.
+/// Must match the values expected by the Objective-C code.
+#[repr(C)]
+pub struct NavigationCommand {
+    /// Command type: 0=LoadUrl, 1=GoBack, 2=GoForward, 3=Reload, 4=Stop
+    pub command_type: u32,
+    /// URL for LoadUrl command (null-terminated, must be freed with rune_ffi_free_string)
+    pub url: *mut c_char,
+}
+
+/// Check if there are pending navigation commands.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_has_navigation_command() -> bool {
+    rune_scene::navigation::has_pending_commands()
+}
+
+/// Pop the next navigation command from the queue.
+/// Returns a NavigationCommand struct with command_type and optional url.
+/// The url field must be freed with rune_ffi_free_string if not null.
+/// Returns command_type=255 if no command is available.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_pop_navigation_command() -> NavigationCommand {
+    use rune_scene::navigation::NavigationCommand as NavCmd;
+
+    match rune_scene::navigation::pop_navigation_command() {
+        Some(NavCmd::LoadUrl(url)) => {
+            let url_cstr = match std::ffi::CString::new(url) {
+                Ok(s) => s.into_raw(),
+                Err(_) => std::ptr::null_mut(),
+            };
+            NavigationCommand {
+                command_type: 0, // LoadUrl
+                url: url_cstr,
+            }
+        }
+        Some(NavCmd::GoBack) => NavigationCommand {
+            command_type: 1,
+            url: std::ptr::null_mut(),
+        },
+        Some(NavCmd::GoForward) => NavigationCommand {
+            command_type: 2,
+            url: std::ptr::null_mut(),
+        },
+        Some(NavCmd::Reload) => NavigationCommand {
+            command_type: 3,
+            url: std::ptr::null_mut(),
+        },
+        Some(NavCmd::Stop) => NavigationCommand {
+            command_type: 4,
+            url: std::ptr::null_mut(),
+        },
+        None => NavigationCommand {
+            command_type: 255, // No command
+            url: std::ptr::null_mut(),
+        },
+    }
+}
+
+/// Get the render target for a URL.
+/// Returns 0 for IR rendering, 1 for CEF rendering.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_get_render_target(url: *const c_char) -> u32 {
+    use rune_scene::navigation::{determine_render_target, RenderTarget};
+
+    if url.is_null() {
+        return 1; // Default to CEF
+    }
+
+    let url_str = match unsafe { CStr::from_ptr(url).to_str() } {
+        Ok(s) => s,
+        Err(_) => return 1,
+    };
+
+    match determine_render_target(url_str) {
+        RenderTarget::Ir => 0,
+        RenderTarget::Cef => 1,
+    }
+}
+
+/// Update navigation state from CEF.
+/// Called by the native side when CEF reports state changes.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_update_navigation_state(
+    url: *const c_char,
+    can_go_back: bool,
+    can_go_forward: bool,
+    is_loading: bool,
+) {
+    let url_str = if url.is_null() {
+        None
+    } else {
+        unsafe { CStr::from_ptr(url).to_str().ok().map(String::from) }
+    };
+
+    rune_scene::navigation::update_state(url_str, can_go_back, can_go_forward, is_loading);
+}
+
+/// Get the current URL from navigation state.
+/// Returns NULL if no URL is set.
+/// The returned string must be freed with rune_ffi_free_string.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_get_current_url() -> *mut c_char {
+    match rune_scene::navigation::get_current_url() {
+        Some(url) => match std::ffi::CString::new(url) {
+            Ok(s) => s.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// Get current render target.
+/// Returns 0 for IR, 1 for CEF.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_get_current_render_target() -> u32 {
+    use rune_scene::navigation::{get_render_target, RenderTarget};
+
+    match get_render_target() {
+        RenderTarget::Ir => 0,
+        RenderTarget::Cef => 1,
+    }
+}
+
+/// Update the address bar text.
+/// Called by the native side when CEF navigates to a new URL.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_set_address_bar_url(url: *const c_char) {
+    if url.is_null() {
+        return;
+    }
+
+    let url_str = match unsafe { CStr::from_ptr(url).to_str() } {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    log::debug!("Setting address bar URL: {}", url_str);
+
+    with_renderer(|r| {
+        r.set_address_bar_text(url_str);
+    });
+}
+
+/// Check if a page is currently loading.
+/// Returns true if the browser is loading a page.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_is_loading() -> bool {
+    rune_scene::navigation::get_state().is_loading
+}
+
+/// Update the toolbar loading state and spinner animation.
+/// Call this each frame to keep the spinner animating while loading.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_update_toolbar_loading() {
+    with_renderer(|r| {
+        r.update_toolbar_loading();
+    });
+}

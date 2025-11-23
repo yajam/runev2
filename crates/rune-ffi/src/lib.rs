@@ -336,6 +336,7 @@ impl AppRenderer {
                                     .clear_all_focus();
 
                                 log::info!("Back button clicked");
+                                rune_scene::navigation::go_back();
                                 self.needs_redraw = true;
                             }
                             FORWARD_BUTTON_REGION_ID => {
@@ -351,6 +352,7 @@ impl AppRenderer {
                                     .clear_all_focus();
 
                                 log::info!("Forward button clicked");
+                                rune_scene::navigation::go_forward();
                                 self.needs_redraw = true;
                             }
                             REFRESH_BUTTON_REGION_ID => {
@@ -365,7 +367,14 @@ impl AppRenderer {
                                     .element_state_mut()
                                     .clear_all_focus();
 
-                                log::info!("Refresh button clicked");
+                                // If loading, stop; otherwise refresh
+                                if self.zone_manager.toolbar.is_loading {
+                                    log::info!("Stop button clicked");
+                                    rune_scene::navigation::stop();
+                                } else {
+                                    log::info!("Refresh button clicked");
+                                    rune_scene::navigation::reload();
+                                }
                                 self.needs_redraw = true;
                             }
                             ADDRESS_BAR_REGION_ID => {
@@ -576,18 +585,18 @@ impl AppRenderer {
     /// Handle key event
     pub fn key_event(&mut self, keycode: u32, pressed: bool) {
         use winit::event::ElementState;
-        use winit::keyboard::{KeyCode, ModifiersState};
+        use winit::keyboard::ModifiersState;
 
         // macOS virtual key codes for navigation/editing keys we care about.
         const VK_BACKSPACE: u32 = 51;
         const VK_DELETE_FORWARD: u32 = 117;
         const VK_LEFT: u32 = 123;
         const VK_RIGHT: u32 = 124;
-        const VK_DOWN: u32 = 125;
-        const VK_UP: u32 = 126;
         const VK_HOME: u32 = 115;
         const VK_END: u32 = 119;
         const VK_ESCAPE: u32 = 53;
+        const VK_RETURN: u32 = 36;
+        const VK_NUMPAD_ENTER: u32 = 76;
 
         log::debug!("Key event: keycode={} pressed={}", keycode, pressed);
 
@@ -597,6 +606,15 @@ impl AppRenderer {
             let word_modifier = false; // TODO: wire real modifiers from macOS events.
 
             match keycode {
+                VK_RETURN | VK_NUMPAD_ENTER => {
+                    // Navigate to the URL in the address bar
+                    let url = self.zone_manager.toolbar.address_bar.text.clone();
+                    log::info!("Address bar: navigating to '{}'", url);
+                    rune_scene::navigation::navigate_to(&url);
+                    // Blur the address bar after navigation
+                    self.zone_manager.toolbar.address_bar.focused = false;
+                    handled = true;
+                }
                 VK_BACKSPACE => {
                     self.zone_manager.toolbar.address_bar.delete_before_cursor();
                     handled = true;
@@ -723,6 +741,31 @@ impl AppRenderer {
     /// Request redraw
     pub fn request_redraw(&mut self) {
         self.needs_redraw = true;
+    }
+
+    /// Set the address bar text (e.g., when CEF navigates to a new URL)
+    pub fn set_address_bar_text(&mut self, url: &str) {
+        self.zone_manager.toolbar.address_bar.set_text(url);
+        self.needs_redraw = true;
+    }
+
+    /// Update toolbar loading state from navigation state.
+    /// Call this each frame to animate the loading indicator.
+    pub fn update_toolbar_loading(&mut self) {
+        let nav_state = rune_scene::navigation::get_state();
+        let was_loading = self.zone_manager.toolbar.is_loading;
+
+        self.zone_manager.toolbar.set_loading(nav_state.is_loading);
+
+        if nav_state.is_loading {
+            // Update blink animation
+            self.zone_manager.toolbar.update_loading_blink();
+            // Keep redrawing while loading to animate
+            self.needs_redraw = true;
+        } else if was_loading {
+            // Just stopped loading, need one more redraw
+            self.needs_redraw = true;
+        }
     }
 
     /// Get the URL of the first WebView element in the loaded IR package.

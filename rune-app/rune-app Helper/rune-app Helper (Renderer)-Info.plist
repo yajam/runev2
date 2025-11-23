@@ -29,5 +29,7 @@
 	<string>1</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Bluetooth access is used to allow embedded web content to find and connect to nearby devices.</string>
 </dict>
 </plist>

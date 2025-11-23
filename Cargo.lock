@@ -4195,6 +4195,7 @@ dependencies = [
  "anyhow",
  "dirs",
  "engine-core",
+ "log",
  "pollster 0.3.0",
  "rfd",
  "rune-cef",
@@ -4208,6 +4209,7 @@ dependencies = [
  "serde_json",
  "taffy",
  "tracing",
+ "urlencoding",
  "wgpu",
  "winit",
 ]

@@ -22,6 +22,15 @@ if [ "$CONFIGURATION" = "Debug" ]; then
     cargo build -p rune-ffi
 else
     CARGO_PROFILE="release"
+
+    # Favor smaller static libs for Xcode consumers.
+    # These env vars override the release profile without touching Cargo.toml.
+    export CARGO_PROFILE_RELEASE_LTO=false
+    export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
+    export CARGO_PROFILE_RELEASE_OPT_LEVEL=z
+    export CARGO_PROFILE_RELEASE_PANIC=abort
+    export CARGO_PROFILE_RELEASE_STRIP=symbols
+
     cargo build -p rune-ffi --release
 fi
 
@@ -33,6 +42,12 @@ LIB_PATH="$PROJECT_ROOT/target/$CARGO_PROFILE/librune_ffi.a"
 
 if [ -f "$LIB_PATH" ]; then
     cp "$LIB_PATH" "$LIB_DIR/"
+
+    # Strip debug info from the copied archive to keep size low.
+    if command -v strip >/dev/null 2>&1; then
+        strip -x "$LIB_DIR/librune_ffi.a" 2>/dev/null || strip -S "$LIB_DIR/librune_ffi.a" || true
+    fi
+
     echo "Copied $LIB_PATH to $LIB_DIR/"
     echo "Library size: $(ls -lh "$LIB_DIR/librune_ffi.a" | awk '{print $5}')"
 else

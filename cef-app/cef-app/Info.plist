@@ -26,5 +26,7 @@
 	<string>Main</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Bluetooth access is used to allow embedded web content to find and connect to nearby devices.</string>
 </dict>
 </plist>

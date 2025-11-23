@@ -33,6 +33,18 @@ public:
         if (process_type.empty()) {
             
             command_line->AppendSwitch("use-mock-keychain");
+            command_line->AppendSwitch("disable-background-networking");
+            command_line->AppendSwitch("disable-component-update");
+            command_line->AppendSwitch("disable-client-side-phishing-detection");
+            command_line->AppendSwitch("disable-domain-reliability");
+            command_line->AppendSwitch("disable-sync");
+            command_line->AppendSwitch("safebrowsing-disable-auto-update");
+            command_line->AppendSwitch("metrics-recording-only");
+            command_line->AppendSwitch("no-pings");
+            command_line->AppendSwitchWithValue("variations-server-url", "http://127.0.0.1/");
+            command_line->AppendSwitchWithValue(
+                "disable-features",
+                "AutofillServerCommunication,OptimizationHints,Translate,NetworkTimeServiceQuerying");
 //            command_line->AppendSwitch("show-fps-counter");
 //            command_line->AppendSwitch("disable-gpu");
 //            command_line->AppendSwitch("disable-gpu-vsync");
@@ -76,6 +88,7 @@ int main(int argc, const char * argv[]) {
         CefSettings cefSettings;
         cefSettings.windowless_rendering_enabled = true;
         cefSettings.no_sandbox = true;
+        cefSettings.crash_reporter_enabled = false;
         
         CefRefPtr<CefBrowserApp> cefBrowserApp = new CefBrowserApp([appDelegate](){
             [appDelegate cefContextInitialized];

@@ -23,7 +23,7 @@
 - [ ] Root level font definition inherit
 - [ ] Theming support dark mode, light mode system mode
 - [ ] Native menus support
-- [ ] Web page rendering
+- [x] Web page rendering (NSView CEF via rune-ffi)
 - [ ] Fallback theough headless CEF
 
 ## IR Porting
@@ -38,6 +38,7 @@
 
 - [ ] Text is still not crisp, specs and dust flickering
 - [x] Textarea caret down is not working correctly
+- [ ] Smooth scrolling in CEF/NSView rendering path
 - [ ] Edge visbility fix using background expansion
 - [x] Caret blink is not consistent
 - [x] Change SVG to true vector
@@ -71,6 +72,7 @@ Testing
 - [ ] Platform parity for Wayland/macOS/Windows IME & scaling
 - [ ] Testing suite (layout/text/gpu/event/IR)
 - [ ] Developer tooling & CI
+- [ ] Explore further `librune_ffi.a` size reductions (feature gating, symbols, archive tools) beyond current ~54M build
 
 ---
 
@@ -80,4 +82,6 @@ Problem: Today `rune-scene` assumes a winit-owned window/event loop and owns the
 
 Stopgap: `rune-app` embeds Rune via `rune-ffi` as a pure renderer: Cocoa/CEF own the window and message loop, and pass a `CAMetalLayer` plus mouse/keyboard/text events and an OSR pixel buffer (for WebView textures) into the Rune compositor. This keeps all of the complex CEF bootstrap and helper processes inside the existing Xcode project, at the cost of re-implementing the window/input glue that the winit runner already has.
 
-Potential solution: Long term, move CEF initialization and OSR hosting into a dedicated “CEF backend” wired directly into `rune-scene`’s winit runner (via the `webview-cef` / `rune-cef` path). That means: initializing CEF on the main thread behind a reusable abstraction, integrating its message pumping with winit’s event loop, and wiring WebView frames into the Rune compositor and hit-testing from the winit-owned `wgpu::Surface`. Once that path is stable, `rune-app` can become a thin wrapper around the winit-based Rune binary, and the current `rune-ffi` + Cocoa glue can be retired or kept only as an embedding option.*** End Patch*** ```
+Potential solution: Long term, move CEF initialization and OSR hosting into a dedicated “CEF backend” wired directly into `rune-scene`’s winit runner (via the `webview-cef` / `rune-cef` path). That means: initializing CEF on the main thread behind a reusable abstraction, integrating its message pumping with winit’s event loop, and wiring WebView frames into the Rune compositor and hit-testing from the winit-owned `wgpu::Surface`. Once that path is stable, `rune-app` can become a thin wrapper around the winit-based Rune binary, and the current `rune-ffi` + Cocoa glue can be retired or kept only as an embedding option.
+
+Status: NSView-based CEF rendering is working through `rune-ffi`; the remaining known gap is smoothing out scroll behavior in that path.

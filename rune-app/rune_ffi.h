@@ -166,6 +166,101 @@ void rune_ffi_position_cef_view(float x, float y, float width, float height);
  */
 bool rune_ffi_get_webview_rect(float* x, float* y, float* width, float* height);
 
+/* ==========================================================================
+ * Navigation API
+ * ========================================================================== */
+
+/*
+ * Navigation command structure returned by rune_ffi_pop_navigation_command.
+ */
+typedef struct {
+    /* Command type: 0=LoadUrl, 1=GoBack, 2=GoForward, 3=Reload, 4=Stop, 255=None */
+    uint32_t command_type;
+    /* URL for LoadUrl command (must be freed with rune_ffi_free_string), NULL otherwise */
+    char* url;
+} RuneNavigationCommand;
+
+/* Navigation command type constants */
+#define RUNE_NAV_LOAD_URL    0
+#define RUNE_NAV_GO_BACK     1
+#define RUNE_NAV_GO_FORWARD  2
+#define RUNE_NAV_RELOAD      3
+#define RUNE_NAV_STOP        4
+#define RUNE_NAV_NONE        255
+
+/* Render target constants */
+#define RUNE_RENDER_IR       0
+#define RUNE_RENDER_CEF      1
+
+/*
+ * Check if there are pending navigation commands.
+ *
+ * @return true if there are commands waiting to be processed
+ */
+bool rune_ffi_has_navigation_command(void);
+
+/*
+ * Pop the next navigation command from the queue.
+ * If command_type is RUNE_NAV_LOAD_URL, the url field must be freed with rune_ffi_free_string.
+ *
+ * @return Navigation command structure (command_type=RUNE_NAV_NONE if no command)
+ */
+RuneNavigationCommand rune_ffi_pop_navigation_command(void);
+
+/*
+ * Get the render target for a URL.
+ *
+ * @param url The URL to check
+ * @return RUNE_RENDER_IR (0) for IR rendering, RUNE_RENDER_CEF (1) for CEF rendering
+ */
+uint32_t rune_ffi_get_render_target(const char* url);
+
+/*
+ * Update navigation state from CEF.
+ * Call this when CEF reports navigation state changes (e.g., after page load).
+ *
+ * @param url Current URL (may be NULL)
+ * @param can_go_back Whether browser can go back
+ * @param can_go_forward Whether browser can go forward
+ * @param is_loading Whether a page is currently loading
+ */
+void rune_ffi_update_navigation_state(const char* url, bool can_go_back, bool can_go_forward, bool is_loading);
+
+/*
+ * Get the current URL from navigation state.
+ *
+ * @return URL string (must be freed with rune_ffi_free_string), or NULL
+ */
+char* rune_ffi_get_current_url(void);
+
+/*
+ * Get the current render target.
+ *
+ * @return RUNE_RENDER_IR (0) or RUNE_RENDER_CEF (1)
+ */
+uint32_t rune_ffi_get_current_render_target(void);
+
+/*
+ * Update the address bar URL text.
+ * Called when CEF navigates to a new URL to keep the address bar in sync.
+ *
+ * @param url The URL to display in the address bar
+ */
+void rune_ffi_set_address_bar_url(const char* url);
+
+/*
+ * Check if a page is currently loading.
+ *
+ * @return true if loading, false otherwise
+ */
+bool rune_ffi_is_loading(void);
+
+/*
+ * Update the toolbar loading state and spinner animation.
+ * Call this each frame to animate the spinner while loading.
+ */
+void rune_ffi_update_toolbar_loading(void);
+
 #ifdef __cplusplus
 }
 #endif

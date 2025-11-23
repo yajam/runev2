@@ -258,6 +258,28 @@ impl InputBox {
         });
     }
 
+    /// Set the entire text content, replacing any existing text.
+    /// Moves cursor to end of text and clears selection.
+    pub fn set_text(&mut self, new_text: &str) {
+        self.text = new_text.to_string();
+        self.cursor_position = self.text.len();
+        self.rt_selection = RtSelection::collapsed(self.cursor_position);
+        self.scroll_x = 0.0;
+
+        // Rebuild the text layout with new content
+        if let Some(ref mut layout) = self.rt_layout {
+            if let Ok(font) = load_system_default_font() {
+                *layout = RtTextLayout::with_wrap(
+                    self.text.clone(),
+                    &font,
+                    self.text_size,
+                    None,
+                    RtWrapMode::NoWrap,
+                );
+            }
+        }
+    }
+
     /// Delete the character before the cursor (backspace).
     pub fn delete_before_cursor(&mut self) {
         // If there's a selection, delete it regardless of cursor position
