@@ -52,6 +52,7 @@ Improvements
 - [ ] Implement a scrollbar
 - [ ] Refactor and move viewport_ir as a second demo-app
 - [ ] Text must ALWAYS be rendered in a linear (unorm) format, with premultiplied alpha, into a linear color attachment.
+- [ ] Add style parameter for all elements and make it robust
 
 Testing
 

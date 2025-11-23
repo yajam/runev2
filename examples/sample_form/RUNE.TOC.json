@@ -1,0 +1,14 @@
+{
+  "entries": {
+    "views/data/form.json": {
+      "sha256": "145243960596ef812774b0c2ddb17d312f91fd894d9f5750e895c9426c215ae3",
+      "size": 2871,
+      "offset": 0
+    },
+    "views/layout/form.vizr": {
+      "sha256": "ca52af42e5d741c3a56c47d539862520f4dc52d9e09b96a032a3d6ff5ba7c9c5",
+      "size": 17703,
+      "offset": 0
+    }
+  }
+}

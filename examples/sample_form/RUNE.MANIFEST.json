@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "entrypoint": {
+    "id": "sample_form",
+    "data": "views/data/form.json",
+    "view": "views/layout/form.vizr",
+    "page_title": "WASM Form Sample",
+    "logic": "logic/sample_form.wasm"
+  },
+  "locales": {},
+  "capabilities": ["network"],
+  "integrity": null
+}
