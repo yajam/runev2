@@ -1,5 +1,12 @@
-// ViewController.mm - CEF browser with Rust/wgpu rendering
-// CEF pixels are uploaded to Rust for GPU texture rendering
+// ViewController.mm - Native NSView-based CEF rendering with Rust/wgpu
+//
+// Architecture:
+//   NSWindow
+//   ├── MTKView (wgpu surface) - Rust renders UI here
+//   └── NSView (CEF browser) - macOS composites CEF on top at viewport rect
+//
+// CEF renders to its own native NSView. macOS composites it over the wgpu surface.
+// This avoids the OSR pixel copy overhead and provides native scrolling/input.
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Weverything"
@@ -17,60 +24,42 @@
 
 @class RustRenderView;
 
-#pragma mark - CEF Handler
+#pragma mark - CEF Handler for Native View
 
-class CefHandler : public CefClient, public CefRenderHandler, public CefLifeSpanHandler {
+class CefNativeHandler : public CefClient, public CefLifeSpanHandler, public CefDisplayHandler {
 public:
-    CefRefPtr<CefBrowser> cefBrowser;
-    RustRenderView* __weak view;
-    CGSize webviewSize;
-    float scaleFactor;
+    CefRefPtr<CefBrowser> browser;
+    NSView* __weak parentView;
 
-    CefHandler(RustRenderView* renderView) : view(renderView), webviewSize(CGSizeMake(800, 600)), scaleFactor(2.0) {}
+    CefNativeHandler(NSView* parent) : parentView(parent) {}
 
-    virtual CefRefPtr<CefRenderHandler> GetRenderHandler() override { return this; }
     virtual CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
-    virtual void OnAfterCreated(CefRefPtr<CefBrowser> browser) override { this->cefBrowser = browser; }
+    virtual CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
 
-    virtual void GetViewRect(CefRefPtr<CefBrowser> browser, CefRect& rect) override {
-        // Return size in logical pixels - CEF will multiply by scale factor
-        rect.Set(0, 0, (int)webviewSize.width, (int)webviewSize.height);
+    virtual void OnAfterCreated(CefRefPtr<CefBrowser> b) override {
+        browser = b;
+        NSLog(@"CEF browser created (native view mode)");
     }
 
-    virtual bool GetScreenInfo(CefRefPtr<CefBrowser> browser, CefScreenInfo& screenInfo) override {
-        screenInfo.device_scale_factor = scaleFactor;
-        return true;
+    virtual void OnTitleChange(CefRefPtr<CefBrowser> browser, const CefString& title) override {
+        NSString* nsTitle = [NSString stringWithUTF8String:title.ToString().c_str()];
+        NSLog(@"CEF title changed: %@", nsTitle);
     }
-
-    virtual void OnPaint(CefRefPtr<CefBrowser> browser,
-                         PaintElementType type,
-                         const RectList& dirtyRects,
-                         const void* buffer,
-                         int width,
-                         int height) override;
 
 private:
-    IMPLEMENT_REFCOUNTING(CefHandler);
+    IMPLEMENT_REFCOUNTING(CefNativeHandler);
 };
 
-#pragma mark - Rust Render View
+#pragma mark - Rust Render View (wgpu surface)
 
 @interface RustRenderView : NSView
 @property (nonatomic) float scaleFactor;
 @property (nonatomic, weak) id resizeDelegate;
-- (void)uploadCefPixels:(const void*)buffer width:(int)width height:(int)height;
 @end
 
 @protocol RustRenderViewResizeDelegate
 - (void)renderViewDidResize;
 - (void)rustRendererInitialized;
-- (void)forwardMouseDown:(NSEvent*)event point:(NSPoint)point;
-- (void)forwardMouseUp:(NSEvent*)event point:(NSPoint)point;
-- (void)forwardMouseMove:(NSEvent*)event point:(NSPoint)point;
-- (void)forwardMouseDrag:(NSEvent*)event point:(NSPoint)point;
-- (void)forwardKeyDown:(NSEvent*)event;
-- (void)forwardKeyUp:(NSEvent*)event;
-- (void)forwardScroll:(NSEvent*)event point:(NSPoint)point;
 @end
 
 @implementation RustRenderView {
@@ -93,7 +82,6 @@ private:
         self.layer = _metalLayer;
         _initialized = NO;
 
-        // Set up tracking area for mouse move events
         [self updateTrackingAreas];
     }
     return self;
@@ -176,13 +164,6 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
     }
 }
 
-- (void)uploadCefPixels:(const void*)buffer width:(int)width height:(int)height {
-    if (!buffer || width <= 0 || height <= 0 || !_initialized) return;
-
-    // CEF is on main thread in windowless mode - call directly
-    rune_ffi_upload_webview_pixels(NULL, (const uint8_t*)buffer, (uint32_t)width, (uint32_t)height, (uint32_t)width * 4);
-}
-
 - (void)dealloc {
     if (_displayLink) {
         CVDisplayLinkStop(_displayLink);
@@ -201,70 +182,32 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
         const char *utf8 = [chars UTF8String];
         if (utf8 && utf8[0] != 0) rune_ffi_text_input(utf8);
     }
-
-    // Also forward key events to the resize delegate (ViewController) so it
-    // can route them into CEF when the WebView has focus.
-    if ([self.resizeDelegate respondsToSelector:@selector(forwardKeyDown:)]) {
-        [(id)self.resizeDelegate forwardKeyDown:event];
-    }
 }
 
 - (void)keyUp:(NSEvent *)event {
     if (!_initialized) { [super keyUp:event]; return; }
     rune_ffi_key_event(event.keyCode, false);
-
-    if ([self.resizeDelegate respondsToSelector:@selector(forwardKeyUp:)]) {
-        [(id)self.resizeDelegate forwardKeyUp:event];
-    }
 }
 
 - (void)mouseDown:(NSEvent *)event {
     [self.window makeFirstResponder:self];
     NSPoint p = [self flipPoint:[self convertPoint:[event locationInWindow] fromView:nil]];
     rune_ffi_mouse_click(p.x * _scaleFactor, p.y * _scaleFactor, true);
-
-    // Forward to CEF if in WebView
-    if ([self.resizeDelegate respondsToSelector:@selector(forwardMouseDown:point:)]) {
-        [(id)self.resizeDelegate forwardMouseDown:event point:p];
-    }
 }
 
 - (void)mouseUp:(NSEvent *)event {
     NSPoint p = [self flipPoint:[self convertPoint:[event locationInWindow] fromView:nil]];
     rune_ffi_mouse_click(p.x * _scaleFactor, p.y * _scaleFactor, false);
-
-    if ([self.resizeDelegate respondsToSelector:@selector(forwardMouseUp:point:)]) {
-        [(id)self.resizeDelegate forwardMouseUp:event point:p];
-    }
 }
 
 - (void)mouseMoved:(NSEvent *)event {
     NSPoint p = [self flipPoint:[self convertPoint:[event locationInWindow] fromView:nil]];
     rune_ffi_mouse_move(p.x * _scaleFactor, p.y * _scaleFactor);
-
-    if ([self.resizeDelegate respondsToSelector:@selector(forwardMouseMove:point:)]) {
-        [(id)self.resizeDelegate forwardMouseMove:event point:p];
-    }
 }
 
 - (void)mouseDragged:(NSEvent *)event {
     NSPoint p = [self flipPoint:[self convertPoint:[event locationInWindow] fromView:nil]];
     rune_ffi_mouse_move(p.x * _scaleFactor, p.y * _scaleFactor);
-
-    if ([self.resizeDelegate respondsToSelector:@selector(forwardMouseDrag:point:)]) {
-        [(id)self.resizeDelegate forwardMouseDrag:event point:p];
-    }
-}
-
-- (void)scrollWheel:(NSEvent *)event {
-    // Forward scroll position (in view-local logical coords) to delegate so it
-    // can route wheel events into CEF when appropriate.
-    NSPoint p = [self flipPoint:[self convertPoint:[event locationInWindow] fromView:nil]];
-    if ([self.resizeDelegate respondsToSelector:@selector(forwardScroll:point:)]) {
-        [(id)self.resizeDelegate forwardScroll:event point:p];
-    } else {
-        [super scrollWheel:event];
-    }
 }
 
 - (NSPoint)flipPoint:(NSPoint)p {
@@ -273,384 +216,203 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
 
 @end
 
-// CEF OnPaint implementation
-void CefHandler::OnPaint(CefRefPtr<CefBrowser> browser,
-                         PaintElementType type,
-                         const RectList& dirtyRects,
-                         const void* buffer,
-                         int width,
-                         int height) {
-    RustRenderView* v = view;
-    if (v) {
-        [v uploadCefPixels:buffer width:width height:height];
+#pragma mark - CEF Browser View (native NSView)
+
+@interface CefBrowserView : NSView
+@property (nonatomic) CefRefPtr<CefBrowser> browser;
+@end
+
+@implementation CefBrowserView
+
+- (instancetype)initWithFrame:(NSRect)frameRect {
+    self = [super initWithFrame:frameRect];
+    if (self) {
+        self.wantsLayer = YES;
+        self.layer.backgroundColor = [[NSColor clearColor] CGColor];
     }
+    return self;
 }
+
+- (BOOL)acceptsFirstResponder { return YES; }
+- (BOOL)canBecomeKeyView { return YES; }
+
+@end
 
 #pragma mark - ViewController
 
 @interface ViewController() <RustRenderViewResizeDelegate>
 @property (nonatomic, strong) RustRenderView* renderView;
-@property (nonatomic, strong) NSTimer* resizeTimer;
+@property (nonatomic, strong) CefBrowserView* cefView;
+@property (nonatomic, strong) NSTimer* layoutTimer;
 @end
 
 @implementation ViewController {
-    CefRefPtr<CefHandler> cefHandler;
-    CGRect _lastWebViewRect;  // Cached WebView rect in logical coords
-    BOOL _mouseInWebView;     // Track if mouse is inside WebView for enter/leave events
-    BOOL _cefHasFocus;        // Track whether CEF should receive keyboard events
-    BOOL _isDraggingInWebView; // Track if drag started in WebView (continue even outside bounds)
+    CefRefPtr<CefNativeHandler> _cefHandler;
+    BOOL _cefBrowserCreated;
+    CGRect _lastWebViewRect;
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
 
+    // Create wgpu render view (bottom layer)
     _renderView = [[RustRenderView alloc] initWithFrame:self.view.bounds];
     _renderView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     _renderView.resizeDelegate = self;
     [self.view addSubview:_renderView];
 
-    cefHandler = new CefHandler(_renderView);
+    // Create CEF browser view (top layer, positioned at viewport rect)
+    _cefView = [[CefBrowserView alloc] initWithFrame:NSZeroRect];
+    _cefView.hidden = YES; // Hidden until we know the viewport rect
+    [self.view addSubview:_cefView positioned:NSWindowAbove relativeTo:_renderView];
+
+    _cefHandler = new CefNativeHandler(_cefView);
+    _cefBrowserCreated = NO;
     _lastWebViewRect = CGRectZero;
-    _mouseInWebView = NO;
-    _cefHasFocus = NO;
-    _isDraggingInWebView = NO;
 }
 
 - (void)rustRendererInitialized {
-    cefHandler->scaleFactor = _renderView.scaleFactor;
+    NSLog(@"Rust renderer initialized, waiting for layout...");
 
-    // Force multiple renders to ensure layout is computed and rect is stored
-    // The first render computes layout, subsequent renders store the transformed rect
+    // Render a few frames to compute layout
     rune_ffi_render();
     rune_ffi_render();
     rune_ffi_render();
 
-    // Now try to get the size - if not available, poll until it is
+    // Try to get the WebView rect from layout
     [self createCefBrowserWhenLayoutReady:0];
 }
 
 - (void)createCefBrowserWhenLayoutReady:(int)attempt {
-    float x = 0, y = 0;
-    uint32_t w = 0, h = 0;
+    float x = 0, y = 0, w = 0, h = 0;
 
-    // Check if layout-computed size is available
-    BOOL hasLayout = rune_ffi_get_webview_position(&x, &y) && rune_ffi_get_webview_size(&w, &h) && w > 0 && h > 0;
+    // Check if layout-computed rect is available
+    BOOL hasLayout = rune_ffi_get_webview_rect(&x, &y, &w, &h) && w > 0 && h > 0;
 
     if (hasLayout) {
-        // x, y are in logical pixels from FFI (already transformed), w, h are logical pixels
-        // No scale conversion needed - all values are in logical coords
-        NSLog(@"Got layout-computed WebView size: %dx%d at (%.1f, %.1f) [logical]", w, h, x, y);
-        _lastWebViewRect = CGRectMake(x, y, (float)w, (float)h);
-        [self createCefBrowserWithSize:CGSizeMake(w, h)];
+        NSLog(@"Got WebView rect from layout: (%.1f, %.1f) %.0fx%.0f [logical]", x, y, w, h);
+        _lastWebViewRect = CGRectMake(x, y, w, h);
+        [self createCefBrowserAtRect:_lastWebViewRect];
     } else if (attempt < 10) {
-        // Not ready yet, render another frame and try again
         NSLog(@"Layout not ready (attempt %d), rendering and retrying...", attempt);
         rune_ffi_render();
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.05 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [self createCefBrowserWhenLayoutReady:attempt + 1];
         });
     } else {
-        // Give up and use spec size
-        rune_ffi_get_webview_size(&w, &h);
-        NSLog(@"Layout timeout, using spec WebView size: %dx%d", w, h);
-        [self createCefBrowserWithSize:CGSizeMake(w, h)];
+        // Fall back to default size
+        uint32_t sw = 0, sh = 0;
+        rune_ffi_get_webview_size(&sw, &sh);
+        NSLog(@"Layout timeout, using spec size: %dx%d", sw, sh);
+        _lastWebViewRect = CGRectMake(100, 100, sw > 0 ? sw : 800, sh > 0 ? sh : 600);
+        [self createCefBrowserAtRect:_lastWebViewRect];
     }
 }
 
-- (void)createCefBrowserWithSize:(CGSize)size {
-    cefHandler->webviewSize = size;
+- (void)createCefBrowserAtRect:(CGRect)rect {
+    if (_cefBrowserCreated) return;
+    _cefBrowserCreated = YES;
 
-    // Get URL
+    // Get URL from IR package
     char* urlCStr = rune_ffi_get_webview_url();
     NSString* url = urlCStr ? [NSString stringWithUTF8String:urlCStr] : @"https://www.google.com";
     if (urlCStr) rune_ffi_free_string(urlCStr);
 
-    NSLog(@"Creating CEF browser: %.0fx%.0f URL=%@", size.width, size.height, url);
+    // Position the CEF view at the viewport rect
+    // Convert from logical coords to view coords (Y is flipped)
+    float scale = _renderView.scaleFactor;
+    CGFloat viewHeight = self.view.bounds.size.height;
 
-    // Create browser with correct size
-    CefWindowInfo info;
-    info.SetAsWindowless([self.view.window windowRef]);
-    CefBrowserSettings settings;
-    CefBrowserHost::CreateBrowser(info, cefHandler, [url UTF8String], settings, nullptr, nullptr);
+    // rect is in logical pixels from top-left; NSView coords are from bottom-left
+    NSRect frame = NSMakeRect(
+        rect.origin.x,
+        viewHeight - rect.origin.y - rect.size.height,
+        rect.size.width,
+        rect.size.height
+    );
+
+    NSLog(@"Positioning CEF view at: (%.1f, %.1f) %.0fx%.0f [view coords]",
+          frame.origin.x, frame.origin.y, frame.size.width, frame.size.height);
+
+    _cefView.frame = frame;
+    _cefView.hidden = NO;
+
+    // Create CEF browser in the native view
+    NSLog(@"Creating native CEF browser: URL=%@ size=%.0fx%.0f", url, rect.size.width, rect.size.height);
+
+    CefWindowInfo windowInfo;
+    // Use the CEF view's native window handle
+    NSView* cefNsView = _cefView;
+    windowInfo.SetAsChild((__bridge CefWindowHandle)cefNsView,
+                          CefRect(0, 0, (int)rect.size.width, (int)rect.size.height));
+
+    CefBrowserSettings browserSettings;
+    CefBrowserHost::CreateBrowser(windowInfo, _cefHandler, [url UTF8String], browserSettings, nullptr, nullptr);
+
+    // Register the native CEF view with the Rust side for hit testing
+    rune_ffi_set_cef_view((__bridge void*)_cefView);
+
+    // Start layout sync timer
+    _layoutTimer = [NSTimer scheduledTimerWithTimeInterval:0.1
+                                                    target:self
+                                                  selector:@selector(syncCefViewPosition)
+                                                  userInfo:nil
+                                                   repeats:YES];
 }
 
-- (void)syncCefSizeWithLayout {
-    float x = 0, y = 0;
-    uint32_t w = 0, h = 0;
+- (void)syncCefViewPosition {
+    float x = 0, y = 0, w = 0, h = 0;
 
-    if (rune_ffi_get_webview_position(&x, &y) && rune_ffi_get_webview_size(&w, &h) && w > 0 && h > 0) {
-        // x, y are already in logical pixels from FFI (transformed coords)
-        _lastWebViewRect = CGRectMake(x, y, (float)w, (float)h);
+    if (!rune_ffi_get_webview_rect(&x, &y, &w, &h) || w <= 0 || h <= 0) {
+        return;
+    }
 
-        // Update CEF size if changed
-        if ((int)cefHandler->webviewSize.width != (int)w || (int)cefHandler->webviewSize.height != (int)h) {
-            NSLog(@"Updating CEF size: %dx%d -> %dx%d", (int)cefHandler->webviewSize.width, (int)cefHandler->webviewSize.height, w, h);
-            cefHandler->webviewSize = CGSizeMake(w, h);
+    CGRect newRect = CGRectMake(x, y, w, h);
 
-            if (cefHandler->cefBrowser && cefHandler->cefBrowser.get()) {
-                cefHandler->cefBrowser->GetHost()->WasResized();
-                cefHandler->cefBrowser->GetHost()->Invalidate(PET_VIEW);
-            }
+    // Only update if rect changed
+    if (CGRectEqualToRect(newRect, _lastWebViewRect)) {
+        return;
+    }
+
+    _lastWebViewRect = newRect;
+
+    // Convert to NSView coordinates (flip Y)
+    CGFloat viewHeight = self.view.bounds.size.height;
+    NSRect frame = NSMakeRect(
+        x,
+        viewHeight - y - h,
+        w,
+        h
+    );
+
+    NSLog(@"Updating CEF view position: (%.1f, %.1f) %.0fx%.0f", frame.origin.x, frame.origin.y, frame.size.width, frame.size.height);
+
+    _cefView.frame = frame;
+
+    // Also resize the CEF browser if needed
+    if (_cefHandler && _cefHandler->browser && _cefHandler->browser.get()) {
+        CefRefPtr<CefBrowserHost> host = _cefHandler->browser->GetHost();
+        if (host) {
+            // Notify CEF that the view was resized
+            host->NotifyMoveOrResizeStarted();
+            host->WasResized();
         }
     }
+
+    // Update Rust side
+    rune_ffi_position_cef_view(x, y, w, h);
 }
 
 - (void)renderViewDidResize {
-    [self.resizeTimer invalidate];
-    self.resizeTimer = [NSTimer scheduledTimerWithTimeInterval:0.1
-                                                        target:self
-                                                      selector:@selector(syncCefSizeWithLayout)
-                                                      userInfo:nil
-                                                       repeats:NO];
+    // Sync CEF view position after window resize
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self syncCefViewPosition];
+    });
 }
 
-#pragma mark - Mouse Event Forwarding to CEF
-
-- (BOOL)isPointInWebView:(NSPoint)point localPoint:(NSPoint*)local {
-    if (CGRectIsEmpty(_lastWebViewRect)) {
-        NSLog(@"isPointInWebView: rect is empty");
-        return NO;
-    }
-
-    // Debug: log first click to verify coordinate systems
-    static BOOL logged = NO;
-    if (!logged) {
-        NSLog(@"isPointInWebView: point=(%.1f, %.1f) rect=(%.1f, %.1f, %.1f, %.1f)",
-              point.x, point.y,
-              _lastWebViewRect.origin.x, _lastWebViewRect.origin.y,
-              _lastWebViewRect.size.width, _lastWebViewRect.size.height);
-        logged = YES;
-    }
-
-    if (CGRectContainsPoint(_lastWebViewRect, point)) {
-        if (local) {
-            local->x = point.x - _lastWebViewRect.origin.x;
-            local->y = point.y - _lastWebViewRect.origin.y;
-        }
-        return YES;
-    }
-    return NO;
-}
-
-- (int)modifiersForEvent:(NSEvent*)event {
-    int m = 0;
-    NSUInteger flags = [event modifierFlags];
-    if (flags & NSEventModifierFlagControl) m |= EVENTFLAG_CONTROL_DOWN;
-    if (flags & NSEventModifierFlagShift) m |= EVENTFLAG_SHIFT_DOWN;
-    if (flags & NSEventModifierFlagOption) m |= EVENTFLAG_ALT_DOWN;
-    if (flags & NSEventModifierFlagCommand) m |= EVENTFLAG_COMMAND_DOWN;
-
-    switch ([event type]) {
-        case NSEventTypeLeftMouseDown:
-        case NSEventTypeLeftMouseUp:
-        case NSEventTypeLeftMouseDragged:
-            m |= EVENTFLAG_LEFT_MOUSE_BUTTON;
-            break;
-        case NSEventTypeRightMouseDown:
-        case NSEventTypeRightMouseUp:
-            m |= EVENTFLAG_RIGHT_MOUSE_BUTTON;
-            break;
-        default:
-            break;
-    }
-    return m;
-}
-
-- (void)sendCefMouseClick:(NSPoint)local event:(NSEvent*)event isUp:(BOOL)isUp {
-    if (!cefHandler->cefBrowser) return;
-
-    CefMouseEvent me;
-    me.x = (int)local.x;
-    me.y = (int)local.y;
-    me.modifiers = [self modifiersForEvent:event];
-
-    CefBrowserHost::MouseButtonType btn = MBT_LEFT;
-    if ([event type] == NSEventTypeRightMouseDown || [event type] == NSEventTypeRightMouseUp) {
-        btn = MBT_RIGHT;
-    }
-
-    cefHandler->cefBrowser->GetHost()->SendMouseClickEvent(me, btn, isUp, 1);
-}
-
-- (void)sendCefMouseMove:(NSPoint)local event:(NSEvent*)event mouseLeave:(BOOL)leave {
-    if (!cefHandler->cefBrowser) return;
-
-    CefMouseEvent me;
-    me.x = (int)local.x;
-    me.y = (int)local.y;
-    me.modifiers = [self modifiersForEvent:event];
-
-    cefHandler->cefBrowser->GetHost()->SendMouseMoveEvent(me, leave);
-}
-
-#pragma mark - Mouse Event Forwarding from RustRenderView
-
-- (void)forwardMouseDown:(NSEvent*)event point:(NSPoint)point {
-    NSPoint local;
-    if ([self isPointInWebView:point localPoint:&local]) {
-        NSLog(@"forwardMouseDown: view=(%.1f, %.1f) -> cef=(%.1f, %.1f)", point.x, point.y, local.x, local.y);
-        [self sendCefMouseClick:local event:event isUp:NO];
-
-        // Mark that we started dragging in WebView - continue forwarding events
-        // even if mouse moves outside bounds (for text selection, scrollbar drag, etc.)
-        _isDraggingInWebView = YES;
-
-        // Ensure the offscreen CEF browser has keyboard focus so it can
-        // show the text caret and receive key events for the active field.
-        if (cefHandler && cefHandler->cefBrowser && cefHandler->cefBrowser.get()) {
-            cefHandler->cefBrowser->GetHost()->SetFocus(true);
-        }
-        _cefHasFocus = YES;
-    } else {
-        _isDraggingInWebView = NO;
-        // Click outside the WebView: drop CEF focus so the caret is hidden
-        // when interacting with the rest of the Rune UI.
-        if (cefHandler && cefHandler->cefBrowser && cefHandler->cefBrowser.get()) {
-            cefHandler->cefBrowser->GetHost()->SetFocus(false);
-        }
-        _cefHasFocus = NO;
-    }
-}
-
-- (void)forwardKeyDown:(NSEvent*)event {
-    if (!_cefHasFocus) {
-        return;
-    }
-    if (!(cefHandler && cefHandler->cefBrowser && cefHandler->cefBrowser.get())) {
-        return;
-    }
-
-    CefKeyEvent kev;
-    memset(&kev, 0, sizeof(kev));
-    kev.size = sizeof(kev);
-    kev.modifiers = (uint32_t)[self modifiersForEvent:event];
-    kev.native_key_code = (int)[event keyCode];
-    kev.windows_key_code = kev.native_key_code;
-    kev.is_system_key = 0;
-    kev.focus_on_editable_field = 1;
-
-    // Raw key down
-    kev.type = KEYEVENT_RAWKEYDOWN;
-    cefHandler->cefBrowser->GetHost()->SendKeyEvent(kev);
-
-    // Character input for text fields
-    NSString* chars = [event characters];
-    if (chars.length > 0) {
-        unichar ch = [chars characterAtIndex:0];
-        kev.type = KEYEVENT_CHAR;
-        kev.character = ch;
-        kev.unmodified_character = ch;
-        cefHandler->cefBrowser->GetHost()->SendKeyEvent(kev);
-    }
-}
-
-- (void)forwardKeyUp:(NSEvent*)event {
-    if (!_cefHasFocus) {
-        return;
-    }
-    if (!(cefHandler && cefHandler->cefBrowser && cefHandler->cefBrowser.get())) {
-        return;
-    }
-
-    CefKeyEvent kev;
-    memset(&kev, 0, sizeof(kev));
-    kev.size = sizeof(kev);
-    kev.modifiers = (uint32_t)[self modifiersForEvent:event];
-    kev.native_key_code = (int)[event keyCode];
-    kev.windows_key_code = kev.native_key_code;
-    kev.is_system_key = 0;
-    kev.focus_on_editable_field = 1;
-    kev.type = KEYEVENT_KEYUP;
-    cefHandler->cefBrowser->GetHost()->SendKeyEvent(kev);
-}
-
-- (void)forwardMouseUp:(NSEvent*)event point:(NSPoint)point {
-    NSPoint local;
-    // Always send mouse up if we were dragging in WebView, even if mouse is now outside
-    if (_isDraggingInWebView) {
-        // Calculate local coords relative to WebView even if outside bounds
-        local.x = point.x - _lastWebViewRect.origin.x;
-        local.y = point.y - _lastWebViewRect.origin.y;
-        [self sendCefMouseClick:local event:event isUp:YES];
-        _isDraggingInWebView = NO;
-    } else if ([self isPointInWebView:point localPoint:&local]) {
-        [self sendCefMouseClick:local event:event isUp:YES];
-    }
-}
-
-- (void)forwardMouseMove:(NSEvent*)event point:(NSPoint)point {
-    NSPoint local;
-    BOOL inWebView = [self isPointInWebView:point localPoint:&local];
-
-    if (inWebView) {
-        if (!_mouseInWebView) {
-            // Mouse entered WebView
-            _mouseInWebView = YES;
-        }
-        [self sendCefMouseMove:local event:event mouseLeave:NO];
-    } else if (_mouseInWebView) {
-        // Mouse left WebView - send leave event
-        _mouseInWebView = NO;
-        [self sendCefMouseMove:NSMakePoint(0, 0) event:event mouseLeave:YES];
-    }
-}
-
-- (void)forwardMouseDrag:(NSEvent*)event point:(NSPoint)point {
-    NSPoint local;
-    // Continue forwarding drag events if we started dragging in WebView,
-    // even if mouse has moved outside bounds (for text selection, etc.)
-    if (_isDraggingInWebView) {
-        // Calculate local coords relative to WebView even if outside bounds
-        local.x = point.x - _lastWebViewRect.origin.x;
-        local.y = point.y - _lastWebViewRect.origin.y;
-        [self sendCefMouseMove:local event:event mouseLeave:NO];
-    } else if ([self isPointInWebView:point localPoint:&local]) {
-        [self sendCefMouseMove:local event:event mouseLeave:NO];
-    }
-}
-
-- (void)forwardScroll:(NSEvent*)event point:(NSPoint)point {
-    if (!(cefHandler && cefHandler->cefBrowser && cefHandler->cefBrowser.get())) {
-        return;
-    }
-
-    NSPoint local;
-    BOOL inWebView = [self isPointInWebView:point localPoint:&local];
-
-    // Also allow scroll events if we have focus (for momentum scrolling after
-    // the cursor might have drifted slightly outside bounds)
-    if (!inWebView && !_cefHasFocus) {
-        return;
-    }
-
-    // If outside WebView but has focus, calculate coords relative to WebView
-    if (!inWebView) {
-        local.x = point.x - _lastWebViewRect.origin.x;
-        local.y = point.y - _lastWebViewRect.origin.y;
-    }
-
-    CefMouseEvent me;
-    me.x = (int)local.x;
-    me.y = (int)local.y;
-    me.modifiers = [self modifiersForEvent:event];
-
-    // Map macOS scroll deltas to CEF's expected units.
-    // CEF typically expects values similar to wheel "ticks" (e.g. 120 per step).
-    // Trackpads report small floating-point deltas, so scale them up.
-    CGFloat dx = [event scrollingDeltaX];
-    CGFloat dy = [event scrollingDeltaY];
-
-    // Use a smaller scale factor for precise scrolling (trackpad) to make
-    // scrolling feel more natural and responsive.
-    const CGFloat scale = [event hasPreciseScrollingDeltas] ? 1.0 : 40.0;
-
-    // On macOS with natural scrolling, scrollingDeltaY is positive when
-    // content moves up (two-finger swipe up). CEF expects positive deltaY
-    // to scroll *down* (content moves down), so invert the sign.
-    int deltaX = (int)llround(dx * scale);
-    int deltaY = (int)llround(-dy * scale);
-
-    cefHandler->cefBrowser->GetHost()->SendMouseWheelEvent(me, deltaX, deltaY);
+- (void)dealloc {
+    [_layoutTimer invalidate];
+    _layoutTimer = nil;
 }
 
 @end

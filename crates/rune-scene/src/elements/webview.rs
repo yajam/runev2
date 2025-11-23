@@ -30,9 +30,10 @@ use rune_cef::{
 /// Global storage for external WebView pixel data and layout info.
 /// This is used when CEF is managed externally (e.g., from Xcode/FFI).
 mod external_pixels {
+    use std::ffi::c_void;
     use std::sync::Mutex;
 
-    /// External pixel data for WebView rendering.
+    /// External pixel data for WebView rendering (OSR mode).
     pub struct ExternalWebViewPixels {
         pub pixels: Vec<u8>,
         pub width: u32,
@@ -48,8 +49,108 @@ mod external_pixels {
         pub h: f32,
     }
 
+    /// Native CEF view state for NSView-based rendering.
+    pub struct NativeCefView {
+        pub view: *mut c_void, // NSView*
+        pub x: f32,
+        pub y: f32,
+        pub width: f32,
+        pub height: f32,
+        pub needs_update: bool,
+    }
+
+    // Safety: NSView pointers are only accessed from the main thread
+    unsafe impl Send for NativeCefView {}
+    unsafe impl Sync for NativeCefView {}
+
     static EXTERNAL_PIXELS: Mutex<Option<ExternalWebViewPixels>> = Mutex::new(None);
     static WEBVIEW_RECT: Mutex<Option<WebViewRect>> = Mutex::new(None);
+    static NATIVE_CEF_VIEW: Mutex<Option<NativeCefView>> = Mutex::new(None);
+
+    /// Callback function type for positioning the native CEF view.
+    /// This is called from Rust when the viewport rect changes.
+    pub type PositionCefViewFn = extern "C" fn(*mut c_void, f32, f32, f32, f32);
+
+    static POSITION_CEF_VIEW_CALLBACK: Mutex<Option<PositionCefViewFn>> = Mutex::new(None);
+
+    /// Set the position callback for native CEF view.
+    pub fn set_position_callback(callback: PositionCefViewFn) {
+        if let Ok(mut guard) = POSITION_CEF_VIEW_CALLBACK.lock() {
+            *guard = Some(callback);
+        }
+    }
+
+    /// Set the native CEF view handle.
+    pub fn set_native_view(view: *mut c_void) {
+        if let Ok(mut guard) = NATIVE_CEF_VIEW.lock() {
+            *guard = Some(NativeCefView {
+                view,
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: 0.0,
+                needs_update: true,
+            });
+        }
+    }
+
+    /// Get the native CEF view handle.
+    pub fn get_native_view() -> Option<*mut c_void> {
+        if let Ok(guard) = NATIVE_CEF_VIEW.lock() {
+            guard.as_ref().map(|v| v.view)
+        } else {
+            None
+        }
+    }
+
+    /// Update the position of the native CEF view.
+    pub fn position_native_view(x: f32, y: f32, width: f32, height: f32) {
+        if let Ok(mut guard) = NATIVE_CEF_VIEW.lock() {
+            if let Some(ref mut state) = *guard {
+                // Only update if position/size changed
+                if (state.x - x).abs() > 0.5
+                    || (state.y - y).abs() > 0.5
+                    || (state.width - width).abs() > 0.5
+                    || (state.height - height).abs() > 0.5
+                {
+                    state.x = x;
+                    state.y = y;
+                    state.width = width;
+                    state.height = height;
+                    state.needs_update = true;
+                }
+            }
+        }
+
+        // Call the position callback if registered
+        if let Ok(callback_guard) = POSITION_CEF_VIEW_CALLBACK.lock() {
+            if let Some(callback) = *callback_guard {
+                if let Ok(view_guard) = NATIVE_CEF_VIEW.lock() {
+                    if let Some(ref state) = *view_guard {
+                        callback(state.view, x, y, width, height);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check if native CEF view mode is active.
+    pub fn has_native_view() -> bool {
+        if let Ok(guard) = NATIVE_CEF_VIEW.lock() {
+            guard.is_some()
+        } else {
+            false
+        }
+    }
+
+    /// Get the current native CEF view rect.
+    pub fn get_native_view_rect() -> Option<(f32, f32, f32, f32)> {
+        if let Ok(guard) = NATIVE_CEF_VIEW.lock() {
+            guard.as_ref().map(|v| (v.x, v.y, v.width, v.height))
+        } else {
+            None
+        }
+    }
 
     /// Set external pixel data for WebView rendering.
     /// The pixels should be in BGRA format (CEF native format).
@@ -163,6 +264,43 @@ pub fn has_external_pixels() -> bool {
 /// Clear the external pixel data.
 pub fn clear_external_pixels() {
     external_pixels::clear();
+}
+
+// ===== Native CEF View API (NSView-based rendering) =====
+
+/// Set the native CEF view handle (NSView*).
+/// This switches from OSR mode to native NSView-based rendering.
+pub fn set_native_cef_view(view: *mut std::ffi::c_void) {
+    external_pixels::set_native_view(view);
+}
+
+/// Get the native CEF view handle if set.
+pub fn get_native_cef_view() -> Option<*mut std::ffi::c_void> {
+    external_pixels::get_native_view()
+}
+
+/// Check if native CEF view mode is active.
+pub fn has_native_cef_view() -> bool {
+    external_pixels::has_native_view()
+}
+
+/// Update the position of the native CEF view based on viewport layout.
+/// This should be called when the WebView rect changes in the layout.
+pub fn position_native_cef_view(x: f32, y: f32, width: f32, height: f32) {
+    external_pixels::position_native_view(x, y, width, height);
+}
+
+/// Get the current native CEF view rect.
+pub fn get_native_cef_view_rect() -> Option<(f32, f32, f32, f32)> {
+    external_pixels::get_native_view_rect()
+}
+
+/// Set a callback to be invoked when the native CEF view position changes.
+/// The callback receives: (view_ptr, x, y, width, height)
+pub fn set_native_cef_view_position_callback(
+    callback: extern "C" fn(*mut std::ffi::c_void, f32, f32, f32, f32),
+) {
+    external_pixels::set_position_callback(callback);
 }
 
 /// Embedded web browser view element.

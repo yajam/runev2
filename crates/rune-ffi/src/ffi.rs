@@ -290,3 +290,58 @@ pub extern "C" fn rune_ffi_get_webview_position(x: *mut f32, y: *mut f32) -> boo
 
     false
 }
+
+/// Set the native CEF view handle for positioning.
+/// This is used for native NSView-based CEF rendering instead of OSR.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_set_cef_view(cef_view: *mut c_void) {
+    log::info!("rune_ffi_set_cef_view: view={:p}", cef_view);
+    rune_scene::elements::webview::set_native_cef_view(cef_view);
+}
+
+/// Update the position of the native CEF view based on viewport layout.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_position_cef_view(x: f32, y: f32, width: f32, height: f32) {
+    log::debug!(
+        "rune_ffi_position_cef_view: x={} y={} w={} h={}",
+        x, y, width, height
+    );
+    rune_scene::elements::webview::position_native_cef_view(x, y, width, height);
+}
+
+/// Get the current WebView rect for positioning the native CEF view.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_get_webview_rect(
+    x: *mut f32,
+    y: *mut f32,
+    width: *mut f32,
+    height: *mut f32,
+) -> bool {
+    if x.is_null() || y.is_null() || width.is_null() || height.is_null() {
+        return false;
+    }
+
+    // Try rune_surface first (has transformed screen coords)
+    if let Some((rx, ry, rw, rh)) = rune_surface::get_last_raw_image_rect() {
+        unsafe {
+            *x = rx;
+            *y = ry;
+            *width = rw;
+            *height = rh;
+        }
+        return true;
+    }
+
+    // Fall back to rune_scene (has viewport-local coords from layout)
+    if let Some((rx, ry, rw, rh)) = rune_scene::elements::webview::get_webview_rect() {
+        unsafe {
+            *x = rx;
+            *y = ry;
+            *width = rw;
+            *height = rh;
+        }
+        return true;
+    }
+
+    false
+}

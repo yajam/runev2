@@ -135,6 +135,37 @@ bool rune_ffi_get_webview_size(uint32_t* width, uint32_t* height);
  */
 bool rune_ffi_get_webview_position(float* x, float* y);
 
+/*
+ * Set the native CEF view handle (NSView*) for the renderer.
+ * This is used for native NSView-based CEF rendering instead of OSR.
+ *
+ * @param cef_view Pointer to NSView (cast to void*)
+ */
+void rune_ffi_set_cef_view(void* cef_view);
+
+/*
+ * Update the position of the native CEF view based on viewport layout.
+ * Call this after layout changes to reposition the CEF view.
+ *
+ * @param x X position in logical pixels
+ * @param y Y position in logical pixels
+ * @param width Width in logical pixels
+ * @param height Height in logical pixels
+ */
+void rune_ffi_position_cef_view(float x, float y, float width, float height);
+
+/*
+ * Get the current WebView rect for positioning the native CEF view.
+ * This combines position and size in a single call.
+ *
+ * @param x Output: X position in logical pixels
+ * @param y Output: Y position in logical pixels
+ * @param width Output: Width in logical pixels
+ * @param height Output: Height in logical pixels
+ * @return true if a WebView element exists, false otherwise
+ */
+bool rune_ffi_get_webview_rect(float* x, float* y, float* width, float* height);
+
 #ifdef __cplusplus
 }
 #endif
