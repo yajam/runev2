@@ -43,4 +43,7 @@ pub use text_area::TextArea;
 #[cfg(feature = "webview-cef")]
 pub use webview::WebView;
 // Export external pixel functions for FFI use (always available)
-pub use webview::{clear_external_pixels, get_external_pixels, has_external_pixels, set_external_pixels};
+pub use webview::{
+    clear_external_pixels, get_external_pixels, has_external_pixels, set_external_pixels,
+    take_external_pixels_if_dirty,
+};

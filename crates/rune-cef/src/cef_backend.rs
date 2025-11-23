@@ -37,6 +37,7 @@ struct CefLibrary {
     #[allow(dead_code)]
     lib: Library,
     cef_initialize: CefInitializeFn,
+    #[allow(dead_code)]
     cef_shutdown: CefShutdownFn,
     cef_do_message_loop_work: CefDoMessageLoopWorkFn,
     cef_browser_host_create_browser_sync: CefCreateBrowserSyncFn,
@@ -159,21 +160,30 @@ fn log_cef(msg: &str) {
     }
 }
 
+use crate::frame::DirtyRect;
+
+/// Render state with dirty rect tracking.
+/// Uses a single buffer since CEF always provides the full frame data.
 #[derive(Debug)]
 struct RenderState {
     width: u32,
     height: u32,
+    /// Main buffer - always contains the complete current frame
     buffer: Vec<u8>,
+    /// Dirty rects from the last paint (for partial GPU upload)
+    dirty_rects: Vec<DirtyRect>,
+    /// Whether a new frame is ready
     dirty: bool,
 }
 
 impl RenderState {
-    fn new(width: u32, height: u32) -> Self {
+    fn new(width: u32, height: u32, _target_fps: u32) -> Self {
         let size = (width * height * 4) as usize;
         Self {
             width,
             height,
             buffer: vec![0u8; size],
+            dirty_rects: Vec::new(),
             dirty: false,
         }
     }
@@ -183,30 +193,42 @@ impl RenderState {
         self.height = height;
         let size = (width * height * 4) as usize;
         self.buffer.resize(size, 0);
+        self.dirty_rects.clear();
         self.dirty = true;
     }
 
-    fn update_from_paint(&mut self, data: &[u8], width: u32, height: u32) {
+    /// Update from CEF paint callback with dirty rects.
+    /// CEF always provides the FULL buffer, but tells us which rects changed.
+    /// We copy the full buffer to ensure consistency, but pass dirty rects
+    /// for optimized GPU upload.
+    fn update_from_paint(&mut self, data: &[u8], width: u32, height: u32, rects: Vec<DirtyRect>) {
         if self.width != width || self.height != height {
             self.resize(width, height);
         }
         if data.len() == self.buffer.len() {
+            // Always copy the full buffer from CEF to ensure we have complete frame data.
+            // CEF provides the complete buffer even for partial updates.
             self.buffer.copy_from_slice(data);
+            self.dirty_rects = rects;
             self.dirty = true;
         }
     }
 
+    /// Take the frame buffer for GPU upload.
     fn take_frame(&mut self) -> Option<FrameBuffer> {
         if !self.dirty {
             return None;
         }
         self.dirty = false;
-        Some(FrameBuffer::from_raw(
+
+        // Clone the buffer for the frame (CEF may paint again while we upload)
+        Some(FrameBuffer::from_raw_with_dirty_rects(
             self.buffer.clone(),
             self.width,
             self.height,
             self.width * 4,
             PixelFormat::Bgra8,
+            std::mem::take(&mut self.dirty_rects),
         ))
     }
 }
@@ -368,8 +390,8 @@ unsafe extern "C" fn render_on_paint(
     self_: *mut cef_render_handler_t,
     _browser: *mut cef_browser_t,
     _paint_type: cef_paint_element_type_t,
-    _dirty_rects_count: usize,
-    _dirty_rects: *const cef_rect_t,
+    dirty_rects_count: usize,
+    dirty_rects: *const cef_rect_t,
     buffer: *const c_void,
     width: c_int,
     height: c_int,
@@ -380,21 +402,43 @@ unsafe extern "C" fn render_on_paint(
         if buffer.is_null() || len == 0 {
             return;
         }
+
+        // Convert CEF dirty rects to our format
+        let rects: Vec<DirtyRect> = if dirty_rects_count > 0 && !dirty_rects.is_null() {
+            std::slice::from_raw_parts(dirty_rects, dirty_rects_count)
+                .iter()
+                .filter_map(|r| {
+                    if r.width > 0 && r.height > 0 {
+                        Some(DirtyRect {
+                            x: r.x.max(0) as u32,
+                            y: r.y.max(0) as u32,
+                            width: r.width as u32,
+                            height: r.height as u32,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         let slice = std::slice::from_raw_parts(buffer as *const u8, len);
         if let Some(wrapper) = wrapper.as_ref() {
             if let Ok(mut state) = wrapper.state.lock() {
-                state.update_from_paint(slice, width as u32, height as u32);
+                state.update_from_paint(slice, width as u32, height as u32, rects.clone());
             }
             wrapper.loading.store(false, Ordering::Relaxed);
 
             let count = wrapper.paint_count.fetch_add(1, Ordering::Relaxed) + 1;
             if count <= 5 {
                 log_cef(&format!(
-                    "render_on_paint #{} ({}x{}) dirty={}",
+                    "render_on_paint #{} ({}x{}) dirty_rects={}",
                     count,
                     width,
                     height,
-                    len
+                    rects.len()
                 ));
             }
         }
@@ -516,6 +560,13 @@ impl ClientWrapper {
     }
 }
 
+/// Default target FPS for CEF rendering (30 FPS is usually sufficient for web content)
+const DEFAULT_CEF_TARGET_FPS: u32 = 30;
+
+/// Maximum OSR size to prevent excessive memory usage
+const MAX_OSR_WIDTH: u32 = 1920;
+const MAX_OSR_HEIGHT: u32 = 1080;
+
 /// Headless CEF renderer with dynamic library loading.
 pub struct CefHeadless {
     library: Arc<CefLibrary>,
@@ -529,6 +580,11 @@ pub struct CefHeadless {
     browser: Option<*mut cef_browser_t>,
     initialized: bool,
     current_url: Option<String>,
+    /// Target FPS for frame capture throttling
+    target_fps: u32,
+    /// Actual OSR dimensions (may be smaller than requested for performance)
+    osr_width: u32,
+    osr_height: u32,
 }
 
 // Safety: CefHeadless is driven from a single thread via the external message pump.
@@ -566,9 +622,24 @@ impl CefHeadless {
             }
         });
 
+        // Clamp OSR size to prevent excessive memory usage
+        let osr_width = config.width.min(MAX_OSR_WIDTH);
+        let osr_height = config.height.min(MAX_OSR_HEIGHT);
+
+        // Get target FPS from environment or use default
+        let target_fps = std::env::var("CEF_TARGET_FPS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_CEF_TARGET_FPS);
+
         let library = Arc::new(CefLibrary::load(cef_path.as_ref())?);
-        let render_state = Arc::new(Mutex::new(RenderState::new(config.width, config.height)));
+        let render_state = Arc::new(Mutex::new(RenderState::new(osr_width, osr_height, target_fps)));
         let loading = Arc::new(AtomicBool::new(true));
+
+        log_cef(&format!(
+            "CEF: OSR size {}x{} (requested {}x{}), target FPS: {}",
+            osr_width, osr_height, config.width, config.height, target_fps
+        ));
 
         let mut renderer = Self {
             library,
@@ -582,6 +653,9 @@ impl CefHeadless {
             browser: None,
             initialized: false,
             current_url: None,
+            target_fps,
+            osr_width,
+            osr_height,
         };
 
         renderer.initialize("about:blank")?;
@@ -686,7 +760,7 @@ impl CefHeadless {
                 eprintln!("CEF: Setting framework_dir_path to: {}", path_str);
                 settings.framework_dir_path = cef_string_from_str(&path_str);
 
-                let resources_path = fw.join("Resources");
+                let _resources_path = fw.join("Resources");
                 // Commenting out manual resource path setting to let CEF use the bundle Resources
                 /*
                 if resources_path.exists() {
@@ -723,11 +797,12 @@ impl CefHeadless {
         let mut window_info: cef_window_info_t = unsafe { std::mem::zeroed() };
         window_info.size = std::mem::size_of::<cef_window_info_t>();
         window_info.window_name = cef_string_from_str("cef");
+        // Use clamped OSR dimensions for performance
         window_info.bounds = cef_rect_t {
             x: 0,
             y: 0,
-            width: self.config.width as c_int,
-            height: self.config.height as c_int,
+            width: self.osr_width as c_int,
+            height: self.osr_height as c_int,
         };
         window_info.windowless_rendering_enabled = 1;
         window_info.shared_texture_enabled = 0;
@@ -739,7 +814,8 @@ impl CefHeadless {
 
         let mut browser_settings: cef_browser_settings_t = unsafe { std::mem::zeroed() };
         browser_settings.size = std::mem::size_of::<cef_browser_settings_t>();
-        browser_settings.windowless_frame_rate = 60;
+        // Use target FPS for CEF's internal rendering
+        browser_settings.windowless_frame_rate = self.target_fps as c_int;
         browser_settings.javascript = if self.config.javascript_enabled {
             cef_state_t::STATE_ENABLED
         } else {
@@ -905,10 +981,22 @@ impl HeadlessRenderer for CefHeadless {
     }
 
     fn resize(&mut self, width: u32, height: u32) -> Result<()> {
+        // Clamp to max OSR size for performance
+        let clamped_width = width.min(MAX_OSR_WIDTH);
+        let clamped_height = height.min(MAX_OSR_HEIGHT);
+
+        // Skip if dimensions haven't actually changed
+        if clamped_width == self.osr_width && clamped_height == self.osr_height {
+            return Ok(());
+        }
+
         self.config.width = width;
         self.config.height = height;
+        self.osr_width = clamped_width;
+        self.osr_height = clamped_height;
+
         if let Ok(mut state) = self.render_state.lock() {
-            state.resize(width, height);
+            state.resize(clamped_width, clamped_height);
         }
         if let Some(ref url) = self.current_url.clone() {
             self.navigate(url)?;

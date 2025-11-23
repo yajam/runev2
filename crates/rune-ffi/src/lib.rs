@@ -118,7 +118,9 @@ impl AppRenderer {
         };
         surface.configure(&device, &config);
 
-        // Set up RuneSurface
+        // Set up RuneSurface. We render IR content in logical pixels scaled by
+        // the device DPI; CEF WebView pixels are composited via the unified
+        // image pipeline using `Canvas::draw_raw_image` from rune-scene.
         let mut surf = rune_surface::RuneSurface::new(device, queue, format);
         surf.set_use_intermediate(true);
         surf.set_logical_pixels(true);
@@ -187,6 +189,10 @@ impl AppRenderer {
         self.config.width = width;
         self.config.height = height;
         self.surface.configure(self.surf.device().as_ref(), &self.config);
+
+        // Pre-allocate the intermediate render target for the new size so
+        // window resizing stays smooth and avoids repeated allocations.
+        self.surf.prepare_for_resize(width, height);
 
         // Update zone manager layout
         self.zone_manager
@@ -744,21 +750,16 @@ impl AppRenderer {
             }
         }
 
-        // Convert BGRA to RGBA
-        let mut rgba_pixels = Vec::with_capacity(pixels.len());
-        for chunk in pixels.chunks(4) {
-            if chunk.len() == 4 {
-                rgba_pixels.push(chunk[2]); // R from B
-                rgba_pixels.push(chunk[1]); // G
-                rgba_pixels.push(chunk[0]); // B from R
-                // Force opaque alpha so CEF frames never disappear due to
-                // unexpected alpha values when blended in the compositor.
-                rgba_pixels.push(255);
-            }
+        // Pass BGRA pixels directly - the GPU texture is now BGRA format
+        // to match CEF's native output and avoid CPU-side conversion.
+        // Force opaque alpha to prevent disappearing frames.
+        let mut bgra_pixels = pixels.to_vec();
+        for chunk in bgra_pixels.chunks_exact_mut(4) {
+            chunk[3] = 255; // Force opaque alpha
         }
 
-        // Store in the rune-scene external pixels storage
-        rune_scene::elements::webview::set_external_pixels(rgba_pixels, width, height);
+        // Store in the rune-scene external pixels storage (BGRA format)
+        rune_scene::elements::webview::set_external_pixels(bgra_pixels, width, height);
         self.needs_redraw = true;
     }
 

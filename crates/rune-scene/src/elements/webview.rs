@@ -52,7 +52,7 @@ mod external_pixels {
     static WEBVIEW_RECT: Mutex<Option<WebViewRect>> = Mutex::new(None);
 
     /// Set external pixel data for WebView rendering.
-    /// The pixels should be in RGBA format.
+    /// The pixels should be in BGRA format (CEF native format).
     pub fn set_pixels(pixels: Vec<u8>, width: u32, height: u32) {
         if let Ok(mut guard) = EXTERNAL_PIXELS.lock() {
             *guard = Some(ExternalWebViewPixels {
@@ -71,6 +71,27 @@ mod external_pixels {
         } else {
             None
         }
+    }
+
+    /// Take the external pixel data only if a new frame has been uploaded.
+    ///
+    /// This moves the underlying pixel buffer out of the global storage so
+    /// callers can upload it to the GPU without an extra clone. When no new
+    /// frame is available (dirty == false), this returns None and leaves the
+    /// stored pixels intact so the previous GPU texture can continue to be used.
+    pub fn take_pixels_if_dirty() -> Option<(Vec<u8>, u32, u32)> {
+        if let Ok(mut guard) = EXTERNAL_PIXELS.lock() {
+            if let Some(mut p) = guard.take() {
+                if p.dirty {
+                    p.dirty = false;
+                    return Some((p.pixels, p.width, p.height));
+                } else {
+                    // Put it back unchanged if not dirty so size information is preserved.
+                    *guard = Some(p);
+                }
+            }
+        }
+        None
     }
 
     /// Check if external pixels are available.
@@ -106,7 +127,7 @@ mod external_pixels {
     }
 }
 
-/// Set external pixel data for WebView rendering (RGBA format).
+/// Set external pixel data for WebView rendering (BGRA format - CEF native).
 pub fn set_external_pixels(pixels: Vec<u8>, width: u32, height: u32) {
     external_pixels::set_pixels(pixels, width, height);
 }
@@ -124,6 +145,14 @@ pub fn get_webview_rect() -> Option<(f32, f32, f32, f32)> {
 /// Get the external pixel data if available.
 pub fn get_external_pixels() -> Option<(Vec<u8>, u32, u32)> {
     external_pixels::get_pixels()
+}
+
+/// Take the external pixel data for WebView rendering if a new frame is available.
+///
+/// This avoids cloning the pixel buffer and allows a render pass to upload
+/// the latest CEF frame directly to a GPU texture.
+pub fn take_external_pixels_if_dirty() -> Option<(Vec<u8>, u32, u32)> {
+    external_pixels::take_pixels_if_dirty()
 }
 
 /// Check if external pixels are available.

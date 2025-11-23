@@ -377,29 +377,37 @@ impl RuneSurface {
         }
 
         // Process raw image draws (e.g., WebView CEF pixels)
+        // Optimizations:
+        // 1. Always reuse textures - only recreate if size changes
+        // 2. Use BGRA format to match CEF native output (no CPU conversion)
+        // 3. Support dirty rect partial uploads
         for (i, raw_draw) in canvas.raw_image_draws.iter().enumerate() {
-            if raw_draw.pixels.is_empty() || raw_draw.src_width == 0 || raw_draw.src_height == 0 {
+            if raw_draw.src_width == 0 || raw_draw.src_height == 0 {
                 continue;
             }
 
-            // Use a fixed path for webview texture - it gets updated each frame
+            // Use a fixed path for webview texture - reused across frames
             let raw_path = std::path::PathBuf::from(format!("__webview_texture_{}__", i));
 
-            // Try to reuse existing texture if it's the same size, otherwise create new.
-            // This avoids destroying textures that may still be in use by the GPU.
+            // If pixels are empty, reuse cached texture from previous frame
+            let has_new_pixels = !raw_draw.pixels.is_empty();
+
+            // Check if we need a new texture (only if size changed)
             let need_new_texture = if let Some((_, cached_w, cached_h)) =
                 self.pass.try_get_image_view(&raw_path)
             {
-                // Texture exists - check if size matches
+                // Only recreate if dimensions changed - always reuse otherwise
                 cached_w != raw_draw.src_width || cached_h != raw_draw.src_height
             } else {
                 true
             };
 
-            if need_new_texture {
-                // Create a new texture
+            // Create texture only when needed (first time or size change)
+            if need_new_texture && has_new_pixels {
+                // Create texture with BGRA format to match CEF's native output
+                // This eliminates CPU-side BGRA->RGBA conversion
                 let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("raw-image-texture"),
+                    label: Some("cef-webview-texture"),
                     size: wgpu::Extent3d {
                         width: raw_draw.src_width,
                         height: raw_draw.src_height,
@@ -408,12 +416,13 @@ impl RuneSurface {
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    // BGRA format matches CEF native output - no conversion needed
+                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
                     usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                     view_formats: &[],
                 });
 
-                // Store in image cache
+                // Store in image cache for reuse
                 self.pass.store_loaded_image(
                     &raw_path,
                     Arc::new(texture),
@@ -422,27 +431,37 @@ impl RuneSurface {
                 );
             }
 
-            // Get the texture from cache and upload pixels to it
-            if let Some((tex, _, _)) = self.pass.get_cached_texture(&raw_path) {
-                self.queue.write_texture(
-                    wgpu::ImageCopyTexture {
-                        texture: &tex,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &raw_draw.pixels,
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: Some(raw_draw.src_width * 4),
-                        rows_per_image: Some(raw_draw.src_height),
-                    },
-                    wgpu::Extent3d {
-                        width: raw_draw.src_width,
-                        height: raw_draw.src_height,
-                        depth_or_array_layers: 1,
-                    },
-                );
+            // Upload pixels only when we have new data
+            if has_new_pixels {
+                if let Some((tex, _, _)) = self.pass.get_cached_texture(&raw_path) {
+                    // Always upload full frame - CEF provides complete buffer even for partial updates.
+                    // The dirty_rects are informational but the buffer is always complete.
+                    // This ensures no flickering from partial/stale data.
+                    self.queue.write_texture(
+                        wgpu::ImageCopyTexture {
+                            texture: &tex,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        &raw_draw.pixels,
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(raw_draw.src_width * 4),
+                            rows_per_image: Some(raw_draw.src_height),
+                        },
+                        wgpu::Extent3d {
+                            width: raw_draw.src_width,
+                            height: raw_draw.src_height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                }
+            }
+
+            // Skip rendering if no cached texture exists (no pixels uploaded yet)
+            if self.pass.try_get_image_view(&raw_path).is_none() {
+                continue;
             }
 
             // Apply the canvas transform to the origin - same as regular images.

@@ -68,6 +68,9 @@ private:
 - (void)forwardMouseUp:(NSEvent*)event point:(NSPoint)point;
 - (void)forwardMouseMove:(NSEvent*)event point:(NSPoint)point;
 - (void)forwardMouseDrag:(NSEvent*)event point:(NSPoint)point;
+- (void)forwardKeyDown:(NSEvent*)event;
+- (void)forwardKeyUp:(NSEvent*)event;
+- (void)forwardScroll:(NSEvent*)event point:(NSPoint)point;
 @end
 
 @implementation RustRenderView {
@@ -198,11 +201,21 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
         const char *utf8 = [chars UTF8String];
         if (utf8 && utf8[0] != 0) rune_ffi_text_input(utf8);
     }
+
+    // Also forward key events to the resize delegate (ViewController) so it
+    // can route them into CEF when the WebView has focus.
+    if ([self.resizeDelegate respondsToSelector:@selector(forwardKeyDown:)]) {
+        [(id)self.resizeDelegate forwardKeyDown:event];
+    }
 }
 
 - (void)keyUp:(NSEvent *)event {
     if (!_initialized) { [super keyUp:event]; return; }
     rune_ffi_key_event(event.keyCode, false);
+
+    if ([self.resizeDelegate respondsToSelector:@selector(forwardKeyUp:)]) {
+        [(id)self.resizeDelegate forwardKeyUp:event];
+    }
 }
 
 - (void)mouseDown:(NSEvent *)event {
@@ -243,6 +256,17 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
     }
 }
 
+- (void)scrollWheel:(NSEvent *)event {
+    // Forward scroll position (in view-local logical coords) to delegate so it
+    // can route wheel events into CEF when appropriate.
+    NSPoint p = [self flipPoint:[self convertPoint:[event locationInWindow] fromView:nil]];
+    if ([self.resizeDelegate respondsToSelector:@selector(forwardScroll:point:)]) {
+        [(id)self.resizeDelegate forwardScroll:event point:p];
+    } else {
+        [super scrollWheel:event];
+    }
+}
+
 - (NSPoint)flipPoint:(NSPoint)p {
     return NSMakePoint(p.x, self.bounds.size.height - p.y);
 }
@@ -273,6 +297,8 @@ void CefHandler::OnPaint(CefRefPtr<CefBrowser> browser,
     CefRefPtr<CefHandler> cefHandler;
     CGRect _lastWebViewRect;  // Cached WebView rect in logical coords
     BOOL _mouseInWebView;     // Track if mouse is inside WebView for enter/leave events
+    BOOL _cefHasFocus;        // Track whether CEF should receive keyboard events
+    BOOL _isDraggingInWebView; // Track if drag started in WebView (continue even outside bounds)
 }
 
 - (void)viewDidLoad {
@@ -286,6 +312,8 @@ void CefHandler::OnPaint(CefRefPtr<CefBrowser> browser,
     cefHandler = new CefHandler(_renderView);
     _lastWebViewRect = CGRectZero;
     _mouseInWebView = NO;
+    _cefHasFocus = NO;
+    _isDraggingInWebView = NO;
 }
 
 - (void)rustRendererInitialized {
@@ -462,12 +490,90 @@ void CefHandler::OnPaint(CefRefPtr<CefBrowser> browser,
     if ([self isPointInWebView:point localPoint:&local]) {
         NSLog(@"forwardMouseDown: view=(%.1f, %.1f) -> cef=(%.1f, %.1f)", point.x, point.y, local.x, local.y);
         [self sendCefMouseClick:local event:event isUp:NO];
+
+        // Mark that we started dragging in WebView - continue forwarding events
+        // even if mouse moves outside bounds (for text selection, scrollbar drag, etc.)
+        _isDraggingInWebView = YES;
+
+        // Ensure the offscreen CEF browser has keyboard focus so it can
+        // show the text caret and receive key events for the active field.
+        if (cefHandler && cefHandler->cefBrowser && cefHandler->cefBrowser.get()) {
+            cefHandler->cefBrowser->GetHost()->SetFocus(true);
+        }
+        _cefHasFocus = YES;
+    } else {
+        _isDraggingInWebView = NO;
+        // Click outside the WebView: drop CEF focus so the caret is hidden
+        // when interacting with the rest of the Rune UI.
+        if (cefHandler && cefHandler->cefBrowser && cefHandler->cefBrowser.get()) {
+            cefHandler->cefBrowser->GetHost()->SetFocus(false);
+        }
+        _cefHasFocus = NO;
     }
+}
+
+- (void)forwardKeyDown:(NSEvent*)event {
+    if (!_cefHasFocus) {
+        return;
+    }
+    if (!(cefHandler && cefHandler->cefBrowser && cefHandler->cefBrowser.get())) {
+        return;
+    }
+
+    CefKeyEvent kev;
+    memset(&kev, 0, sizeof(kev));
+    kev.size = sizeof(kev);
+    kev.modifiers = (uint32_t)[self modifiersForEvent:event];
+    kev.native_key_code = (int)[event keyCode];
+    kev.windows_key_code = kev.native_key_code;
+    kev.is_system_key = 0;
+    kev.focus_on_editable_field = 1;
+
+    // Raw key down
+    kev.type = KEYEVENT_RAWKEYDOWN;
+    cefHandler->cefBrowser->GetHost()->SendKeyEvent(kev);
+
+    // Character input for text fields
+    NSString* chars = [event characters];
+    if (chars.length > 0) {
+        unichar ch = [chars characterAtIndex:0];
+        kev.type = KEYEVENT_CHAR;
+        kev.character = ch;
+        kev.unmodified_character = ch;
+        cefHandler->cefBrowser->GetHost()->SendKeyEvent(kev);
+    }
+}
+
+- (void)forwardKeyUp:(NSEvent*)event {
+    if (!_cefHasFocus) {
+        return;
+    }
+    if (!(cefHandler && cefHandler->cefBrowser && cefHandler->cefBrowser.get())) {
+        return;
+    }
+
+    CefKeyEvent kev;
+    memset(&kev, 0, sizeof(kev));
+    kev.size = sizeof(kev);
+    kev.modifiers = (uint32_t)[self modifiersForEvent:event];
+    kev.native_key_code = (int)[event keyCode];
+    kev.windows_key_code = kev.native_key_code;
+    kev.is_system_key = 0;
+    kev.focus_on_editable_field = 1;
+    kev.type = KEYEVENT_KEYUP;
+    cefHandler->cefBrowser->GetHost()->SendKeyEvent(kev);
 }
 
 - (void)forwardMouseUp:(NSEvent*)event point:(NSPoint)point {
     NSPoint local;
-    if ([self isPointInWebView:point localPoint:&local]) {
+    // Always send mouse up if we were dragging in WebView, even if mouse is now outside
+    if (_isDraggingInWebView) {
+        // Calculate local coords relative to WebView even if outside bounds
+        local.x = point.x - _lastWebViewRect.origin.x;
+        local.y = point.y - _lastWebViewRect.origin.y;
+        [self sendCefMouseClick:local event:event isUp:YES];
+        _isDraggingInWebView = NO;
+    } else if ([self isPointInWebView:point localPoint:&local]) {
         [self sendCefMouseClick:local event:event isUp:YES];
     }
 }
@@ -491,9 +597,60 @@ void CefHandler::OnPaint(CefRefPtr<CefBrowser> browser,
 
 - (void)forwardMouseDrag:(NSEvent*)event point:(NSPoint)point {
     NSPoint local;
-    if ([self isPointInWebView:point localPoint:&local]) {
+    // Continue forwarding drag events if we started dragging in WebView,
+    // even if mouse has moved outside bounds (for text selection, etc.)
+    if (_isDraggingInWebView) {
+        // Calculate local coords relative to WebView even if outside bounds
+        local.x = point.x - _lastWebViewRect.origin.x;
+        local.y = point.y - _lastWebViewRect.origin.y;
+        [self sendCefMouseMove:local event:event mouseLeave:NO];
+    } else if ([self isPointInWebView:point localPoint:&local]) {
         [self sendCefMouseMove:local event:event mouseLeave:NO];
     }
+}
+
+- (void)forwardScroll:(NSEvent*)event point:(NSPoint)point {
+    if (!(cefHandler && cefHandler->cefBrowser && cefHandler->cefBrowser.get())) {
+        return;
+    }
+
+    NSPoint local;
+    BOOL inWebView = [self isPointInWebView:point localPoint:&local];
+
+    // Also allow scroll events if we have focus (for momentum scrolling after
+    // the cursor might have drifted slightly outside bounds)
+    if (!inWebView && !_cefHasFocus) {
+        return;
+    }
+
+    // If outside WebView but has focus, calculate coords relative to WebView
+    if (!inWebView) {
+        local.x = point.x - _lastWebViewRect.origin.x;
+        local.y = point.y - _lastWebViewRect.origin.y;
+    }
+
+    CefMouseEvent me;
+    me.x = (int)local.x;
+    me.y = (int)local.y;
+    me.modifiers = [self modifiersForEvent:event];
+
+    // Map macOS scroll deltas to CEF's expected units.
+    // CEF typically expects values similar to wheel "ticks" (e.g. 120 per step).
+    // Trackpads report small floating-point deltas, so scale them up.
+    CGFloat dx = [event scrollingDeltaX];
+    CGFloat dy = [event scrollingDeltaY];
+
+    // Use a smaller scale factor for precise scrolling (trackpad) to make
+    // scrolling feel more natural and responsive.
+    const CGFloat scale = [event hasPreciseScrollingDeltas] ? 1.0 : 40.0;
+
+    // On macOS with natural scrolling, scrollingDeltaY is positive when
+    // content moves up (two-finger swipe up). CEF expects positive deltaY
+    // to scroll *down* (content moves down), so invert the sign.
+    int deltaX = (int)llround(dx * scale);
+    int deltaY = (int)llround(-dy * scale);
+
+    cefHandler->cefBrowser->GetHost()->SendMouseWheelEvent(me, deltaX, deltaY);
 }
 
 @end

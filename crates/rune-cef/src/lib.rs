@@ -23,7 +23,7 @@ mod cef_backend;
 mod cdp_backend;
 
 pub use error::{CefError, Result};
-pub use frame::FrameBuffer;
+pub use frame::{DirtyRect, FrameBuffer};
 pub use texture::WgpuTextureTarget;
 
 /// Configuration for headless CEF renderer.

@@ -1243,15 +1243,18 @@ impl IrRenderer {
                     scene_rect.h,
                 );
 
-                // Check if external pixels are available (from FFI/Xcode-managed CEF)
+                // Check if external pixels are available (from FFI/Xcode-managed CEF).
+                // Use take_external_pixels_if_dirty to avoid cloning the pixel buffer
+                // on every frame - only take new data when CEF has uploaded a frame.
+                // The GPU texture is cached in rune-surface and persists between frames.
+                let webview_z = 500;
                 if let Some((pixels, src_width, src_height)) =
-                    crate::elements::webview::get_external_pixels()
+                    crate::elements::webview::take_external_pixels_if_dirty()
                 {
                     // Render the CEF pixels using raw image draw.
                     // Use a z-index that's above normal IR content (which starts at 0)
                     // but below chrome elements like toolbar (9000) and devtools (9500).
                     // The shader clamps z to [-10000, 10000] so don't exceed that range.
-                    let webview_z = 500;
                     canvas.draw_raw_image(
                         pixels,
                         src_width,
@@ -1264,9 +1267,32 @@ impl IrRenderer {
                     // Register hit region for the webview
                     let region_id = self.hit_registry.register(view_node_id);
                     canvas.hit_region_rect(region_id, scene_rect, webview_z + 10);
+                } else if crate::elements::webview::has_external_pixels() {
+                    // Pixels exist but aren't dirty - the GPU texture is still valid.
+                    // We need to redraw from the cached texture. Get the dimensions
+                    // without cloning the pixel data.
+                    if let Some((_, _, src_width, src_height)) =
+                        crate::elements::webview::get_webview_rect()
+                            .map(|(x, y, w, h)| (x, y, w as u32, h as u32))
+                    {
+                        // Emit a draw command with empty pixels - the surface layer
+                        // will use the cached texture from the previous frame.
+                        canvas.draw_raw_image(
+                            Vec::new(), // Empty - use cached texture
+                            src_width,
+                            src_height,
+                            [scene_rect.x, scene_rect.y],
+                            [scene_rect.w, scene_rect.h],
+                            webview_z,
+                        );
+                    }
+
+                    // Register hit region for the webview
+                    let region_id = self.hit_registry.register(view_node_id);
+                    canvas.hit_region_rect(region_id, scene_rect, webview_z + 10);
                 } else {
-                    // WebView support requires either webview-cef feature or external pixels
-                    // Render a placeholder box
+                    // WebView support requires either webview-cef feature or external pixels.
+                    // Render a placeholder box until pixels arrive so the user sees the slot.
                     let placeholder_color =
                         engine_core::ColorLinPremul::from_srgba_u8([240, 240, 240, 255]);
                     canvas.fill_rect(
@@ -1277,15 +1303,22 @@ impl IrRenderer {
                         engine_core::Brush::Solid(placeholder_color),
                         z,
                     );
-                    // Draw "Loading WebView..." text
-                    let text_color = engine_core::ColorLinPremul::from_srgba_u8([100, 100, 100, 255]);
+                    let text_color =
+                        engine_core::ColorLinPremul::from_srgba_u8([100, 100, 100, 255]);
                     canvas.draw_text_run(
-                        [scene_rect.x + scene_rect.w * 0.5 - 50.0, scene_rect.y + scene_rect.h * 0.5],
+                        [
+                            scene_rect.x + scene_rect.w * 0.5 - 50.0,
+                            scene_rect.y + scene_rect.h * 0.5,
+                        ],
                         "Loading WebView...".to_string(),
                         14.0,
                         text_color,
                         z + 1,
                     );
+
+                    // Register hit region even when placeholder is shown so hit testing works.
+                    let region_id = self.hit_registry.register(view_node_id);
+                    canvas.hit_region_rect(region_id, scene_rect, z + 10);
                 }
             }
             ViewNodeKind::Alert(_) | ViewNodeKind::Modal(_) | ViewNodeKind::Confirm(_) => {
