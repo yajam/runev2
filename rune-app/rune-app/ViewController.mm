@@ -220,6 +220,7 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
 
 @interface CefBrowserView : NSView
 @property (nonatomic) CefRefPtr<CefBrowser> browser;
+@property (nonatomic) float scaleFactor;
 @end
 
 @implementation CefBrowserView
@@ -228,13 +229,40 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
     self = [super initWithFrame:frameRect];
     if (self) {
         self.wantsLayer = YES;
+        self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawOnSetNeedsDisplay;
         self.layer.backgroundColor = [[NSColor clearColor] CGColor];
+
+        // Enable layer optimizations for smooth scrolling
+        self.layer.drawsAsynchronously = YES;
+
+        _scaleFactor = 2.0; // Default, will be updated
     }
     return self;
 }
 
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    if (self.window) {
+        _scaleFactor = self.window.backingScaleFactor;
+        self.layer.contentsScale = _scaleFactor;
+    }
+}
+
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)canBecomeKeyView { return YES; }
+
+// Let CEF's internal view handle scroll events naturally
+- (void)scrollWheel:(NSEvent *)event {
+    // Forward to subviews (CEF's internal browser view)
+    [super scrollWheel:event];
+}
+
+// Ensure mouse events reach CEF's internal view
+- (NSView *)hitTest:(NSPoint)point {
+    // Let CEF's child view handle hits
+    NSView *hit = [super hitTest:point];
+    return hit ? hit : self;
+}
 
 @end
 
@@ -347,7 +375,13 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
                           CefRect(0, 0, (int)rect.size.width, (int)rect.size.height));
 
     CefBrowserSettings browserSettings;
+    // Enable smooth scrolling and hardware acceleration
+    browserSettings.windowless_frame_rate = 60;
+
     CefBrowserHost::CreateBrowser(windowInfo, _cefHandler, [url UTF8String], browserSettings, nullptr, nullptr);
+
+    // Update the CEF view's scale factor
+    _cefView.scaleFactor = _renderView.scaleFactor;
 
     // Register the native CEF view with the Rust side for hit testing
     rune_ffi_set_cef_view((__bridge void*)_cefView);
