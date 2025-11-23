@@ -29,18 +29,29 @@ public:
          const CefString& process_type,
          CefRefPtr<CefCommandLine> command_line
     ) override {
-        
+
         if (process_type.empty()) {
-            
+
             command_line->AppendSwitch("use-mock-keychain");
+
+            // Smooth scrolling optimizations
+            command_line->AppendSwitch("enable-smooth-scrolling");
+            command_line->AppendSwitch("disable-threaded-scrolling");
+
+            // GPU compositing for better performance
+            command_line->AppendSwitch("enable-gpu-rasterization");
+            command_line->AppendSwitch("enable-zero-copy");
+
+            // Reduce input latency
+            command_line->AppendSwitch("disable-gpu-vsync");
+
 //            command_line->AppendSwitch("show-fps-counter");
 //            command_line->AppendSwitch("disable-gpu");
-//            command_line->AppendSwitch("disable-gpu-vsync");
 //            command_line->AppendSwitch("disable-frame-rate-limit");
 //            command_line->AppendSwitch("disable-gpu-compositing");
 //            // Don't create a "GPUCache" directory when cache-path is unspecified.
 //            command_line->AppendSwitch("disable-gpu-shader-disk-cache");
-         
+
         }
     }
     
@@ -74,7 +85,8 @@ int main(int argc, const char * argv[]) {
         CefMainArgs cefMainArgs;
         
         CefSettings cefSettings;
-        cefSettings.windowless_rendering_enabled = true;
+        // Using native NSView rendering (not OSR/windowless)
+        cefSettings.windowless_rendering_enabled = false;
         cefSettings.no_sandbox = true;
         
         CefRefPtr<CefBrowserApp> cefBrowserApp = new CefBrowserApp([appDelegate](){
