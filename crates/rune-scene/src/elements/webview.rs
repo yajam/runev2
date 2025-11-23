@@ -251,6 +251,7 @@ pub struct WebView {
     /// Error message if initialization failed
     error_message: Option<String>,
     /// Whether we need to reinitialize (e.g., after URL change)
+    #[cfg(feature = "webview-cef")]
     needs_reinit: bool,
 }
 
@@ -282,6 +283,7 @@ impl WebView {
             last_frame_size: None,
             is_loading: false,
             error_message: None,
+            #[cfg(feature = "webview-cef")]
             needs_reinit: true,
         }
     }
@@ -615,6 +617,7 @@ impl WebView {
     }
 
     /// Convert scene coordinates to webview-local coordinates
+    #[cfg(feature = "webview-cef")]
     fn to_local_coords(&self, x: f32, y: f32) -> (i32, i32) {
         let local_x = (x - self.rect.x) as i32;
         let local_y = (y - self.rect.y) as i32;
@@ -683,14 +686,14 @@ impl crate::event_handler::EventHandler for WebView {
         &mut self,
         event: crate::event_handler::MouseClickEvent,
     ) -> crate::event_handler::EventResult {
-        use winit::event::ElementState;
-
         if !self.contains_point(event.x, event.y) {
             return crate::event_handler::EventResult::Ignored;
         }
 
         #[cfg(feature = "webview-cef")]
         {
+            use winit::event::ElementState;
+
             let button = match event.button {
                 winit::event::MouseButton::Left => MouseButton::Left,
                 winit::event::MouseButton::Right => MouseButton::Right,
@@ -716,6 +719,9 @@ impl crate::event_handler::EventHandler for WebView {
         if !self.focused {
             return crate::event_handler::EventResult::Ignored;
         }
+
+        #[cfg(not(feature = "webview-cef"))]
+        let _ = &event;
 
         #[cfg(feature = "webview-cef")]
         {
@@ -749,6 +755,9 @@ impl crate::event_handler::EventHandler for WebView {
         if !self.focused {
             return crate::event_handler::EventResult::Ignored;
         }
+
+        #[cfg(not(feature = "webview-cef"))]
+        let _ = &event;
 
         #[cfg(feature = "webview-cef")]
         {
