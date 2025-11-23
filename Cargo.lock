@@ -4138,6 +4138,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "rune-ffi"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "engine-core",
+ "env_logger",
+ "log",
+ "once_cell",
+ "parking_lot",
+ "pollster 0.3.0",
+ "rune-ir",
+ "rune-scene",
+ "rune-surface",
+ "serde_json",
+ "wgpu",
+]
+
+[[package]]
 name = "rune-io"
 version = "0.1.0"
 dependencies = [
@@ -4177,6 +4195,7 @@ dependencies = [
  "engine-core",
  "pollster 0.3.0",
  "rfd",
+ "rune-cef",
  "rune-config",
  "rune-io",
  "rune-ir",

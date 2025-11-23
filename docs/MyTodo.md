@@ -1,4 +1,4 @@
-Features
+## Features
 
 - [ ] Text selection and highlight
 - [x] Datepicker
@@ -26,7 +26,7 @@ Features
 - [ ] Web page rendering
 - [ ] Fallback theough headless CEF
 
-IR Porting
+## IR Porting
 
 - [x] Input, text, textarea, buttons, label, hyperlinks, Table
 - [x] Image, Select, datepicker, fileinput
@@ -34,7 +34,7 @@ IR Porting
 - [x] Checkboxes, Radio buttons
 - [~] Scroll horizontal and vertical
 
-Bugs
+## Bugs
 
 - [ ] Text is still not crisp, specs and dust flickering
 - [x] Textarea caret down is not working correctly
@@ -46,14 +46,27 @@ Bugs
 - [ ] Hyperlink underline mismatch
 - [ ] Load delay for elements
 
-Improvements
+## Improvements
 
-- [ ] Select needs a placeholder
+- [x] Select needs a placeholder
 - [ ] Implement a scrollbar
-- [ ] Refactor and move viewport_ir as a second demo-app
+- [x] Refactor and move viewport_ir as a second demo-app - removed completely
 - [ ] Text must ALWAYS be rendered in a linear (unorm) format, with premultiplied alpha, into a linear color attachment.
-- [ ] Add style parameter for all elements and make it robust
+- [~] Add style parameter for all elements and make it robust
 
 Testing
 
 - BIDI testing
+
+## Additional
+
+- [ ] Video/Audio subsystem (core missing block)
+- [ ] A11y subsystem completion
+- [ ] Full input/focus model (pointer capture, inertial scroll, tab order)
+- [ ] JS runtime → DOM mutation + events integration
+- [ ] Download manager
+- [ ] GPU device lost recovery
+- [ ] Telemetry (chrome traces, overlays)
+- [ ] Platform parity for Wayland/macOS/Windows IME & scaling
+- [ ] Testing suite (layout/text/gpu/event/IR)
+- [ ] Developer tooling & CI

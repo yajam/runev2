@@ -1,0 +1,5 @@
+{
+  "$schema": "../../../../crates/rune-ir/schema/data_document.schema.json",
+  "document_id": "webview_data",
+  "nodes": []
+}

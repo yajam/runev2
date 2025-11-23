@@ -22,6 +22,7 @@ members = [
     "crates/rune-io",
     "crates/rune-config",
     "crates/rune-cef",
+    "crates/rune-ffi",
 ]
 resolver = "2"
 

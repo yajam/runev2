@@ -333,6 +333,7 @@ impl IrRenderer {
             ViewNodeKind::Select(spec) => Ok(self.select_style(spec)),
             ViewNodeKind::FileInput(spec) => Ok(self.file_input_style(spec)),
             ViewNodeKind::DatePicker(spec) => Ok(self.date_picker_style(spec)),
+            ViewNodeKind::WebView(spec) => Ok(self.webview_style(spec)),
             ViewNodeKind::Alert(_) | ViewNodeKind::Modal(_) | ViewNodeKind::Confirm(_) => {
                 Ok(Style {
                     // Overlays are rendered separately; exclude them from flow layout.
@@ -808,6 +809,28 @@ impl IrRenderer {
         style
     }
 
+    /// WebView style: honor explicit width/height, otherwise use sensible defaults
+    fn webview_style(&self, spec: &rune_ir::view::WebViewSpec) -> Style {
+        let mut style = self.surface_style(&spec.style);
+
+        // Use explicit dimensions if provided, otherwise default to a reasonable size
+        if matches!(style.size.width, Dimension::Auto) {
+            style.size.width = percent(1.0); // Full width by default
+        }
+        if matches!(style.size.height, Dimension::Auto) {
+            style.size.height = dimension(400.0); // Default height
+        }
+        if matches!(style.min_size.width, Dimension::Auto) {
+            style.min_size.width = dimension(100.0);
+        }
+        if matches!(style.min_size.height, Dimension::Auto) {
+            style.min_size.height = dimension(100.0);
+        }
+
+        style.flex_shrink = 0.0;
+        style
+    }
+
     /// Compute layout with custom measurement for text nodes (wrapping support).
     pub(crate) fn compute_layout_with_measure(
         &mut self,
@@ -1022,6 +1045,7 @@ impl IrRenderer {
             ViewNodeKind::FileInput(_) => "FileInput",
             ViewNodeKind::DatePicker(_) => "DatePicker",
             ViewNodeKind::Table(_) => "Table",
+            ViewNodeKind::WebView(_) => "WebView",
             ViewNodeKind::Alert(_) => "Alert",
             ViewNodeKind::Modal(_) => "Modal",
             ViewNodeKind::Confirm(_) => "Confirm",
@@ -1178,6 +1202,48 @@ impl IrRenderer {
             }
             ViewNodeKind::Table(spec) => {
                 elements::render_table_element(canvas, data_doc, view_node, spec, scene_rect, z);
+            }
+            #[cfg(feature = "webview-cef")]
+            ViewNodeKind::WebView(spec) => {
+                // Get or create stateful WebView element
+                let webview =
+                    self.element_state
+                        .get_or_create_webview(view_node_id, spec, scene_rect);
+
+                // Render the WebView container (background, border, loading indicator)
+                webview.render(canvas, z);
+
+                // Register hit region for mouse events
+                let region_id = self.hit_registry.register(view_node_id);
+                canvas.hit_region_rect(region_id, scene_rect, z + 10);
+
+                // Note: The actual browser texture is rendered via the image pipeline
+                // after the CEF frame is captured and uploaded. This requires additional
+                // integration in the render loop to call webview.update_frame() and
+                // render the texture via the image shader.
+            }
+            #[cfg(not(feature = "webview-cef"))]
+            ViewNodeKind::WebView(_spec) => {
+                // WebView support requires the webview-cef feature
+                // Render a placeholder box
+                let placeholder_color = engine_core::ColorLinPremul::from_srgba_u8([200, 200, 200, 255]);
+                canvas.fill_rect(
+                    scene_rect.x,
+                    scene_rect.y,
+                    scene_rect.w,
+                    scene_rect.h,
+                    engine_core::Brush::Solid(placeholder_color),
+                    z,
+                );
+                // Draw "WebView not available" text
+                let text_color = engine_core::ColorLinPremul::from_srgba_u8([100, 100, 100, 255]);
+                canvas.draw_text_run(
+                    [scene_rect.x + 10.0, scene_rect.y + 20.0],
+                    "WebView requires webview-cef feature".to_string(),
+                    12.0,
+                    text_color,
+                    z + 1,
+                );
             }
             ViewNodeKind::Alert(_) | ViewNodeKind::Modal(_) | ViewNodeKind::Confirm(_) => {
                 // Overlays are rendered separately in a post-render pass

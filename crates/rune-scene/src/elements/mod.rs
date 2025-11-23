@@ -21,6 +21,8 @@ pub mod selection_renderer;
 pub mod table;
 pub mod text;
 pub mod text_area;
+#[cfg(feature = "webview-cef")]
+pub mod webview;
 
 pub use alert::{Alert, AlertPosition};
 pub use button::{Button, ButtonClickResult};
@@ -39,3 +41,5 @@ pub use select::Select;
 pub use table::{Alignment, Column, Table, TableCell, TableRow};
 pub use text::Text;
 pub use text_area::TextArea;
+#[cfg(feature = "webview-cef")]
+pub use webview::WebView;

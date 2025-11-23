@@ -376,22 +376,60 @@ pub extern "C" fn cef_demo_render()
 
 ---
 
-## Phase 5: Integration with Rune Engine
+## Phase 5: Integration with Rune Engine (DONE)
 
-### 5.1 Texture Upload
-- [ ] Create wgpu texture from CEF pixel buffer
-- [ ] Implement efficient texture updates (partial updates if possible)
-- [ ] Handle BGRA to RGBA conversion if needed
+### 5.1 Texture Upload ✅
+- [x] Create wgpu texture from CEF pixel buffer (via `WgpuTextureTarget`)
+- [x] Implement efficient texture updates (automatic resize handling)
+- [x] Handle BGRA to RGBA conversion (automatic in `WgpuTextureTarget::upload()`)
 
-### 5.2 Event Routing
-- [ ] Route mouse events from Rune hit-testing to CEF
-- [ ] Route keyboard events to focused CEF browser
-- [ ] Handle focus management
+### 5.2 Event Routing ✅
+- [x] Route mouse events from Rune hit-testing to CEF
+- [x] Route keyboard events to focused CEF browser
+- [x] Handle focus management (integrated with `IrElementState`)
 
-### 5.3 Integration Points
-- [ ] Add CEF browser as IR element type
-- [ ] Implement in `rune-scene` viewport rendering
-- [ ] Create CEF element for IR renderer
+### 5.3 Integration Points ✅
+- [x] Add CEF browser as IR element type (`ViewNodeKind::WebView`)
+- [x] Implement in `rune-scene` viewport rendering (`ir_renderer/core.rs`)
+- [x] Create CEF element for IR renderer (`elements/webview.rs`)
+
+### 5.4 Implementation Details
+
+**New IR Element: `WebView`**
+```rust
+// In rune-ir/src/view/mod.rs
+pub enum ViewNodeKind {
+    // ... existing variants ...
+    WebView(WebViewSpec),
+}
+
+pub struct WebViewSpec {
+    pub style: SurfaceStyle,
+    pub url: Option<String>,
+    pub html: Option<String>,
+    pub base_url: Option<String>,
+    pub scale_factor: Option<f64>,
+    pub javascript_enabled: Option<bool>,
+    pub user_agent: Option<String>,
+    pub webview_id: Option<String>,
+}
+```
+
+**Feature Flags:**
+```toml
+# In rune-scene/Cargo.toml
+[features]
+webview-cef = ["dep:rune-cef"]           # CEF backend for WebView elements
+```
+
+**Files Added/Modified:**
+- `crates/rune-ir/src/view/mod.rs` - Added `WebView` variant and `WebViewSpec`
+- `crates/rune-scene/Cargo.toml` - Added feature flags and rune-cef dependency
+- `crates/rune-scene/src/elements/webview.rs` - WebView element implementation
+- `crates/rune-scene/src/elements/mod.rs` - Export WebView element
+- `crates/rune-scene/src/ir_renderer/state.rs` - WebView state management
+- `crates/rune-scene/src/ir_renderer/core.rs` - WebView rendering dispatch
+- `crates/rune-scene/src/ir_adapter.rs` - Helper for background color parsing
 
 ---
 
@@ -464,6 +502,21 @@ cef-app/                     # Production Xcode project (Rust/wgpu rendering)
 │   ├── process_helper_mac.cc
 │   └── Info.plist (multiple)
 └── cef -> ../cef-test/cef   # Symlink to CEF binaries
+
+crates/rune-ir/              # IR definitions (Phase 5 additions)
+└── src/
+    └── view/mod.rs          # Added WebView variant and WebViewSpec
+
+crates/rune-scene/           # Scene rendering (Phase 5 additions)
+├── Cargo.toml               # Added webview-cef/webview-cdp features
+└── src/
+    ├── elements/
+    │   ├── mod.rs           # Export WebView element
+    │   └── webview.rs       # NEW: WebView element implementation
+    ├── ir_renderer/
+    │   ├── core.rs          # Added WebView rendering dispatch
+    │   └── state.rs         # Added WebView state management
+    └── ir_adapter.rs        # Added view_background_to_color helper
 ```
 
 ### CEF Binaries (gitignored, download separately)
@@ -548,19 +601,22 @@ crates/cef-demo/
 | 3 | Xcode Project Setup | ✅ DONE | Medium |
 | 3.5 | Rust/wgpu Integration | ✅ DONE | Medium |
 | 4 | Demo Crate | ✅ DONE (windowed) | Low |
-| 5 | Rune Integration | ⏳ TODO | High |
+| 5 | Rune Integration | ✅ DONE | High |
 | 6 | Testing & Polish | ⏳ TODO | Medium |
 
 **Current State:**
-- Phases 1, 2, 3, 3.5, and 4 are complete
+- Phases 1, 2, 3, 3.5, 4, and 5 are complete
 - `cef-app/` Xcode project works with CEF + Rust/wgpu rendering
 - CEF runs in Xcode, Rust handles GPU rendering via `libcef_demo.a`
 - Colors render correctly (sRGB), smooth animation via CVDisplayLink
 - `cef-demo` also works as standalone windowed wgpu application
 - `rune-cef` crate builds with full CEF FFI bindings
+- **NEW**: `WebView` IR element type added to `rune-scene`
+- **NEW**: Full event routing (mouse/keyboard) integrated with hit-testing
+- **NEW**: Feature-gated via `webview-cef` feature
 
 **Next Steps:**
-- **Phase 5**: Integrate CEF as IR element type in rune-scene
+- **Phase 6**: Testing & polish
 
 ---
 

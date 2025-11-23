@@ -1,0 +1,36 @@
+{
+  "$schema": "../../../../crates/rune-ir/schema/view_document.schema.json",
+  "view_id": "webview_demo",
+  "root": "root_container",
+  "nodes": [
+    {
+      "id": "root_container",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "center",
+        "align": "center"
+      },
+      "background": {
+        "type": "solid",
+        "color": "#1e293b"
+      },
+      "children": [
+        "main_webview"
+      ]
+    },
+    {
+      "id": "main_webview",
+      "type": "webview",
+      "url": "https://example.com",
+      "webview_id": "mainweb1",
+      "javascript_enabled": true,
+      "scale_factor": 1.0,
+      "style": {
+        "width": 800,
+        "height": 600,
+        "corner_radius": 8
+      }
+    }
+  ]
+}

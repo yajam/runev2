@@ -56,6 +56,8 @@ pub enum ViewNodeKind {
     Modal(OverlayContainerSpec),
     /// A confirm dialog overlay (content-defined). Defaults to centered.
     Confirm(OverlayContainerSpec),
+    /// Embedded web browser view (CEF/Chrome)
+    WebView(WebViewSpec),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -930,4 +932,43 @@ pub struct DatePickerSpec {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_value: Option<String>,
+}
+
+/// Embedded web browser view specification (CEF/Chrome).
+///
+/// Renders web content to a texture within the IR scene graph.
+/// Supports both URL navigation and inline HTML content.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WebViewSpec {
+    /// Container styling (background, padding, margin, radius, width/height)
+    #[serde(default)]
+    pub style: SurfaceStyle,
+    /// URL to navigate to (mutually exclusive with `html`)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// HTML content to render directly (mutually exclusive with `url`)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
+    /// Base URL for resolving relative paths in HTML content
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    /// Device scale factor (1.0 = 96 DPI, 2.0 = Retina)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale_factor: Option<f64>,
+    /// Whether JavaScript execution is enabled (default: true)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub javascript_enabled: Option<bool>,
+    /// Custom user agent string
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_agent: Option<String>,
+    /// Unique identifier for this webview instance
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webview_id: Option<String>,
 }

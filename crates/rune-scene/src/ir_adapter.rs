@@ -187,6 +187,13 @@ pub(crate) fn parse_background_color(bg: &ViewBackground) -> Option<ColorLinPrem
     }
 }
 
+/// Convert a ViewBackground to a ColorLinPremul (public API for state management).
+///
+/// Returns the solid color if present, or None for gradient backgrounds.
+pub fn view_background_to_color(bg: &ViewBackground) -> Option<ColorLinPremul> {
+    parse_background_color(bg)
+}
+
 /// Parse a color string to ColorLinPremul.
 ///
 /// Supports:

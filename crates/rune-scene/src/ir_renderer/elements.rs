@@ -1050,6 +1050,7 @@ fn resolve_action_href_from_data(data_doc: &DataDocument, node_id: &str) -> Opti
 }
 
 /// Resolve image source from DataDocument by node_id.
+/// Checks multiple locations for the image file.
 fn resolve_image_source_from_data(
     data_doc: &DataDocument,
     node_id: &str,
@@ -1057,7 +1058,43 @@ fn resolve_image_source_from_data(
     use rune_ir::data::document::DataNodeKind;
     let data_node = data_doc.node(node_id)?;
     match &data_node.kind {
-        DataNodeKind::Image(image_data) => Some(std::path::PathBuf::from(&image_data.source)),
+        DataNodeKind::Image(image_data) => {
+            let source = &image_data.source;
+            let path = std::path::PathBuf::from(source);
+
+            // If absolute path exists, use it
+            if path.is_absolute() && path.exists() {
+                return Some(path);
+            }
+
+            // Try relative to current directory
+            if path.exists() {
+                return Some(path);
+            }
+
+            // Try in macOS app bundle Resources directory
+            if let Ok(exe_path) = std::env::current_exe() {
+                // exe is at App.app/Contents/MacOS/binary
+                // resources are at App.app/Contents/Resources/
+                if let Some(contents_dir) = exe_path.parent().and_then(|p| p.parent()) {
+                    let resources_path = contents_dir.join("Resources").join(source);
+                    if resources_path.exists() {
+                        return Some(resources_path);
+                    }
+                    // Also try without the leading directory (e.g., "images/foo.png" -> "foo.png")
+                    if let Some(filename) = path.file_name() {
+                        let resources_path = contents_dir.join("Resources").join(filename);
+                        if resources_path.exists() {
+                            return Some(resources_path);
+                        }
+                    }
+                }
+            }
+
+            // Return the original path even if it doesn't exist
+            // (the caller will show a placeholder)
+            Some(path)
+        }
         _ => None,
     }
 }

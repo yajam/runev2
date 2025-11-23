@@ -35,6 +35,8 @@ use rune_ir::view::{
     ButtonSpec, CheckboxSpec, DatePickerSpec, FileInputSpec, InputBoxSpec, RadioSpec, SelectSpec,
     TextAlign, TextAreaSpec, ViewNode, ViewNodeId,
 };
+#[cfg(feature = "webview-cef")]
+use rune_ir::view::WebViewSpec;
 use std::collections::HashMap;
 
 /// Element type identifier for focus management
@@ -52,6 +54,8 @@ pub enum IrElementType {
     Modal,
     Alert,
     Confirm,
+    #[cfg(feature = "webview-cef")]
+    WebView,
 }
 
 /// Represents an active overlay (modal, alert, or confirm)
@@ -107,6 +111,10 @@ pub struct IrElementState {
     /// File input elements
     file_inputs: HashMap<ViewNodeId, elements::FileInput>,
 
+    /// WebView elements (CEF/Chrome browser instances)
+    #[cfg(feature = "webview-cef")]
+    webviews: HashMap<ViewNodeId, elements::WebView>,
+
     /// Currently focused element (if any)
     focused_element: Option<(ViewNodeId, IrElementType)>,
 
@@ -132,6 +140,8 @@ impl IrElementState {
             selects: HashMap::new(),
             date_pickers: HashMap::new(),
             file_inputs: HashMap::new(),
+            #[cfg(feature = "webview-cef")]
+            webviews: HashMap::new(),
             focused_element: None,
             dirty: false,
             active_overlays: Vec::new(),
@@ -150,6 +160,8 @@ impl IrElementState {
         self.selects.clear();
         self.date_pickers.clear();
         self.file_inputs.clear();
+        #[cfg(feature = "webview-cef")]
+        self.webviews.clear();
         self.focused_element = None;
         self.dirty = false;
         self.active_overlays.clear();
@@ -684,6 +696,77 @@ impl IrElementState {
         entry
     }
 
+    /// Get or create a WebView element for the given ViewNode
+    #[cfg(feature = "webview-cef")]
+    pub fn get_or_create_webview(
+        &mut self,
+        view_node_id: &ViewNodeId,
+        spec: &WebViewSpec,
+        rect: Rect,
+    ) -> &mut elements::WebView {
+        let entry = self
+            .webviews
+            .entry(view_node_id.clone())
+            .or_insert_with(|| {
+                let mut webview =
+                    elements::WebView::new(rect, spec.url.clone(), spec.html.clone());
+
+                // Apply configuration from spec
+                if let Some(base_url) = &spec.base_url {
+                    webview.base_url = Some(base_url.clone());
+                }
+                if let Some(scale) = spec.scale_factor {
+                    webview.scale_factor = scale as f32;
+                }
+                if let Some(js_enabled) = spec.javascript_enabled {
+                    webview.javascript_enabled = js_enabled;
+                }
+                if let Some(ua) = &spec.user_agent {
+                    webview.user_agent = Some(ua.clone());
+                }
+
+                webview
+            });
+
+        // CRITICAL: Update rect every frame to handle window resize and layout changes
+        entry.rect = rect;
+
+        // Apply surface styling
+        if let Some(bg) = &spec.style.background {
+            if let Some(color) = crate::ir_adapter::view_background_to_color(bg) {
+                entry.bg_color = color;
+            }
+        }
+        if let Some(border_color) = spec
+            .style
+            .border_color
+            .as_ref()
+            .and_then(|c| crate::ir_adapter::parse_color(c))
+        {
+            entry.border_color = border_color;
+        }
+        if let Some(border_width) = spec.style.border_width {
+            entry.border_width = border_width as f32;
+        }
+        if let Some(radius) = spec.style.corner_radius {
+            entry.corner_radius = radius as f32;
+        }
+
+        entry
+    }
+
+    /// Get a mutable reference to a WebView element
+    #[cfg(feature = "webview-cef")]
+    pub fn get_webview_mut(&mut self, view_node_id: &ViewNodeId) -> Option<&mut elements::WebView> {
+        self.webviews.get_mut(view_node_id)
+    }
+
+    /// Get all WebView elements for frame updates
+    #[cfg(feature = "webview-cef")]
+    pub fn webviews_mut(&mut self) -> impl Iterator<Item = (&ViewNodeId, &mut elements::WebView)> {
+        self.webviews.iter_mut()
+    }
+
     // ========================================================================
     // Focus Management
     // ========================================================================
@@ -735,6 +818,12 @@ impl IrElementState {
                     file_input.set_focused(true);
                 }
             }
+            #[cfg(feature = "webview-cef")]
+            IrElementType::WebView => {
+                if let Some(webview) = self.webviews.get_mut(&view_node_id) {
+                    webview.set_focused(true);
+                }
+            }
             _ => {}
         }
 
@@ -767,6 +856,10 @@ impl IrElementState {
         }
         for file_input in self.file_inputs.values_mut() {
             file_input.set_focused(false);
+        }
+        #[cfg(feature = "webview-cef")]
+        for webview in self.webviews.values_mut() {
+            webview.set_focused(false);
         }
 
         self.focused_element = None;
@@ -1055,6 +1148,16 @@ impl IrElementState {
             }
         }
 
+        #[cfg(feature = "webview-cef")]
+        if let Some(webview) = self.webviews.get_mut(view_node_id) {
+            let result = webview.handle_mouse_click(event);
+            if result.is_handled() {
+                self.set_focus(view_node_id.clone(), IrElementType::WebView);
+                self.dirty = true;
+                return EventResult::Handled;
+            }
+        }
+
         EventResult::Ignored
     }
 
@@ -1115,6 +1218,16 @@ impl IrElementState {
                 IrElementType::FileInput => {
                     if let Some(file_input) = self.file_inputs.get_mut(view_node_id) {
                         let result = file_input.handle_keyboard(event);
+                        if result.is_handled() {
+                            self.dirty = true;
+                        }
+                        return result;
+                    }
+                }
+                #[cfg(feature = "webview-cef")]
+                IrElementType::WebView => {
+                    if let Some(webview) = self.webviews.get_mut(view_node_id) {
+                        let result = webview.handle_keyboard(event);
                         if result.is_handled() {
                             self.dirty = true;
                         }
@@ -1208,6 +1321,16 @@ impl IrElementState {
                 IrElementType::TextArea => {
                     if let Some(textarea) = self.text_areas.get_mut(view_node_id) {
                         let result = textarea.handle_mouse_move(event);
+                        if result.is_handled() {
+                            self.dirty = true;
+                        }
+                        return result;
+                    }
+                }
+                #[cfg(feature = "webview-cef")]
+                IrElementType::WebView => {
+                    if let Some(webview) = self.webviews.get_mut(view_node_id) {
+                        let result = webview.handle_mouse_move(event);
                         if result.is_handled() {
                             self.dirty = true;
                         }

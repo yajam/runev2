@@ -70,7 +70,7 @@ scene = "zones"
 # Example: "examples/sample_first_node"
 # Default: none
 # package_path = "examples/sample_first_node"
-package_path = "examples/sample_form"
+# package_path = "examples/sample_form"
 
 # Enable diagnostic output for IR processing
 # Comma-separated list of diagnostic categories

@@ -62,7 +62,8 @@
             "table",
             "alert",
             "modal",
-            "confirm"
+            "confirm",
+            "webview"
           ]
         },
         "layout": {
@@ -163,7 +164,14 @@
         "cell_style": { "$ref": "#/$defs/TextStyle" },
         "column_gap": { "type": "number" },
         "row_gap": { "type": "number" },
-        "zebra": { "type": "boolean" }
+        "zebra": { "type": "boolean" },
+        "url": { "type": "string" },
+        "html": { "type": "string" },
+        "base_url": { "type": "string" },
+        "scale_factor": { "type": "number" },
+        "javascript_enabled": { "type": "boolean" },
+        "user_agent": { "type": "string" },
+        "webview_id": { "type": "string" }
       },
       "allOf": [
         {
@@ -448,6 +456,21 @@
               "form_id": { "type": "string" },
               "default_value": { "type": "string" },
               "width": { "type": "number" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "webview" } } },
+          "then": {
+            "properties": {
+              "style": { "$ref": "#/$defs/SurfaceStyle" },
+              "url": { "type": "string" },
+              "html": { "type": "string" },
+              "base_url": { "type": "string" },
+              "scale_factor": { "type": "number" },
+              "javascript_enabled": { "type": "boolean" },
+              "user_agent": { "type": "string" },
+              "webview_id": { "type": "string" }
             }
           }
         }

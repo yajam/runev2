@@ -309,8 +309,15 @@ impl RuneSurface {
         let unified_scene =
             engine_core::upload_display_list_unified(&mut self.allocator, &self.queue, &list)?;
 
-        // Sort SVG draws by z-index
-        let mut svg_draws = canvas.svg_draws.clone();
+        // Sort SVG draws by z-index and resolve paths for app bundle
+        let mut svg_draws: Vec<_> = canvas
+            .svg_draws
+            .iter()
+            .map(|(path, origin, max_size, style, z, transform)| {
+                let resolved_path = crate::resolve_asset_path(path);
+                (resolved_path, *origin, *max_size, *style, *z, *transform)
+            })
+            .collect();
         svg_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
 
         // Sort image draws by z-index and prepare simplified data (for unified pass)
@@ -326,12 +333,15 @@ impl RuneSurface {
         // they will be scaled by PassManager via logical_pixels/dpi.
         let mut prepared_images: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)> = Vec::new();
         for (path, origin, size, fit, z, transform) in image_draws.iter() {
+            // Resolve path to check app bundle resources
+            let resolved_path = crate::resolve_asset_path(path);
+
             // Synchronously load (or fetch from cache) to ensure the texture
             // is available for this frame. This mirrors the demo-app unified
             // path and avoids images only appearing after a later redraw.
             if let Some((tex_view, img_w, img_h)) = self
                 .pass
-                .load_image_to_view(std::path::Path::new(path), &self.queue)
+                .load_image_to_view(&resolved_path, &self.queue)
             {
                 drop(tex_view); // Only need dimensions here
                 let transformed_origin = apply_transform_to_point(*origin, *transform);
@@ -342,7 +352,7 @@ impl RuneSurface {
                     img_h as f32,
                     *fit,
                 );
-                prepared_images.push((path.clone(), render_origin, render_size, *z));
+                prepared_images.push((resolved_path.clone(), render_origin, render_size, *z));
             }
         }
 

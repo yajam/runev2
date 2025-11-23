@@ -12,6 +12,10 @@
         "align": "center",
         "gap": 16
       },
+      "background": {
+        "type": "solid",
+        "color": "#1e293b"
+      },
       "padding": {
         "top": 0,
         "right": 0,
