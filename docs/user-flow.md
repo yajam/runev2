@@ -269,6 +269,106 @@ HOME → IR_APP → BROWSER
 - Global search integrated into Dock overlay
 - Drag-and-drop document movement between apps
 - Multi-window IR apps
-- Right-click “Show in Dock” for websites
+- Right-click "Show in Dock" for websites
 - GPU-accelerated animations for Dock open/close
 - App groups (folders)
+
+---
+
+# 11. Implementation Checklist
+
+## Phase 1: Core Infrastructure
+
+- [ ] **Home Button Component**
+
+  - [ ] Create persistent Home Button UI element
+  - [ ] Implement tap → return to Home Tab behavior
+  - [ ] Implement double-click → open Dock overlay
+  - [ ] Add secondary click for quick actions menu
+
+- [ ] **Navigation Mode State Machine**
+  - [ ] Define `NavigationMode` enum (Home, IRApp, Browser)
+  - [ ] Implement mode transitions in rune-core reducer
+  - [ ] Add toolbar visibility toggle based on mode
+  - [ ] Wire up mode-aware rendering in rune-scene
+
+## Phase 2: App Dock
+
+- [ ] **Dock Overlay UI**
+
+  - [ ] Create Dock overlay component (floats above content)
+  - [ ] Implement dismiss gestures (tap outside, Esc, Home Button, swipe)
+  - [ ] Add animation for open/close transitions
+
+- [ ] **Dock Sections**
+
+  - [ ] Pinned Apps row (Peco always first)
+  - [ ] Active Browser Tabs section (favicon, title, optional thumbnail)
+  - [ ] Recent Apps/Sites section (chronological list)
+  - [ ] Add Shortcut button
+
+- [ ] **Dock Interactions**
+
+  - [ ] Single click → switch to app/tab
+  - [ ] Right-click context menu (Close, Pin/Unpin)
+  - [ ] Drag-and-drop reordering for pinned apps
+
+- [ ] **Dock State Persistence**
+  - [ ] Store pinned apps in settings storage
+  - [ ] Track active browser tabs as "apps" in Dock
+  - [ ] Persist recent apps/sites list
+
+## Phase 3: Home Tab (Peco)
+
+- [ ] **Home Tab Layout**
+
+  - [ ] Conversation panel (Peco chat)
+  - [ ] Recommended actions / shortcuts section
+  - [ ] IR App Launcher grid
+  - [ ] Recent items list
+
+- [ ] **Home Tab Behavior**
+  - [ ] No toolbar in Home Mode
+  - [ ] Peco command routing ("open xyz.com" → Browser Mode)
+  - [ ] IR app launch from Home → IR App Mode
+
+## Phase 4: Mode-Specific Behavior
+
+- [ ] **Home Mode**
+
+  - [ ] Hide toolbar
+  - [ ] Enable Dock access
+  - [ ] Route navigation through Peco
+
+- [ ] **IR App Mode**
+
+  - [ ] Hide toolbar
+  - [ ] Enable within-app navigation only
+  - [ ] Enable Dock access
+  - [ ] Support app switching via Dock
+
+- [ ] **Browser Mode**
+  - [ ] Show toolbar (address bar, back/forward, reload)
+  - [ ] Enable Dock access
+  - [ ] URL input and navigation
+  - [ ] Tab management integration
+
+## Phase 5: Integration & Polish
+
+- [ ] **Interop**
+
+  - [ ] IR app launch: IR request → IR translator → layout → scene
+  - [ ] Browser tab (CEF fallback) mapped as Dock "app"
+  - [ ] Unified tab/app switching across all modes
+
+- [ ] **Rendering**
+
+  - [ ] Dock rendered in rune-layout/rune-scene (layered above content)
+  - [ ] Standard offscreen RGBA → BGRA path for Dock
+  - [ ] Smooth animations for mode transitions
+
+- [ ] **Testing**
+  - [ ] Test all mode transitions (Home ↔ IR App ↔ Browser)
+  - [ ] Test Dock interactions in each mode
+  - [ ] Test persistence of pinned apps and recent items
+  - [ ] Test keyboard shortcuts (Esc to dismiss, etc.)

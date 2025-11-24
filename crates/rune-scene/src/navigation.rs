@@ -35,6 +35,23 @@ pub enum RenderTarget {
     Cef,
 }
 
+/// Navigation mode determines the UI chrome behavior.
+///
+/// This maps to the three navigation modes described in the user flow:
+/// - Home: AI-native home screen (Peco), no toolbar
+/// - IRApp: IR-native apps, no toolbar
+/// - Browser: Web content via CEF, toolbar visible
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NavigationMode {
+    /// Home tab (Peco) - system hub, AI workspace, no toolbar
+    #[default]
+    Home,
+    /// IR App mode - local IR apps, no toolbar
+    IRApp,
+    /// Browser mode - web content, toolbar visible
+    Browser,
+}
+
 /// Navigation state tracking for the browser.
 #[derive(Debug, Default)]
 pub struct NavigationState {
@@ -44,6 +61,8 @@ pub struct NavigationState {
     pub current_title: Option<String>,
     /// Current render target
     pub render_target: RenderTarget,
+    /// Current navigation mode (determines UI chrome)
+    pub navigation_mode: NavigationMode,
     /// Whether we can go back
     pub can_go_back: bool,
     /// Whether we can go forward
@@ -54,7 +73,8 @@ pub struct NavigationState {
 
 impl Default for RenderTarget {
     fn default() -> Self {
-        RenderTarget::Cef
+        // Default to IR since the default NavigationMode is Home (IR-based)
+        RenderTarget::Ir
     }
 }
 
@@ -153,13 +173,17 @@ pub fn navigate_to(url: &str) {
     }
 
     let target = determine_render_target(&normalized);
-    log::info!("Navigation requested: {} -> {:?}", normalized, target);
+    let mode = derive_navigation_mode(&normalized, target);
+    log::info!("Navigation requested: {} -> {:?} (mode: {:?})", normalized, target, mode);
 
     // Update state
     if let Ok(mut s) = state().lock() {
         s.current_url = Some(normalized.clone());
         s.render_target = target;
-        s.is_loading = true;
+        s.navigation_mode = mode;
+        // Only set loading=true for CEF navigation.
+        // IR content loads immediately (same frame), so no loading indicator needed.
+        s.is_loading = target == RenderTarget::Cef;
     }
 
     // Queue the command
@@ -213,15 +237,43 @@ pub fn has_pending_commands() -> bool {
 
 /// Update navigation state from CEF callbacks.
 /// Called when CEF reports navigation state changes.
+///
+/// IMPORTANT: This function is careful NOT to overwrite the navigation_mode
+/// or render_target when we're in IR mode. CEF continues to report its state
+/// even when we've navigated away from CEF content, which would cause
+/// flickering and incorrect mode switching if we blindly overwrote the state.
 pub fn update_state(url: Option<String>, can_back: bool, can_forward: bool, loading: bool) {
     if let Ok(mut s) = state().lock() {
+        // Only update URL and render target from CEF if we're currently in CEF/Browser mode.
+        // If we've navigated to IR content, ignore CEF's URL updates to avoid overwriting
+        // the intentional IR navigation state.
+        let current_mode = s.navigation_mode;
+        let currently_in_ir_mode = matches!(current_mode, NavigationMode::Home | NavigationMode::IRApp);
+
         if let Some(ref u) = url {
-            s.current_url = Some(u.clone());
-            s.render_target = determine_render_target(u);
+            // Only update from CEF if:
+            // 1. We're not in IR mode, OR
+            // 2. The URL itself is an IR URL (meaning CEF is reporting an IR navigation)
+            let incoming_target = determine_render_target(u);
+            let should_update_url = !currently_in_ir_mode || incoming_target == RenderTarget::Ir;
+
+            if should_update_url {
+                s.current_url = Some(u.clone());
+                s.render_target = incoming_target;
+            }
+            // If we're in IR mode and CEF reports a non-IR URL, ignore it
+            // This prevents CEF's stale state from overwriting our IR navigation
         }
+
+        // Always update navigation capability flags (back/forward still work)
         s.can_go_back = can_back;
         s.can_go_forward = can_forward;
-        s.is_loading = loading;
+
+        // Only update loading state if we're not in IR mode, or if loading is false
+        // (to clear the loading state when CEF finishes loading its content)
+        if !currently_in_ir_mode || !loading {
+            s.is_loading = loading;
+        }
     }
 }
 
@@ -231,6 +283,7 @@ pub fn get_state() -> NavigationState {
         current_url: s.current_url.clone(),
         current_title: s.current_title.clone(),
         render_target: s.render_target,
+        navigation_mode: s.navigation_mode,
         can_go_back: s.can_go_back,
         can_go_forward: s.can_go_forward,
         is_loading: s.is_loading,
@@ -257,6 +310,62 @@ pub fn set_current_title(title: Option<String>) {
 /// Get the current render target.
 pub fn get_render_target() -> RenderTarget {
     state().lock().map(|s| s.render_target).unwrap_or_default()
+}
+
+/// Get the current navigation mode.
+pub fn get_navigation_mode() -> NavigationMode {
+    state().lock().map(|s| s.navigation_mode).unwrap_or_default()
+}
+
+/// Set the navigation mode directly.
+pub fn set_navigation_mode(mode: NavigationMode) {
+    if let Ok(mut s) = state().lock() {
+        s.navigation_mode = mode;
+        log::info!("Navigation mode set to: {:?}", mode);
+    }
+}
+
+/// Derive navigation mode from URL and render target.
+/// - `rune://home` → Home mode
+/// - `rune://` or `ir://` (non-home) → IRApp mode
+/// - Everything else (CEF) → Browser mode
+pub fn derive_navigation_mode(url: &str, target: RenderTarget) -> NavigationMode {
+    let url_lower = url.to_lowercase();
+
+    // Check for home URL
+    if url_lower == "rune://home" || url_lower == "rune://peco" {
+        return NavigationMode::Home;
+    }
+
+    // IR URLs are IRApp mode
+    if target == RenderTarget::Ir {
+        return NavigationMode::IRApp;
+    }
+
+    // Default to Browser mode for CEF content
+    NavigationMode::Browser
+}
+
+/// Navigate to the Home tab (Peco).
+/// This sets the navigation mode to Home and navigates to rune://home.
+pub fn navigate_home() {
+    log::info!("Navigation: go home");
+    if let Ok(mut s) = state().lock() {
+        s.current_url = Some("rune://home".to_string());
+        s.render_target = RenderTarget::Ir;
+        s.navigation_mode = NavigationMode::Home;
+        s.is_loading = false;
+    }
+    // Queue navigation command for any listeners
+    if let Ok(mut q) = queue().lock() {
+        q.push_back(NavigationCommand::LoadUrl("rune://home".to_string()));
+    }
+}
+
+/// Check if toolbar should be visible based on current navigation mode.
+/// Toolbar is visible in Browser mode and IRApp mode, but NOT in Home mode.
+pub fn should_show_toolbar() -> bool {
+    matches!(get_navigation_mode(), NavigationMode::Browser | NavigationMode::IRApp)
 }
 
 #[cfg(test)]

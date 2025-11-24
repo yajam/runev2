@@ -1,6 +1,7 @@
 use super::common::ZoneStyle;
 use crate::elements::InputBox;
 use engine_core::{ColorLinPremul, Rect};
+use std::time::Instant;
 
 /// Toolbar configuration and state
 pub struct Toolbar {
@@ -12,6 +13,8 @@ pub struct Toolbar {
     loading_icon_visible: bool,
     /// Blink timer accumulator
     blink_time: f32,
+    /// Last click time for double-click detection on Home button
+    last_home_click: Option<Instant>,
 }
 
 impl Toolbar {
@@ -35,10 +38,34 @@ impl Toolbar {
         Self {
             style: Self::default_style(),
             address_bar,
-            is_loading: true, // Start loading - CEF will set to false when done
+            // Start with is_loading=false - the navigation state will update this
+            // based on whether we're loading CEF content or showing IR content
+            is_loading: false,
             loading_icon_visible: true,
             blink_time: 0.0,
+            last_home_click: None,
         }
+    }
+
+    /// Handle Home button click. Returns true if this was a double-click (should open Dock).
+    pub fn handle_home_click(&mut self) -> bool {
+        const DOUBLE_CLICK_THRESHOLD_MS: u128 = 400;
+
+        let now = Instant::now();
+        let is_double_click = if let Some(last) = self.last_home_click {
+            now.duration_since(last).as_millis() < DOUBLE_CLICK_THRESHOLD_MS
+        } else {
+            false
+        };
+
+        if is_double_click {
+            // Reset to prevent triple-click counting as another double
+            self.last_home_click = None;
+        } else {
+            self.last_home_click = Some(now);
+        }
+
+        is_double_click
     }
 
     /// Set loading state
@@ -85,11 +112,15 @@ impl Toolbar {
     /// IMPORTANT: toolbar_rect is passed for dimensions and calculations,
     /// but we render in LOCAL coordinates (0,0 origin) because the caller applies a transform.
     /// Hit regions also use LOCAL coordinates since they ARE affected by transforms.
+    ///
+    /// `can_go_back` and `can_go_forward` control the visual state of nav buttons.
     pub fn render(
         &mut self,
         canvas: &mut rune_surface::Canvas,
         toolbar_rect: Rect,
         provider: &dyn engine_core::TextProvider,
+        can_go_back: bool,
+        can_go_forward: bool,
     ) {
         // Layout constants
         const BUTTON_SIZE: f32 = 24.0;
@@ -102,10 +133,14 @@ impl Toolbar {
         let center_y = (toolbar_rect.h - BUTTON_SIZE) * 0.5;
         let address_y = (toolbar_rect.h - ADDRESS_HEIGHT) * 0.5;
 
-        // Icon styling
+        // Icon styling - active (white) vs muted (gray)
         let white = engine_core::Color::rgba(255, 255, 255, 255);
+        let muted = engine_core::Color::rgba(100, 100, 110, 255);
         let icon_style = engine_core::SvgStyle::new()
             .with_stroke(white)
+            .with_stroke_width(1.5);
+        let muted_style = engine_core::SvgStyle::new()
+            .with_stroke(muted)
             .with_stroke_width(1.5);
 
         let mut x = MARGIN;
@@ -125,47 +160,69 @@ impl Toolbar {
             icon_style.clone(),
             10200,
         );
+        x += BUTTON_SIZE + BUTTON_GAP;
+
+        // 2. Home button (navigates to Home tab, double-click opens Dock)
+        let home_rect = Rect {
+            x,
+            y: center_y,
+            w: BUTTON_SIZE,
+            h: BUTTON_SIZE,
+        };
+        canvas.hit_region_rect(HOME_BUTTON_REGION_ID, home_rect, 10150);
+        canvas.draw_svg_styled(
+            "images/layout-grid.svg",
+            [x, center_y],
+            [BUTTON_SIZE, BUTTON_SIZE],
+            icon_style.clone(),
+            10200,
+        );
         x += BUTTON_SIZE + SECTION_GAP;
 
-        // 2. Back button
+        // 3. Back button (muted when no history)
         let back_rect = Rect {
             x,
             y: center_y,
             w: BUTTON_SIZE,
             h: BUTTON_SIZE,
         };
-        canvas.hit_region_rect(BACK_BUTTON_REGION_ID, back_rect, 10150);
+        if can_go_back {
+            canvas.hit_region_rect(BACK_BUTTON_REGION_ID, back_rect, 10150);
+        }
         canvas.draw_svg_styled(
             "images/arrow-left.svg",
             [x, center_y],
             [BUTTON_SIZE, BUTTON_SIZE],
-            icon_style.clone(),
+            if can_go_back { icon_style.clone() } else { muted_style.clone() },
             10200,
         );
         x += BUTTON_SIZE + BUTTON_GAP;
 
-        // 3. Forward button
+        // 4. Forward button (muted when no forward history)
         let forward_rect = Rect {
             x,
             y: center_y,
             w: BUTTON_SIZE,
             h: BUTTON_SIZE,
         };
-        canvas.hit_region_rect(FORWARD_BUTTON_REGION_ID, forward_rect, 10150);
+        if can_go_forward {
+            canvas.hit_region_rect(FORWARD_BUTTON_REGION_ID, forward_rect, 10150);
+        }
         canvas.draw_svg_styled(
             "images/arrow-right.svg",
             [x, center_y],
             [BUTTON_SIZE, BUTTON_SIZE],
-            icon_style.clone(),
+            if can_go_forward { icon_style.clone() } else { muted_style.clone() },
             10200,
         );
         x += BUTTON_SIZE + SECTION_GAP;
 
-        // 4. Address bar (expanding to fill remaining space)
-        // Calculate width: total - used space - refresh button - devtools button - margins
-        let refresh_and_devtools_width = BUTTON_SIZE + BUTTON_GAP + BUTTON_SIZE + MARGIN;
+        // 5. Address bar (expanding to fill remaining space)
+        // Calculate width: total - used space - refresh + chat + devtools buttons - margins
+        let right_buttons_width =
+            BUTTON_SIZE * 3.0 + BUTTON_GAP * 2.0 + MARGIN;
         let address_width =
-            (toolbar_rect.w - x - refresh_and_devtools_width - SECTION_GAP).max(100.0);
+            (toolbar_rect.w - x - right_buttons_width - SECTION_GAP).max(100.0);
 
         // Update address bar rect (LOCAL coordinates)
         self.address_bar.rect = Rect {
@@ -182,11 +239,14 @@ impl Toolbar {
 
         // Render the address bar (editable input box)
         self.address_bar.render(canvas, 10200, provider);
-        x += address_width + SECTION_GAP;
 
-        // 5. Refresh/Spinner button (after address bar)
+        // 6. Refresh/Spinner button (after address bar, aligned with right cluster)
+        let devtools_x = toolbar_rect.w - BUTTON_SIZE - MARGIN;
+        let chat_x = devtools_x - BUTTON_SIZE - BUTTON_GAP;
+        let refresh_x = chat_x - BUTTON_SIZE - BUTTON_GAP;
+
         let refresh_rect = Rect {
-            x,
+            x: refresh_x,
             y: center_y,
             w: BUTTON_SIZE,
             h: BUTTON_SIZE,
@@ -199,7 +259,7 @@ impl Toolbar {
             if self.loading_icon_visible {
                 canvas.draw_svg_styled(
                     "images/loader.svg",
-                    [x, center_y],
+                    [refresh_x, center_y],
                     [BUTTON_SIZE, BUTTON_SIZE],
                     icon_style.clone(),
                     10200,
@@ -209,15 +269,30 @@ impl Toolbar {
             // Draw static refresh icon
             canvas.draw_svg_styled(
                 "images/refresh.svg",
-                [x, center_y],
+                [refresh_x, center_y],
                 [BUTTON_SIZE, BUTTON_SIZE],
                 icon_style.clone(),
                 10200,
             );
         }
 
-        // 6. DevTools button (right edge)
-        let devtools_x = toolbar_rect.w - BUTTON_SIZE - MARGIN;
+        // 7. Chat button (opens Peco chat panel)
+        let chat_rect = Rect {
+            x: chat_x,
+            y: center_y,
+            w: BUTTON_SIZE,
+            h: BUTTON_SIZE,
+        };
+        canvas.hit_region_rect(CHAT_BUTTON_REGION_ID, chat_rect, 10150);
+        canvas.draw_svg_styled(
+            "images/message-circle.svg",
+            [chat_x, center_y],
+            [BUTTON_SIZE, BUTTON_SIZE],
+            icon_style.clone(),
+            10200,
+        );
+
+        // 8. DevTools button (right edge)
         let devtools_rect = Rect {
             x: devtools_x,
             y: center_y,
@@ -258,3 +333,9 @@ pub const REFRESH_BUTTON_REGION_ID: u32 = 1004;
 
 /// Address bar region ID for hit testing
 pub const ADDRESS_BAR_REGION_ID: u32 = 1005;
+
+/// Home button region ID for hit testing
+pub const HOME_BUTTON_REGION_ID: u32 = 1006;
+
+/// Chat button region ID for hit testing
+pub const CHAT_BUTTON_REGION_ID: u32 = 1007;

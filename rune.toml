@@ -72,7 +72,7 @@ scene = "zones"
 # package_path = "examples/sample_first_node"
 # package_path = "examples/sample_form"
 # Use relative path for portability
-package_path = "examples/sample_webview"
+# package_path = "examples/sample_webview"
 
 # Enable diagnostic output for IR processing
 # Comma-separated list of diagnostic categories

@@ -114,8 +114,12 @@ pub extern "C" fn rune_ffi_render() {
         }
     }
 
-    if let Some(()) = with_renderer(|r| r.render()) {
-        // Render succeeded
+    if let Some(()) = with_renderer(|r| {
+        if r.needs_redraw() {
+            r.render();
+        }
+    }) {
+        // Render succeeded (or no redraw was needed)
     } else {
         log::warn!("rune_ffi_render: renderer not available (wrong thread?)");
     }
@@ -142,14 +146,46 @@ pub extern "C" fn rune_ffi_mouse_move(x: f32, y: f32) {
     with_renderer(|r| r.mouse_move(x, y));
 }
 
+/// Handle scroll (mouse wheel / trackpad) event.
+///
+/// # Arguments
+/// * `delta_x` - Horizontal scroll delta (logical pixels)
+/// * `delta_y` - Vertical scroll delta (logical pixels)
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_scroll(delta_x: f32, delta_y: f32) {
+    with_renderer(|r| r.scroll(delta_x, delta_y));
+}
+
 /// Handle key event.
 ///
 /// # Arguments
 /// * `keycode` - Virtual keycode
+/// * `modifiers` - Bitmask of modifier keys (RUNE_MODIFIER_*)
 /// * `pressed` - true for key down, false for key up
 #[unsafe(no_mangle)]
-pub extern "C" fn rune_ffi_key_event(keycode: u32, pressed: bool) {
-    with_renderer(|r| r.key_event(keycode, pressed));
+pub extern "C" fn rune_ffi_key_event(keycode: u32, modifiers: u32, pressed: bool) {
+    use winit::keyboard::ModifiersState;
+
+    fn modifiers_from_bits(bits: u32) -> ModifiersState {
+        let mut m = ModifiersState::empty();
+        // Keep these in sync with RUNE_MODIFIER_* flags in rune_ffi.h
+        if bits & (1 << 0) != 0 {
+            m |= ModifiersState::SHIFT;
+        }
+        if bits & (1 << 1) != 0 {
+            m |= ModifiersState::CONTROL;
+        }
+        if bits & (1 << 2) != 0 {
+            m |= ModifiersState::ALT;
+        }
+        if bits & (1 << 3) != 0 {
+            m |= ModifiersState::SUPER;
+        }
+        m
+    }
+
+    let modifiers_state = modifiers_from_bits(modifiers);
+    with_renderer(|r| r.key_event(keycode, pressed, modifiers_state));
 }
 
 /// Handle committed text input (UTF-8).
@@ -281,6 +317,8 @@ pub extern "C" fn rune_ffi_position_cef_view(x: f32, y: f32, width: f32, height:
 }
 
 /// Get the current WebView rect for positioning the native CEF view.
+/// Returns false if no webview element exists in the current IR view.
+/// When a webview element exists, CEF should be shown at that position.
 #[unsafe(no_mangle)]
 pub extern "C" fn rune_ffi_get_webview_rect(
     x: *mut f32,
@@ -292,7 +330,7 @@ pub extern "C" fn rune_ffi_get_webview_rect(
         return false;
     }
 
-    // Try rune_surface first (has transformed screen coords)
+    // Try rune_surface first (has transformed screen coords from webview element)
     if let Some((rx, ry, rw, rh)) = rune_surface::get_last_raw_image_rect() {
         unsafe {
             *x = rx;
@@ -314,7 +352,14 @@ pub extern "C" fn rune_ffi_get_webview_rect(
         return true;
     }
 
+    // No webview element in the current IR - CEF should be hidden
     false
+}
+
+/// Check if the dock overlay is currently visible.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_is_dock_visible() -> bool {
+    with_renderer(|r| r.is_dock_visible()).unwrap_or(false)
 }
 
 // ============================================================================
@@ -479,6 +524,10 @@ pub extern "C" fn rune_ffi_get_current_render_target() -> u32 {
 
 /// Update the address bar text.
 /// Called by the native side when CEF navigates to a new URL.
+///
+/// IMPORTANT: This function checks the current navigation mode before updating
+/// the address bar. When in IR mode (Home or IRApp), we ignore CEF URL updates
+/// to prevent the address bar from flickering with stale CEF URLs.
 #[unsafe(no_mangle)]
 pub extern "C" fn rune_ffi_set_address_bar_url(url: *const c_char) {
     if url.is_null() {
@@ -493,6 +542,26 @@ pub extern "C" fn rune_ffi_set_address_bar_url(url: *const c_char) {
             return;
         }
     };
+
+    // Check if we're in IR mode - if so, ignore CEF URL updates
+    // to prevent overwriting the IR navigation URL in the address bar
+    let nav_mode = rune_scene::navigation::get_navigation_mode();
+    let in_ir_mode = matches!(
+        nav_mode,
+        rune_scene::navigation::NavigationMode::Home | rune_scene::navigation::NavigationMode::IRApp
+    );
+
+    if in_ir_mode {
+        // Check if this is an IR URL (allow IR URLs to update even in IR mode)
+        let render_target = rune_scene::navigation::determine_render_target(url_str);
+        if render_target != rune_scene::navigation::RenderTarget::Ir {
+            eprintln!(
+                "[rune_ffi] set_address_bar_url: IGNORED (in IR mode, CEF URL: {})",
+                url_str
+            );
+            return;
+        }
+    }
 
     eprintln!("[rune_ffi] set_address_bar_url: {}", url_str);
 

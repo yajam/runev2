@@ -44,7 +44,7 @@ pub use text_area::TextArea;
 pub use webview::WebView;
 // Export webview layout and native CEF view functions for FFI use
 pub use webview::{
-    get_native_cef_view, get_native_cef_view_rect, get_webview_rect, has_native_cef_view,
-    position_native_cef_view, set_native_cef_view, set_native_cef_view_position_callback,
-    set_webview_rect,
+    clear_webview_rect, get_native_cef_view, get_native_cef_view_rect, get_webview_rect,
+    has_native_cef_view, position_native_cef_view, set_native_cef_view,
+    set_native_cef_view_position_callback, set_webview_rect,
 };

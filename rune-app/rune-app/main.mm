@@ -272,6 +272,14 @@ int main(int argc, const char * argv[]) {
 
         [NSApplication sharedApplication];
 
+        // Set working directory to Resources folder so relative paths work
+        // (images/, fonts/, etc. are loaded from here)
+        NSString* resourcePath = [[NSBundle mainBundle] resourcePath];
+        if (resourcePath) {
+            [[NSFileManager defaultManager] changeCurrentDirectoryPath:resourcePath];
+            NSLog(@"Working directory set to: %@", resourcePath);
+        }
+
         // Set app name and appearance
         NSString* appName = @"Rune";
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];

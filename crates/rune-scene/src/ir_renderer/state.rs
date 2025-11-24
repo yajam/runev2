@@ -115,6 +115,11 @@ pub struct IrElementState {
     #[cfg(feature = "webview-cef")]
     webviews: HashMap<ViewNodeId, elements::WebView>,
 
+    /// Home-tab chat state: once a query has been submitted from the
+    /// home_tab input, we treat the hero banner and greeting as dismissed
+    /// so subsequent renders can hide them.
+    home_chat_started: bool,
+
     /// Currently focused element (if any)
     focused_element: Option<(ViewNodeId, IrElementType)>,
 
@@ -142,6 +147,7 @@ impl IrElementState {
             file_inputs: HashMap::new(),
             #[cfg(feature = "webview-cef")]
             webviews: HashMap::new(),
+            home_chat_started: false,
             focused_element: None,
             dirty: false,
             active_overlays: Vec::new(),
@@ -162,6 +168,7 @@ impl IrElementState {
         self.file_inputs.clear();
         #[cfg(feature = "webview-cef")]
         self.webviews.clear();
+        self.home_chat_started = false;
         self.focused_element = None;
         self.dirty = false;
         self.active_overlays.clear();
@@ -180,6 +187,17 @@ impl IrElementState {
     /// Mark state as dirty (needs redraw)
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
+    }
+
+    /// Mark that Home Tab chat has started (first query submitted).
+    pub fn mark_home_chat_started(&mut self) {
+        self.home_chat_started = true;
+        self.dirty = true;
+    }
+
+    /// Check if Home Tab chat has started.
+    pub fn home_chat_started(&self) -> bool {
+        self.home_chat_started
     }
 
     // ========================================================================
@@ -241,6 +259,22 @@ impl IrElementState {
             .text_align
             .unwrap_or(TextAlign::Start);
         entry
+    }
+
+    /// Get a mutable reference to an InputBox by view node id.
+    pub fn get_input_box_mut(
+        &mut self,
+        view_node_id: &ViewNodeId,
+    ) -> Option<&mut elements::InputBox> {
+        self.input_boxes.get_mut(view_node_id)
+    }
+
+    /// Get an immutable reference to an InputBox by view node id.
+    pub fn get_input_box(
+        &self,
+        view_node_id: &ViewNodeId,
+    ) -> Option<&elements::InputBox> {
+        self.input_boxes.get(view_node_id)
     }
 
     /// Get or create a TextArea element for the given ViewNode

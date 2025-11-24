@@ -8,7 +8,7 @@
 - [x] All elements should take dynamic parameters for styling
 - [x] Add Rune-ir
 - [x] Rune-layout using taffy
-- [ ] Address input, forward, backward, refresh implementation in toolbar
+- [x] Address input, forward, backward, refresh implementation in toolbar
 - [ ] Download impementation
 - [x] Port persistence.rs
 - [x] Bookmark, Tabs

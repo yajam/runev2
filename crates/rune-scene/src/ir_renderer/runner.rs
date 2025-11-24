@@ -43,7 +43,8 @@ pub fn run() -> Result<()> {
     eprintln!("IR rendering mode enabled (USE_IR=1)");
 
     // Load IR package from CLI path or use default home_tab sample
-    let (data_doc, view_doc) = load_ir_package()?;
+    // These are mutable to support dynamic package switching via navigation
+    let (mut data_doc, mut view_doc) = load_ir_package()?;
 
     eprintln!("Loaded IR package:");
     eprintln!("  - Data document ID: {}", data_doc.document_id);
@@ -266,10 +267,13 @@ pub fn run() -> Result<()> {
                                         DEVTOOLS_BUTTON_REGION_ID, DEVTOOLS_CLOSE_BUTTON_REGION_ID,
                                         DEVTOOLS_CONSOLE_TAB_REGION_ID,
                                         DEVTOOLS_ELEMENTS_TAB_REGION_ID, FORWARD_BUTTON_REGION_ID,
-                                        REFRESH_BUTTON_REGION_ID, TOGGLE_BUTTON_REGION_ID,
-                                        SIDEBAR_BOOKMARK_REGION_BASE, SIDEBAR_TAB_REGION_BASE,
-                                        SIDEBAR_ADD_BOOKMARK_REGION_ID, SIDEBAR_TAB_CLOSE_REGION_BASE,
-                                        SIDEBAR_BOOKMARK_DELETE_REGION_BASE,
+                                        HOME_BUTTON_REGION_ID, REFRESH_BUTTON_REGION_ID,
+                                        TOGGLE_BUTTON_REGION_ID, SIDEBAR_BOOKMARK_REGION_BASE,
+                                        SIDEBAR_TAB_REGION_BASE, SIDEBAR_ADD_BOOKMARK_REGION_ID,
+                                        SIDEBAR_TAB_CLOSE_REGION_BASE, SIDEBAR_BOOKMARK_DELETE_REGION_BASE,
+                                        CHAT_BUTTON_REGION_ID, CHAT_FAB_REGION_ID,
+                                        CHAT_CLOSE_BUTTON_REGION_ID, CHAT_INPUT_REGION_ID,
+                                        CHAT_SEND_BUTTON_REGION_ID,
                                     };
 
                                     match region_id {
@@ -331,6 +335,19 @@ pub fn run() -> Result<()> {
                                             ir_renderer.element_state_mut().clear_all_focus();
 
                                             println!("Refresh button clicked");
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        HOME_BUTTON_REGION_ID => {
+                                            if zone_manager.toolbar.address_bar.focused {
+                                                zone_manager.toolbar.address_bar.focused = false;
+                                                zone_manager.toolbar.address_bar.end_mouse_selection();
+                                            }
+                                            ir_renderer.element_state_mut().clear_all_focus();
+
+                                            // Single click opens Dock overlay
+                                            zone_manager.show_dock();
+                                            println!("Home button clicked - opening Dock overlay");
                                             needs_redraw = true;
                                             window.request_redraw();
                                         }
@@ -500,6 +517,121 @@ pub fn run() -> Result<()> {
                                                 let url = bookmark.url.clone();
                                                 println!("Navigate to bookmark: {}", url);
                                                 navigation::navigate_to(&url);
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Chat button in toolbar
+                                        CHAT_BUTTON_REGION_ID => {
+                                            let logical_width = (size.width as f32 / scale_factor) as u32;
+                                            let logical_height = (size.height as f32 / scale_factor) as u32;
+                                            zone_manager.toggle_chat(logical_width, logical_height);
+                                            println!("Chat button clicked - toggling chat panel");
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Chat FAB (floating action button)
+                                        CHAT_FAB_REGION_ID => {
+                                            let logical_width = (size.width as f32 / scale_factor) as u32;
+                                            let logical_height = (size.height as f32 / scale_factor) as u32;
+                                            zone_manager.show_chat(logical_width, logical_height);
+                                            println!("Chat FAB clicked - opening chat panel");
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Chat close button
+                                        CHAT_CLOSE_BUTTON_REGION_ID => {
+                                            let logical_width = (size.width as f32 / scale_factor) as u32;
+                                            let logical_height = (size.height as f32 / scale_factor) as u32;
+                                            zone_manager.hide_chat(logical_width, logical_height);
+                                            println!("Chat close button clicked");
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Chat input region
+                                        CHAT_INPUT_REGION_ID => {
+                                            zone_manager.chat.input.focused = true;
+                                            println!("Chat input focused");
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Chat send button
+                                        CHAT_SEND_BUTTON_REGION_ID => {
+                                            let text = zone_manager.chat.input.text.trim().to_string();
+                                            if !text.is_empty() {
+                                                zone_manager.chat.add_user_message(text);
+                                                zone_manager.chat.input.text.clear();
+                                                zone_manager.chat.input.cursor_position = 0;
+                                                println!("Chat message sent");
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Dock: Scrim click (dismiss dock)
+                                        crate::zones::DOCK_SCRIM_REGION_ID => {
+                                            zone_manager.hide_dock();
+                                            println!("Dock dismissed via scrim click");
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Dock: Panel region (prevents click-through, do nothing)
+                                        crate::zones::DOCK_PANEL_REGION_ID => {
+                                            // Clicking the panel itself does nothing
+                                        }
+                                        // Dock: Pinned apps (region IDs 5100-5199)
+                                        id if id >= crate::zones::DOCK_PINNED_APP_REGION_BASE && id < crate::zones::DOCK_PINNED_APP_REGION_BASE + 100 => {
+                                            let app_index = (id - crate::zones::DOCK_PINNED_APP_REGION_BASE) as usize;
+                                            if let Some(app) = zone_manager.dock.pinned_apps.get(app_index) {
+                                                let url = app.url.clone();
+                                                let name = app.name.clone();
+                                                println!("Navigate to pinned app: {} -> {}", name, url);
+                                                zone_manager.hide_dock();
+
+                                                // Try to load IR package if it's an IR URL
+                                                let render_target = navigation::determine_render_target(&url);
+                                                if render_target == navigation::RenderTarget::Ir {
+                                                    if let Some((new_data, new_view)) = try_load_ir_from_url(&url) {
+                                                        data_doc = new_data;
+                                                        view_doc = new_view;
+                                                        ir_renderer.element_state_mut().clear_all_focus();
+                                                        println!("Loaded IR package: {}", url);
+                                                    }
+                                                }
+
+                                                navigation::navigate_to(&url);
+                                                // Update layout for new navigation mode
+                                                let logical_width = (size.width as f32 / scale_factor) as u32;
+                                                let logical_height = (size.height as f32 / scale_factor) as u32;
+                                                zone_manager.update_for_navigation_mode(logical_width, logical_height);
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Dock: Recent items (region IDs 5200-5299)
+                                        id if id >= crate::zones::DOCK_RECENT_ITEM_REGION_BASE && id < crate::zones::DOCK_RECENT_ITEM_REGION_BASE + 100 => {
+                                            let item_index = (id - crate::zones::DOCK_RECENT_ITEM_REGION_BASE) as usize;
+                                            if let Some(item) = zone_manager.dock.recent_items.get(item_index) {
+                                                let url = item.url.clone();
+                                                let name = item.name.clone();
+                                                println!("Navigate to recent item: {} -> {}", name, url);
+                                                zone_manager.hide_dock();
+
+                                                // Try to load IR package if it's an IR URL
+                                                let render_target = navigation::determine_render_target(&url);
+                                                if render_target == navigation::RenderTarget::Ir {
+                                                    if let Some((new_data, new_view)) = try_load_ir_from_url(&url) {
+                                                        data_doc = new_data;
+                                                        view_doc = new_view;
+                                                        ir_renderer.element_state_mut().clear_all_focus();
+                                                        println!("Loaded IR package: {}", url);
+                                                    }
+                                                }
+
+                                                navigation::navigate_to(&url);
+                                                // Update layout for new navigation mode
+                                                let logical_width = (size.width as f32 / scale_factor) as u32;
+                                                let logical_height = (size.height as f32 / scale_factor) as u32;
+                                                zone_manager.update_for_navigation_mode(logical_width, logical_height);
                                             }
                                             needs_redraw = true;
                                             window.request_redraw();
@@ -762,12 +894,41 @@ pub fn run() -> Result<()> {
                             }
                             PhysicalKey::Code(KeyCode::Escape) => {
                                 zone_manager.toolbar.address_bar.focused = false;
+                                // Also dismiss dock if visible
+                                if zone_manager.is_dock_visible() {
+                                    zone_manager.hide_dock();
+                                }
                                 needs_redraw = true;
                                 window.request_redraw();
                             }
                             PhysicalKey::Code(KeyCode::Enter) => {
                                 let url = zone_manager.toolbar.address_bar.text.trim().to_string();
-                                println!("Navigate to: {}", url);
+                                if !url.is_empty() {
+                                    println!("Navigate to: {}", url);
+
+                                    // Try to load as IR package if it's an IR URL
+                                    let render_target = navigation::determine_render_target(&url);
+                                    if render_target == navigation::RenderTarget::Ir {
+                                        // Try to load IR package
+                                        if let Some((new_data, new_view)) = try_load_ir_from_url(&url) {
+                                            data_doc = new_data;
+                                            view_doc = new_view;
+                                            ir_renderer.element_state_mut().clear_all_focus();
+                                            println!("Loaded IR package: {}", url);
+                                        }
+                                    }
+
+                                    // Navigate (updates mode and queues command for CEF if needed)
+                                    navigation::navigate_to(&url);
+
+                                    // Update layout for new navigation mode
+                                    let logical_width = (size.width as f32 / scale_factor) as u32;
+                                    let logical_height = (size.height as f32 / scale_factor) as u32;
+                                    zone_manager.update_for_navigation_mode(logical_width, logical_height);
+
+                                    // Blur address bar after navigation
+                                    zone_manager.toolbar.address_bar.focused = false;
+                                }
                                 needs_redraw = true;
                                 window.request_redraw();
                             }
@@ -792,6 +953,17 @@ pub fn run() -> Result<()> {
                             }
                         }
                     } else if event.state == winit::event::ElementState::Pressed {
+                        // Global keyboard shortcuts (regardless of focus)
+                        if let PhysicalKey::Code(KeyCode::Escape) = event.physical_key {
+                            // Escape dismisses dock if visible
+                            if zone_manager.is_dock_visible() {
+                                zone_manager.hide_dock();
+                                println!("Dock dismissed via Escape key");
+                                needs_redraw = true;
+                                window.request_redraw();
+                            }
+                        }
+
                         // Keyboard events for IR elements (when toolbar is not focused)
                         use crate::event_handler::KeyboardEvent;
 
@@ -995,6 +1167,88 @@ fn load_default_package() -> Result<(DataDocument, ViewDocument)> {
     Ok((data.clone(), view.clone()))
 }
 
+/// Try to load an IR package from a URL.
+///
+/// Supported URL patterns:
+/// - `rune://home` or `rune://peco` → home_tab sample
+/// - `rune://sample/first-node` → examples/sample_first_node
+/// - `rune://sample/webview` → examples/sample_webview
+/// - `rune://sample/form` → examples/sample_form
+/// - `ir://path/to/package` → load from filesystem path
+/// - `file:///path/to/package` → load from filesystem path
+///
+/// Returns None if the URL doesn't match a known IR package or loading fails.
+fn try_load_ir_from_url(url: &str) -> Option<(DataDocument, ViewDocument)> {
+    let url_lower = url.to_lowercase();
+
+    // Handle rune:// scheme
+    if url_lower.starts_with("rune://") {
+        let path = &url[7..]; // Strip "rune://"
+
+        // Home/Peco - load default sample
+        if path == "home" || path == "peco" || path.is_empty() {
+            return load_default_package().ok();
+        }
+
+        // Sample packages
+        if path.starts_with("sample/") || path.starts_with("samples/") {
+            let sample_name = path.split('/').nth(1).unwrap_or("");
+            return load_sample_package(sample_name);
+        }
+
+        // Direct sample name shortcuts
+        match path {
+            "first-node" | "firstnode" => return load_sample_package("first-node"),
+            "webview" => return load_sample_package("webview"),
+            "form" => return load_sample_package("form"),
+            _ => {}
+        }
+    }
+
+    // Handle ir:// scheme - treat as filesystem path
+    if url_lower.starts_with("ir://") {
+        let path = &url[5..]; // Strip "ir://"
+        return load_package_from_path(path).ok();
+    }
+
+    // Handle file:// scheme
+    if url_lower.starts_with("file://") {
+        let path = &url[7..]; // Strip "file://"
+        return load_package_from_path(path).ok();
+    }
+
+    // Handle direct filesystem paths (for development)
+    if url.starts_with('/') || url.starts_with("examples/") || url.contains("/sample_") {
+        return load_package_from_path(url).ok();
+    }
+
+    None
+}
+
+/// Load a sample package by name.
+fn load_sample_package(name: &str) -> Option<(DataDocument, ViewDocument)> {
+    let sample_dir = match name {
+        "first-node" | "firstnode" | "first_node" => "examples/sample_first_node",
+        "webview" | "web-view" => "examples/sample_webview",
+        "form" => "examples/sample_form",
+        _ => {
+            eprintln!("Unknown sample package: {}", name);
+            return None;
+        }
+    };
+
+    match load_package_from_path(sample_dir) {
+        Ok((data, view)) => {
+            eprintln!("✓ Loaded sample package: {} from {}", name, sample_dir);
+            Some((data, view))
+        }
+        Err(e) => {
+            eprintln!("✗ Failed to load sample package '{}': {}", name, e);
+            None
+        }
+    }
+}
+
 /// Create text provider (uses system fonts with RGB subpixel rendering).
 fn create_text_provider() -> Result<impl engine_core::TextProvider> {
     engine_core::RuneTextProvider::from_system_fonts(engine_core::SubpixelOrientation::RGB)
@@ -1087,19 +1341,28 @@ pub fn render_frame_with_zones(
     //
     // Use toolbar-local coordinates for hit regions and icons by
     // translating the canvas to the toolbar origin before rendering.
-    {
+    //
+    // Toolbar is only visible in Browser mode.
+    if crate::navigation::should_show_toolbar() {
         use crate::zones::ZoneId;
         use engine_core::Transform2D;
 
         let toolbar_rect = zone_manager.layout.get_zone(ZoneId::Toolbar);
 
+        // Get navigation state for back/forward button styling
+        let nav_state = crate::navigation::get_state();
+
         // Render toolbar with transform for visual positioning
         // but pass the GLOBAL toolbar_rect so hit regions use global coordinates
         canvas.push_transform(Transform2D::translate(toolbar_rect.x, toolbar_rect.y));
 
-        zone_manager
-            .toolbar
-            .render(&mut canvas, toolbar_rect, provider.as_ref());
+        zone_manager.toolbar.render(
+            &mut canvas,
+            toolbar_rect,
+            provider.as_ref(),
+            nav_state.can_go_back,
+            nav_state.can_go_forward,
+        );
 
         canvas.pop_transform();
     }
@@ -1399,7 +1662,30 @@ pub fn render_frame_with_zones(
         canvas.pop_transform();
     }
 
-    // Build hit index for interactive regions (toolbar buttons, address bar, devtools)
+    // Render chat panel when visible
+    if zone_manager.is_chat_visible() {
+        let chat_rect = zone_manager.layout.chat;
+        canvas.push_transform(Transform2D::translate(chat_rect.x, chat_rect.y));
+        zone_manager.chat.render(&mut canvas, chat_rect, provider.as_ref());
+        canvas.pop_transform();
+    }
+
+    // Render FAB when chat is hidden and not in Home mode
+    if !zone_manager.is_chat_visible() && crate::navigation::get_navigation_mode() != crate::navigation::NavigationMode::Home {
+        let viewport_rect = zone_manager.layout.viewport;
+        canvas.push_transform(Transform2D::translate(viewport_rect.x, viewport_rect.y));
+        crate::zones::render_chat_fab(&mut canvas, viewport_rect, zone_manager.chat.has_unread);
+        canvas.pop_transform();
+    }
+
+    // Render dock overlay when visible (rendered last to be on top of everything)
+    if zone_manager.is_dock_visible() {
+        let logical_width = _logical_width as f32;
+        let logical_height = _logical_height as f32;
+        zone_manager.dock.render(&mut canvas, logical_width, logical_height, provider.as_ref());
+    }
+
+    // Build hit index for interactive regions (toolbar buttons, address bar, devtools, dock, chat)
     let hit_index = HitIndex::build(canvas.display_list());
 
     // End frame and present

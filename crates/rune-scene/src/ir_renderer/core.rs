@@ -227,6 +227,32 @@ impl IrRenderer {
         let content_height = (self.last_content_height - offset_y).max(layout_height);
         let content_width = (self.last_content_width - offset_x).max(width);
 
+        // Ensure the root container background extends to the full IR content
+        // height, not just the initial viewport height, so page backgrounds
+        // fill the entire scrollable area.
+        if let Some(root_node) = view_doc.node(&view_doc.root) {
+            use engine_core::Rect;
+            use rune_ir::view::ViewNodeKind;
+
+            let background = match &root_node.kind {
+                ViewNodeKind::FlexContainer(spec) => &spec.background,
+                ViewNodeKind::GridContainer(spec) => &spec.background,
+                ViewNodeKind::FormContainer(spec) => &spec.background,
+                _ => &None,
+            };
+
+            if background.is_some() {
+                let bg_rect = Rect {
+                    x: offset_x,
+                    y: offset_y,
+                    w: width,
+                    h: content_height,
+                };
+                // Use a low z so all content and overlays render above it.
+                super::elements::render_background_element(canvas, background, bg_rect, 0);
+            }
+        }
+
         if debug_logging {
             eprintln!("=== render_ir_document END ===\n");
         }

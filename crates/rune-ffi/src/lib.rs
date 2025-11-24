@@ -138,6 +138,9 @@ impl AppRenderer {
             view_doc.view_id
         );
 
+        // Initialize navigation state to Home/IR mode since we start with the IR home page
+        rune_scene::navigation::navigate_home();
+
         let logical_width = (width as f32 / scale) as u32;
         let logical_height = (height as f32 / scale) as u32;
 
@@ -199,8 +202,69 @@ impl AppRenderer {
         self.needs_redraw = true;
     }
 
+    /// Try to navigate to a URL, loading IR package if applicable
+    pub fn navigate_to_url(&mut self, url: &str) {
+        use rune_ir::view::ViewNodeKind;
+        use rune_scene::navigation;
+
+        // Decide whether this URL should be handled by IR or CEF.
+        let render_target = navigation::determine_render_target(url);
+
+        match render_target {
+            navigation::RenderTarget::Ir => {
+                // IR URLs load IR packages directly (home_tab, sample apps, etc.).
+                if let Some((new_data, new_view)) = try_load_ir_from_url(url) {
+                    self.data_doc = new_data;
+                    self.view_doc = new_view;
+                    self.ir_renderer.element_state_mut().clear_all_focus();
+                    log::info!("Loaded IR package for URL: {}", url);
+                }
+            }
+            navigation::RenderTarget::Cef => {
+                // CEF URLs should be shown in the browser host IR view (sample_webview)
+                // so that the native CEF NSView has a WebView container/viewport.
+                let has_webview = self
+                    .view_doc
+                    .nodes
+                    .iter()
+                    .any(|n| matches!(n.kind, ViewNodeKind::WebView(_)));
+
+                if !has_webview {
+                    let host_url = "rune://sample/webview";
+                    if let Some((new_data, new_view)) = try_load_ir_from_url(host_url) {
+                        self.data_doc = new_data;
+                        self.view_doc = new_view;
+                        self.ir_renderer.element_state_mut().clear_all_focus();
+                        log::info!(
+                            "Loaded browser host IR package '{}' for CEF URL: {}",
+                            host_url,
+                            url
+                        );
+                    } else {
+                        log::warn!(
+                            "Failed to load browser host IR package for CEF URL: {}",
+                            url
+                        );
+                    }
+                }
+            }
+        }
+
+        // Update navigation state (mode + command queue for CEF).
+        navigation::navigate_to(url);
+
+        // Recompute zone layout for the new navigation mode (toolbar visibility, etc.).
+        self.zone_manager
+            .update_for_navigation_mode(self.logical_width, self.logical_height);
+
+        self.needs_redraw = true;
+    }
+
     /// Render a frame using the same function as rune-scene
     pub fn render(&mut self) {
+        // Clear webview rect at start of frame - it will be set if a webview element is rendered
+        rune_scene::elements::webview::clear_webview_rect();
+
         // Use the exact same render function as rune-scene
         match render_frame_with_zones(
             &mut self.surf,
@@ -232,10 +296,13 @@ impl AppRenderer {
             ADDRESS_BAR_REGION_ID, BACK_BUTTON_REGION_ID, DEVTOOLS_BUTTON_REGION_ID,
             DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID,
             DEVTOOLS_ELEMENTS_TAB_REGION_ID, DevToolsTab, FORWARD_BUTTON_REGION_ID,
-            REFRESH_BUTTON_REGION_ID, TOGGLE_BUTTON_REGION_ID,
+            HOME_BUTTON_REGION_ID, REFRESH_BUTTON_REGION_ID, TOGGLE_BUTTON_REGION_ID,
             SIDEBAR_BOOKMARK_REGION_BASE, SIDEBAR_TAB_REGION_BASE,
             SIDEBAR_ADD_BOOKMARK_REGION_ID, SIDEBAR_TAB_CLOSE_REGION_BASE,
             SIDEBAR_BOOKMARK_DELETE_REGION_BASE,
+            DOCK_SCRIM_REGION_ID, DOCK_PANEL_REGION_ID, DOCK_PINNED_APP_REGION_BASE,
+            CHAT_BUTTON_REGION_ID, CHAT_FAB_REGION_ID, CHAT_CLOSE_BUTTON_REGION_ID,
+            CHAT_INPUT_REGION_ID, CHAT_SEND_BUTTON_REGION_ID,
         };
         use rune_scene::event_handler::MouseClickEvent;
         use winit::event::{ElementState, MouseButton};
@@ -309,6 +376,85 @@ impl AppRenderer {
 
                                 self.zone_manager
                                     .toggle_sidebar(self.logical_width, self.logical_height);
+                                self.needs_redraw = true;
+                            }
+                            HOME_BUTTON_REGION_ID => {
+                                // Home button opens the dock overlay
+                                if self.zone_manager.toolbar.address_bar.focused {
+                                    self.zone_manager.toolbar.address_bar.focused = false;
+                                    self.zone_manager
+                                        .toolbar
+                                        .address_bar
+                                        .end_mouse_selection();
+                                }
+                                self.ir_renderer
+                                    .element_state_mut()
+                                    .clear_all_focus();
+
+                                log::info!("Home button clicked - opening dock");
+                                self.zone_manager.show_dock();
+                                self.needs_redraw = true;
+                            }
+                            DOCK_SCRIM_REGION_ID => {
+                                // Clicking scrim dismisses the dock
+                                self.zone_manager.hide_dock();
+                                log::info!("Dock dismissed via scrim");
+                                self.needs_redraw = true;
+                            }
+                            DOCK_PANEL_REGION_ID => {
+                                // Clicking panel itself does nothing (prevents click-through)
+                            }
+                            // Dock pinned apps (region IDs 5100+)
+                            id if id >= DOCK_PINNED_APP_REGION_BASE && id < DOCK_PINNED_APP_REGION_BASE + 100 => {
+                                let app_index = (id - DOCK_PINNED_APP_REGION_BASE) as usize;
+                                if let Some(app) = self.zone_manager.dock.pinned_apps.get(app_index) {
+                                    let url = app.url.clone();
+                                    let name = app.name.clone();
+                                    log::info!("Navigate to pinned app: {} -> {}", name, url);
+                                    self.zone_manager.hide_dock();
+                                    // Use navigate_to_url which handles IR package loading
+                                    self.navigate_to_url(&url);
+                                }
+                            }
+                            // Chat button in toolbar
+                            CHAT_BUTTON_REGION_ID => {
+                                if self.zone_manager.toolbar.address_bar.focused {
+                                    self.zone_manager.toolbar.address_bar.focused = false;
+                                    self.zone_manager.toolbar.address_bar.end_mouse_selection();
+                                }
+                                self.ir_renderer.element_state_mut().clear_all_focus();
+
+                                log::info!("Chat button clicked - toggling chat panel");
+                                self.zone_manager.toggle_chat(self.logical_width, self.logical_height);
+                                self.needs_redraw = true;
+                            }
+                            // Chat FAB (floating action button)
+                            CHAT_FAB_REGION_ID => {
+                                log::info!("Chat FAB clicked - opening chat panel");
+                                self.zone_manager.show_chat(self.logical_width, self.logical_height);
+                                self.needs_redraw = true;
+                            }
+                            // Chat close button
+                            CHAT_CLOSE_BUTTON_REGION_ID => {
+                                log::info!("Chat close button clicked");
+                                self.zone_manager.hide_chat(self.logical_width, self.logical_height);
+                                self.needs_redraw = true;
+                            }
+                            // Chat input region
+                            CHAT_INPUT_REGION_ID => {
+                                self.zone_manager.chat.input.focused = true;
+                                log::info!("Chat input focused");
+                                self.needs_redraw = true;
+                            }
+                            // Chat send button
+                            CHAT_SEND_BUTTON_REGION_ID => {
+                                let text = self.zone_manager.chat.input.text.trim().to_string();
+                                if !text.is_empty() {
+                                    self.zone_manager.chat.add_user_message(text);
+                                    self.zone_manager.chat.input.text.clear();
+                                    self.zone_manager.chat.input.cursor_position = 0;
+                                    log::info!("Chat message sent");
+                                }
                                 self.needs_redraw = true;
                             }
                             DEVTOOLS_BUTTON_REGION_ID => {
@@ -538,7 +684,9 @@ impl AppRenderer {
                                     log::info!("Navigate to tab: {}", url);
                                     // Set this tab as active before navigating
                                     self.zone_manager.sidebar.set_active_tab(Some(tab_index));
-                                    rune_scene::navigation::navigate_to(&url);
+                                    // Use unified navigation so IR URLs load packages and
+                                    // CEF URLs are routed to the browser.
+                                    self.navigate_to_url(&url);
                                 }
                                 self.needs_redraw = true;
                             }
@@ -554,7 +702,9 @@ impl AppRenderer {
                                 if let Some(bookmark) = self.zone_manager.sidebar.get_bookmark(bookmark_index) {
                                     let url = bookmark.url.clone();
                                     log::info!("Navigate to bookmark: {}", url);
-                                    rune_scene::navigation::navigate_to(&url);
+                                    // Route through unified navigation so IR packages and
+                                    // CEF navigation stay in sync.
+                                    self.navigate_to_url(&url);
                                 }
                                 self.needs_redraw = true;
                             }
@@ -680,89 +830,113 @@ impl AppRenderer {
         }
     }
 
-    /// Handle key event
-    pub fn key_event(&mut self, keycode: u32, pressed: bool) {
-        use winit::event::ElementState;
-        use winit::keyboard::ModifiersState;
+    /// Handle scroll (mouse wheel / trackpad) event.
+    ///
+    /// `delta_x` and `delta_y` are in logical pixel units, matching the
+    /// winit runner's use of `MouseScrollDelta` where positive values mean
+    /// scroll right / down. The internal viewport scroll helper expects
+    /// positive deltas to scroll the content down/right, so we negate here
+    /// to keep user-facing behavior consistent with winit.
+    pub fn scroll(&mut self, delta_x: f32, delta_y: f32) {
+        use rune_scene::zones::ZoneId;
 
-        // macOS virtual key codes for navigation/editing keys we care about.
-        const VK_BACKSPACE: u32 = 51;
-        const VK_DELETE_FORWARD: u32 = 117;
-        const VK_LEFT: u32 = 123;
-        const VK_RIGHT: u32 = 124;
-        const VK_HOME: u32 = 115;
-        const VK_END: u32 = 119;
-        const VK_ESCAPE: u32 = 53;
-        const VK_RETURN: u32 = 36;
-        const VK_NUMPAD_ENTER: u32 = 76;
-        const VK_D: u32 = 2;
+        let viewport_rect = self.zone_manager.layout.get_zone(ZoneId::Viewport);
+        self.zone_manager.viewport.scroll(
+            -delta_x,
+            -delta_y,
+            viewport_rect.w,
+            viewport_rect.h,
+        );
+        self.needs_redraw = true;
+    }
+
+    /// Handle key event
+    pub fn key_event(
+        &mut self,
+        keycode: u32,
+        pressed: bool,
+        modifiers: winit::keyboard::ModifiersState,
+    ) {
+        use winit::event::ElementState;
 
         log::debug!("Key event: keycode={} pressed={}", keycode, pressed);
 
         // When the address bar is focused, handle typical editing/navigation keys locally.
         if self.zone_manager.toolbar.address_bar.focused && pressed {
             let mut handled = false;
-            let word_modifier = false; // TODO: wire real modifiers from macOS events.
+            let has_cmd = modifiers.contains(winit::keyboard::ModifiersState::SUPER);
+            let has_ctrl = modifiers.contains(winit::keyboard::ModifiersState::CONTROL);
+            let has_alt = modifiers.contains(winit::keyboard::ModifiersState::ALT);
+            let has_shift = modifiers.contains(winit::keyboard::ModifiersState::SHIFT);
 
-            match keycode {
-                VK_RETURN | VK_NUMPAD_ENTER => {
-                    // Navigate to the URL in the address bar
-                    let url = self.zone_manager.toolbar.address_bar.text.clone();
-                    log::info!("Address bar: navigating to '{}'", url);
-                    rune_scene::navigation::navigate_to(&url);
-                    // Blur the address bar after navigation
-                    self.zone_manager.toolbar.address_bar.focused = false;
-                    handled = true;
-                }
-                VK_BACKSPACE => {
-                    self.zone_manager.toolbar.address_bar.delete_before_cursor();
-                    handled = true;
-                }
-                VK_DELETE_FORWARD => {
-                    self.zone_manager.toolbar.address_bar.delete_after_cursor();
-                    handled = true;
-                }
-                VK_LEFT => {
-                    if word_modifier {
+            let line_modifier = has_cmd || has_ctrl;
+            let word_modifier = has_alt;
+
+            if let Some(key_code) = map_macos_keycode_to_winit(keycode) {
+                use winit::keyboard::KeyCode;
+
+                match key_code {
+                    KeyCode::KeyA if line_modifier && !has_shift => {
+                        self.zone_manager.toolbar.address_bar.select_all();
+                        handled = true;
+                    }
+                    KeyCode::Backspace => {
+                        self.zone_manager.toolbar.address_bar.delete_before_cursor();
+                        handled = true;
+                    }
+                    KeyCode::Delete => {
+                        self.zone_manager.toolbar.address_bar.delete_after_cursor();
+                        handled = true;
+                    }
+                    KeyCode::ArrowLeft => {
+                        if word_modifier {
+                            self.zone_manager
+                                .toolbar
+                                .address_bar
+                                .move_cursor_left_word();
+                        } else {
+                            self.zone_manager.toolbar.address_bar.move_cursor_left();
+                        }
+                        handled = true;
+                    }
+                    KeyCode::ArrowRight => {
+                        if word_modifier {
+                            self.zone_manager
+                                .toolbar
+                                .address_bar
+                                .move_cursor_right_word();
+                        } else {
+                            self.zone_manager.toolbar.address_bar.move_cursor_right();
+                        }
+                        handled = true;
+                    }
+                    KeyCode::Home => {
                         self.zone_manager
                             .toolbar
                             .address_bar
-                            .move_cursor_left_word();
-                    } else {
-                        self.zone_manager.toolbar.address_bar.move_cursor_left();
+                            .move_cursor_to_start();
+                        handled = true;
                     }
-                    handled = true;
-                }
-                VK_RIGHT => {
-                    if word_modifier {
+                    KeyCode::End => {
                         self.zone_manager
                             .toolbar
                             .address_bar
-                            .move_cursor_right_word();
-                    } else {
-                        self.zone_manager.toolbar.address_bar.move_cursor_right();
+                            .move_cursor_to_end();
+                        handled = true;
                     }
-                    handled = true;
+                    KeyCode::Escape => {
+                        self.zone_manager.toolbar.address_bar.focused = false;
+                        handled = true;
+                    }
+                    KeyCode::Enter | KeyCode::NumpadEnter => {
+                        let url = self.zone_manager.toolbar.address_bar.text.clone();
+                        log::info!("Address bar: navigating to '{}'", url);
+                        self.navigate_to_url(&url);
+                        self.zone_manager.toolbar.address_bar.focused = false;
+                        handled = true;
+                    }
+                    _ => {}
                 }
-                VK_HOME => {
-                    self.zone_manager
-                        .toolbar
-                        .address_bar
-                        .move_cursor_to_start();
-                    handled = true;
-                }
-                VK_END => {
-                    self.zone_manager
-                        .toolbar
-                        .address_bar
-                        .move_cursor_to_end();
-                    handled = true;
-                }
-                VK_ESCAPE => {
-                    self.zone_manager.toolbar.address_bar.focused = false;
-                    handled = true;
-                }
-                _ => {}
             }
 
             if handled {
@@ -771,28 +945,69 @@ impl AppRenderer {
             }
         }
 
-        // Global shortcuts (when address bar is not focused)
-        // Note: Cmd+D bookmark shortcut is handled via the macOS app menu.
-        // See ViewController.mm addBookmark: action.
-        let _ = VK_D; // Keep constant defined for future use
-
         // Forward key presses to IR elements for their own keyboard handling.
         if pressed {
             if let Some(key_code) = map_macos_keycode_to_winit(keycode) {
                 use rune_scene::event_handler::KeyboardEvent;
+                use rune_scene::ir_renderer::IrElementType;
+                use winit::keyboard::KeyCode;
 
                 let keyboard_event = KeyboardEvent {
                     key: key_code,
                     state: ElementState::Pressed,
-                    modifiers: ModifiersState::empty(),
+                    modifiers,
                 };
 
                 let result = self
                     .ir_renderer
                     .element_state_mut()
                     .handle_keyboard(keyboard_event);
+
                 if result.is_handled() {
                     self.needs_redraw = true;
+                } else if matches!(key_code, KeyCode::Enter | KeyCode::NumpadEnter) {
+                    // Home Tab: treat Enter in the home input box as a query submit.
+                    // This mirrors the Peco chat UX: first query dismisses the hero
+                    // banner and opens the chat panel.
+                    let focused = self.ir_renderer.element_state().get_focused_element();
+                    if let Some((view_node_id, IrElementType::InputBox)) = focused {
+                        if view_node_id == "chat_input" && self.view_doc.view_id == "home" {
+                            // Extract and clear the input text.
+                            if let Some(input) = self
+                                .ir_renderer
+                                .element_state_mut()
+                                .get_input_box_mut(&view_node_id)
+                            {
+                                let query = input.text.trim().to_string();
+                                if !query.is_empty() {
+                                    // Clear the input for the next message.
+                                    input.text.clear();
+                                    input.cursor_position = 0;
+
+                                    // Mark home chat as started so the hero/greeting hide.
+                                    self.ir_renderer
+                                        .element_state_mut()
+                                        .mark_home_chat_started();
+
+                                    // Route the message into the Peco chat panel.
+                                    self.zone_manager
+                                        .chat
+                                        .add_user_message(query.clone());
+                                    self.zone_manager.chat.add_assistant_message(
+                                        "Thanks for your question — Peco isn't yet wired to the \
+                                        backend here, but this is where the AI response will appear."
+                                            .to_string(),
+                                    );
+
+                                    // Show the chat panel and recompute layout.
+                                    self.zone_manager
+                                        .show_chat(self.logical_width, self.logical_height);
+
+                                    self.needs_redraw = true;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -926,6 +1141,11 @@ impl AppRenderer {
         None
     }
 
+    /// Check if the dock overlay is currently visible.
+    pub fn is_dock_visible(&self) -> bool {
+        self.zone_manager.is_dock_visible()
+    }
+
     /// Get the height of the DevTools zone in logical pixels.
     /// Returns 0.0 if DevTools is not visible.
     pub fn get_devtools_height(&self) -> f32 {
@@ -1054,6 +1274,84 @@ fn load_ir_package(package_path: Option<&str>) -> Result<(DataDocument, ViewDocu
     let package = rune_ir::package::RunePackage::sample()?;
     let (data, view) = package.entrypoint_documents()?;
     Ok((data.clone(), view.clone()))
+}
+
+/// Try to load IR package from a URL scheme.
+/// Supports rune://, ir://, and sample shortcuts.
+fn try_load_ir_from_url(url: &str) -> Option<(DataDocument, ViewDocument)> {
+    let url_lower = url.to_lowercase();
+
+    // Handle rune:// scheme
+    if url_lower.starts_with("rune://") {
+        let path = &url[7..]; // Strip "rune://"
+
+        // Home/Peco - load default sample
+        if path == "home" || path == "peco" || path.is_empty() {
+            let package = rune_ir::package::RunePackage::sample().ok()?;
+            let (data, view) = package.entrypoint_documents().ok()?;
+            return Some((data.clone(), view.clone()));
+        }
+
+        // Sample packages
+        if path.starts_with("sample/") || path.starts_with("samples/") {
+            let sample_name = path.split('/').nth(1).unwrap_or("");
+            return load_sample_package(sample_name);
+        }
+
+        // Direct sample name shortcuts
+        match path {
+            "first-node" | "firstnode" | "first_node" => return load_sample_package("first-node"),
+            "webview" => return load_sample_package("webview"),
+            "form" => return load_sample_package("form"),
+            _ => {}
+        }
+    }
+
+    // Handle ir:// scheme - treat as filesystem path
+    if url_lower.starts_with("ir://") {
+        let path = &url[5..]; // Strip "ir://"
+        return load_ir_package_from_path(path).ok();
+    }
+
+    None
+}
+
+/// Load a sample package by name
+fn load_sample_package(name: &str) -> Option<(DataDocument, ViewDocument)> {
+    // Sample packages live in the workspace `examples/` directory. When
+    // embedded via rune-ffi (rune-app), the process working directory is
+    // the app bundle, so we resolve these paths relative to the workspace
+    // root derived from `CARGO_MANIFEST_DIR` instead of relying on CWD.
+    let rel_dir = match name {
+        "first-node" | "firstnode" | "first_node" => "examples/sample_first_node",
+        "webview" | "web-view" => "examples/sample_webview",
+        "form" => "examples/sample_form",
+        _ => {
+            log::error!("Unknown sample package: {}", name);
+            return None;
+        }
+    };
+
+    // `CARGO_MANIFEST_DIR` for this crate is `<workspace>/crates/rune-ffi`.
+    // Walk up two levels to reach the workspace root, then join the examples path.
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
+
+    let sample_path = workspace_root.join(rel_dir);
+    let sample_str = sample_path.to_str().unwrap_or(rel_dir);
+
+    match load_ir_package_from_path(sample_str) {
+        Ok((data, view)) => {
+            log::info!("Loaded sample package: {} from {}", name, sample_str);
+            Some((data, view))
+        }
+        Err(e) => {
+            log::error!("Failed to load sample package '{}' from {:?}: {:?}", name, sample_path, e);
+            None
+        }
+    }
 }
 
 /// Load IR package from filesystem path

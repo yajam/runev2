@@ -77,12 +77,31 @@ void rune_ffi_mouse_click(float x, float y, bool pressed);
 void rune_ffi_mouse_move(float x, float y);
 
 /*
+ * Handle scroll (mouse wheel / trackpad) event.
+ *
+ * @param delta_x Horizontal scroll delta (logical pixels)
+ * @param delta_y Vertical scroll delta (logical pixels)
+ */
+void rune_ffi_scroll(float delta_x, float delta_y);
+
+/*
  * Handle key event.
  *
  * @param keycode Virtual key code
+ * @param modifiers Bitmask of modifier keys (see RUNE_MODIFIER_* flags)
  * @param pressed true if key pressed, false if released
  */
-void rune_ffi_key_event(uint32_t keycode, bool pressed);
+void rune_ffi_key_event(uint32_t keycode, uint32_t modifiers, bool pressed);
+
+/*
+ * Modifier key bitmask flags for rune_ffi_key_event.
+ *
+ * These map directly to winit's ModifiersState on the Rust side.
+ */
+#define RUNE_MODIFIER_SHIFT   (1u << 0)
+#define RUNE_MODIFIER_CONTROL (1u << 1)
+#define RUNE_MODIFIER_ALT     (1u << 2)
+#define RUNE_MODIFIER_SUPER   (1u << 3)
 
 /*
  * Check if redraw is needed.
@@ -254,6 +273,13 @@ void rune_ffi_set_current_title(const char* title);
  * @return RUNE_RENDER_IR (0) or RUNE_RENDER_CEF (1)
  */
 uint32_t rune_ffi_get_current_render_target(void);
+
+/*
+ * Check if the Rune dock overlay is currently visible.
+ *
+ * @return true if dock overlay is visible, false otherwise
+ */
+bool rune_ffi_is_dock_visible(void);
 
 /*
  * Update the address bar URL text.

@@ -457,17 +457,47 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
 
 - (void)keyDown:(NSEvent *)event {
     if (!_initialized) { [super keyDown:event]; return; }
-    rune_ffi_key_event(event.keyCode, true);
-    NSString *chars = [event characters];
-    if (chars.length > 0) {
-        const char *utf8 = [chars UTF8String];
-        if (utf8 && utf8[0] != 0) rune_ffi_text_input(utf8);
+    NSEventModifierFlags flags = event.modifierFlags;
+    uint32_t modifiers = 0;
+    if (flags & NSEventModifierFlagShift)   modifiers |= RUNE_MODIFIER_SHIFT;
+    if (flags & NSEventModifierFlagControl) modifiers |= RUNE_MODIFIER_CONTROL;
+    if (flags & NSEventModifierFlagOption)  modifiers |= RUNE_MODIFIER_ALT;
+    if (flags & NSEventModifierFlagCommand) modifiers |= RUNE_MODIFIER_SUPER;
+
+    rune_ffi_key_event((uint32_t)event.keyCode, modifiers, true);
+
+    BOOL hasCmd = (flags & NSEventModifierFlagCommand) != 0;
+    BOOL hasCtrl = (flags & NSEventModifierFlagControl) != 0;
+    BOOL hasAlt  = (flags & NSEventModifierFlagOption) != 0;
+
+    // Mirror winit path: only commit text when no command-like modifier is held,
+    // and ignore non-text function keys (arrows, F-keys) that Cocoa encodes in the
+    // private-use range U+F700–U+F8FF so they don't show up as boxes in inputs.
+    if (!hasCmd && !hasCtrl && !hasAlt) {
+        NSString *chars = [event characters];
+        if (chars.length > 0) {
+            unichar c = [chars characterAtIndex:0];
+            // Skip Cocoa function-key characters (arrows, etc.)
+            if (c >= 0xF700 && c <= 0xF8FF) {
+                return;
+            }
+
+            const char *utf8 = [chars UTF8String];
+            if (utf8 && utf8[0] != 0) rune_ffi_text_input(utf8);
+        }
     }
 }
 
 - (void)keyUp:(NSEvent *)event {
     if (!_initialized) { [super keyUp:event]; return; }
-    rune_ffi_key_event(event.keyCode, false);
+    NSEventModifierFlags flags = event.modifierFlags;
+    uint32_t modifiers = 0;
+    if (flags & NSEventModifierFlagShift)   modifiers |= RUNE_MODIFIER_SHIFT;
+    if (flags & NSEventModifierFlagControl) modifiers |= RUNE_MODIFIER_CONTROL;
+    if (flags & NSEventModifierFlagOption)  modifiers |= RUNE_MODIFIER_ALT;
+    if (flags & NSEventModifierFlagCommand) modifiers |= RUNE_MODIFIER_SUPER;
+
+    rune_ffi_key_event((uint32_t)event.keyCode, modifiers, false);
 }
 
 - (void)mouseDown:(NSEvent *)event {
@@ -489,6 +519,26 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
 - (void)mouseDragged:(NSEvent *)event {
     NSPoint p = [self flipPoint:[self convertPoint:[event locationInWindow] fromView:nil]];
     rune_ffi_mouse_move(p.x * _scaleFactor, p.y * _scaleFactor);
+}
+
+- (void)scrollWheel:(NSEvent *)event {
+    if (!_initialized) {
+        [super scrollWheel:event];
+        return;
+    }
+
+    // Use the same semantics as winit's MouseScrollDelta:
+    // - Precise deltas map directly to logical pixels.
+    // - Line-based deltas are scaled by a constant factor.
+    CGFloat dx = event.scrollingDeltaX;
+    CGFloat dy = event.scrollingDeltaY;
+
+    if (!event.hasPreciseScrollingDeltas) {
+        dx *= 20.0;
+        dy *= 20.0;
+    }
+
+    rune_ffi_scroll((float)dx, (float)dy);
 }
 
 - (NSPoint)flipPoint:(NSPoint)p {
@@ -605,13 +655,15 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
         return;
     }
 
-    // Check render target
+    // Check render target so we don't try to load IR URLs in CEF.
     uint32_t renderTarget = rune_ffi_get_render_target([urlString UTF8String]);
 
     if (renderTarget == RUNE_RENDER_IR) {
-        // TODO: Switch to IR rendering mode
-        NSLog(@"Navigation: IR rendering requested for %@ (not yet implemented)", urlString);
-        // For now, still load in CEF but log the intent
+        // IR navigation is handled entirely on the Rune renderer side.
+        // For IR targets (rune://, ir://, .rune packages), we skip CEF
+        // navigation and let the IR engine load the appropriate package.
+        NSLog(@"Navigation: IR render target for %@ - skipping CEF load", urlString);
+        return;
     }
 
     NSLog(@"Navigation: loading URL %@", urlString);
@@ -795,8 +847,32 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
 - (void)syncCefViewPosition {
     float x = 0, y = 0, w = 0, h = 0;
 
-    if (!rune_ffi_get_webview_rect(&x, &y, &w, &h) || w <= 0 || h <= 0) {
+    // When the Rune dock overlay is visible, hide the native CEF view so the
+    // IR-rendered dock + scrim can appear on top without being occluded.
+    if (rune_ffi_is_dock_visible()) {
+        if (!_cefView.hidden) {
+            _cefView.hidden = YES;
+            NSLog(@"CEF view hidden (dock visible)");
+        }
         return;
+    }
+
+    // rune_ffi_get_webview_rect returns false when:
+    // 1. In IR render mode (no CEF needed)
+    // 2. No webview element exists in the current view
+    if (!rune_ffi_get_webview_rect(&x, &y, &w, &h) || w <= 0 || h <= 0) {
+        // Hide CEF view when no webview rect is available
+        if (!_cefView.hidden) {
+            _cefView.hidden = YES;
+            NSLog(@"CEF view hidden (no webview rect)");
+        }
+        return;
+    }
+
+    // We have a valid webview rect - ensure CEF view is visible
+    if (_cefView.hidden) {
+        _cefView.hidden = NO;
+        NSLog(@"CEF view shown (webview rect available)");
     }
 
     CGRect newRect = CGRectMake(x, y, w, h);

@@ -158,6 +158,13 @@ mod webview_state {
             None
         }
     }
+
+    /// Clear the WebView rect (called at start of each frame).
+    pub fn clear_rect() {
+        if let Ok(mut guard) = WEBVIEW_RECT.lock() {
+            *guard = None;
+        }
+    }
 }
 
 // ===== WebView Layout API =====
@@ -170,6 +177,12 @@ pub fn set_webview_rect(x: f32, y: f32, w: f32, h: f32) {
 /// Get the WebView rect in scene coordinates.
 pub fn get_webview_rect() -> Option<(f32, f32, f32, f32)> {
     webview_state::get_rect()
+}
+
+/// Clear the WebView rect. Call at start of each frame before rendering.
+/// If no webview element is rendered, the rect stays None.
+pub fn clear_webview_rect() {
+    webview_state::clear_rect();
 }
 
 // ===== Native CEF View API (NSView-based rendering) =====
