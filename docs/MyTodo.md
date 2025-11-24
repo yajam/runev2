@@ -40,7 +40,7 @@
 
 ## Bugs
 
-- [ ] Text is still not crisp, specs and dust flickering
+- [ ] Text is still not crisp, [x] specs and dust flickering
 - [x] Textarea caret down is not working correctly
 - [ ] Smooth scrolling in CEF/NSView rendering path
 - [ ] Edge visbility fix using background expansion
