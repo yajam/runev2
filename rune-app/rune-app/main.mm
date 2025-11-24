@@ -201,6 +201,25 @@ void setupMenuBar(NSString* appName) {
     [fullScreenItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand | NSEventModifierFlagControl];
     [viewMenu addItem:fullScreenItem];
 
+    // Bookmarks menu
+    NSMenuItem* bookmarksMenuItem = [[NSMenuItem alloc] init];
+    [menuBar addItem:bookmarksMenuItem];
+
+    NSMenu* bookmarksMenu = [[NSMenu alloc] initWithTitle:@"Bookmarks"];
+    [bookmarksMenuItem setSubmenu:bookmarksMenu];
+
+    // Add Bookmark (Cmd+D)
+    NSMenuItem* addBookmarkItem = [[NSMenuItem alloc] initWithTitle:@"Add Bookmark"
+                                                             action:@selector(addBookmark:)
+                                                      keyEquivalent:@"d"];
+    [bookmarksMenu addItem:addBookmarkItem];
+
+    // Add New Tab item to File menu (Cmd+T)
+    NSMenuItem* newTabItem = [[NSMenuItem alloc] initWithTitle:@"New Tab"
+                                                        action:@selector(newTab:)
+                                                 keyEquivalent:@"t"];
+    [fileMenu insertItem:newTabItem atIndex:1]; // Insert after "New Window"
+
     // Window menu
     NSMenuItem* windowMenuItem = [[NSMenuItem alloc] init];
     [menuBar addItem:windowMenuItem];

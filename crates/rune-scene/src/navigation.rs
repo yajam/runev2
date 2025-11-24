@@ -40,6 +40,8 @@ pub enum RenderTarget {
 pub struct NavigationState {
     /// Current URL being displayed
     pub current_url: Option<String>,
+    /// Current page title
+    pub current_title: Option<String>,
     /// Current render target
     pub render_target: RenderTarget,
     /// Whether we can go back
@@ -227,6 +229,7 @@ pub fn update_state(url: Option<String>, can_back: bool, can_forward: bool, load
 pub fn get_state() -> NavigationState {
     state().lock().map(|s| NavigationState {
         current_url: s.current_url.clone(),
+        current_title: s.current_title.clone(),
         render_target: s.render_target,
         can_go_back: s.can_go_back,
         can_go_forward: s.can_go_forward,
@@ -237,6 +240,18 @@ pub fn get_state() -> NavigationState {
 /// Get the current URL.
 pub fn get_current_url() -> Option<String> {
     state().lock().ok()?.current_url.clone()
+}
+
+/// Get the current page title.
+pub fn get_current_title() -> Option<String> {
+    state().lock().ok()?.current_title.clone()
+}
+
+/// Update the current page title.
+pub fn set_current_title(title: Option<String>) {
+    if let Ok(mut s) = state().lock() {
+        s.current_title = title;
+    }
 }
 
 /// Get the current render target.

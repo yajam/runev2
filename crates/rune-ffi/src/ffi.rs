@@ -415,6 +415,11 @@ pub extern "C" fn rune_ffi_update_navigation_state(
         unsafe { CStr::from_ptr(url).to_str().ok().map(String::from) }
     };
 
+    eprintln!(
+        "[rune_ffi] update_navigation_state: url={:?} back={} fwd={} loading={}",
+        url_str, can_go_back, can_go_forward, is_loading
+    );
+
     rune_scene::navigation::update_state(url_str, can_go_back, can_go_forward, is_loading);
 }
 
@@ -430,6 +435,34 @@ pub extern "C" fn rune_ffi_get_current_url() -> *mut c_char {
         },
         None => std::ptr::null_mut(),
     }
+}
+
+/// Get the current page title from navigation state.
+/// Returns NULL if no title is set.
+/// The returned string must be freed with rune_ffi_free_string.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_get_current_title() -> *mut c_char {
+    match rune_scene::navigation::get_current_title() {
+        Some(title) => match std::ffi::CString::new(title) {
+            Ok(s) => s.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// Set the current page title.
+/// Called by the native side when CEF reports a title change.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_set_current_title(title: *const c_char) {
+    let title_str = if title.is_null() {
+        None
+    } else {
+        unsafe { CStr::from_ptr(title).to_str().ok().map(String::from) }
+    };
+
+    log::debug!("rune_ffi_set_current_title: {:?}", title_str);
+    rune_scene::navigation::set_current_title(title_str);
 }
 
 /// Get current render target.
@@ -449,19 +482,28 @@ pub extern "C" fn rune_ffi_get_current_render_target() -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn rune_ffi_set_address_bar_url(url: *const c_char) {
     if url.is_null() {
+        eprintln!("[rune_ffi] set_address_bar_url: url is null");
         return;
     }
 
     let url_str = match unsafe { CStr::from_ptr(url).to_str() } {
         Ok(s) => s,
-        Err(_) => return,
+        Err(_) => {
+            eprintln!("[rune_ffi] set_address_bar_url: invalid UTF-8");
+            return;
+        }
     };
 
-    log::debug!("Setting address bar URL: {}", url_str);
+    eprintln!("[rune_ffi] set_address_bar_url: {}", url_str);
 
-    with_renderer(|r| {
+    let result = with_renderer(|r| {
         r.set_address_bar_text(url_str);
     });
+    if result.is_none() {
+        eprintln!("[rune_ffi] set_address_bar_url: renderer not available (wrong thread?)");
+    } else {
+        eprintln!("[rune_ffi] set_address_bar_url: SUCCESS");
+    }
 }
 
 /// Check if a page is currently loading.
@@ -478,4 +520,164 @@ pub extern "C" fn rune_ffi_update_toolbar_loading() {
     with_renderer(|r| {
         r.update_toolbar_loading();
     });
+}
+
+// ============================================================================
+// DevTools FFI Functions
+// ============================================================================
+
+/// Flag for signaling DevTools toggle request.
+static DEVTOOLS_TOGGLE_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// Signal that Chrome DevTools should be toggled.
+/// Called by the Rust side when the devtools button is clicked.
+pub fn request_cef_devtools_toggle() {
+    DEVTOOLS_TOGGLE_REQUESTED.store(true, Ordering::SeqCst);
+    log::info!("CEF DevTools toggle requested");
+}
+
+/// Check if Chrome DevTools toggle was requested.
+/// The native side should poll this and open DevTools when true.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_devtools_toggle_requested() -> bool {
+    DEVTOOLS_TOGGLE_REQUESTED.swap(false, Ordering::SeqCst)
+}
+
+/// Get the height of the DevTools zone in logical pixels.
+/// Returns 0.0 if DevTools is not visible or the renderer is not initialized.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_get_devtools_height() -> f32 {
+    with_renderer(|r| r.get_devtools_height()).unwrap_or(0.0)
+}
+
+/// Log a message to the DevTools console.
+/// Level: 0 = Log, 1 = Warn, 2 = Error.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_devtools_console_log(level: u32, msg: *const c_char) {
+    if msg.is_null() {
+        return;
+    }
+
+    let message = match unsafe { CStr::from_ptr(msg).to_str() } {
+        Ok(s) => s.to_string(),
+        Err(_) => return,
+    };
+
+    let level_enum = match level {
+        1 => rune_scene::zones::ConsoleLevel::Warn,
+        2 => rune_scene::zones::ConsoleLevel::Error,
+        _ => rune_scene::zones::ConsoleLevel::Log,
+    };
+
+    with_renderer(|r| {
+        r.devtools_console_log(level_enum, message);
+    });
+}
+
+/// Clear all DevTools console entries.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_devtools_console_clear() {
+    with_renderer(|r| {
+        r.devtools_console_clear();
+    });
+}
+
+// ============================================================================
+// Bookmark FFI Functions
+// ============================================================================
+
+/// Add a bookmark for the current page.
+/// Uses the current URL and title from navigation state.
+/// Returns true if a bookmark was added, false otherwise (e.g., no URL available).
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_add_bookmark() -> bool {
+    let current_url = rune_scene::navigation::get_current_url();
+
+    if let Some(url) = current_url {
+        if url.trim().is_empty() {
+            return false;
+        }
+
+        // Use the CEF page title if available, otherwise derive from URL
+        let title = rune_scene::navigation::get_current_title()
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or_else(|| {
+                url.split('/')
+                    .last()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("Bookmark")
+                    .to_string()
+            });
+
+        log::info!("Adding bookmark via FFI: {} -> {}", title, url);
+
+        with_renderer(|r| {
+            r.zone_manager.sidebar.add_bookmark(title.clone(), url.clone());
+            r.needs_redraw = true;
+        });
+
+        true
+    } else {
+        false
+    }
+}
+
+/// Open a new tab by navigating to a blank page.
+/// Creates a new tab entry and makes it active.
+/// This clears the current page and focuses the address bar for user input.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_new_tab() {
+    log::info!("New tab requested via FFI");
+
+    // Create a new blank tab and make it active
+    // Use empty string to indicate a new tab page (not a real URL)
+    with_renderer(|r| {
+        r.zone_manager.sidebar.new_tab("New Tab".to_string(), String::new());
+    });
+
+    // Don't navigate - just clear the address bar and focus it
+    // The user will type a URL and hit Enter to navigate
+    with_renderer(|r| {
+        r.zone_manager.toolbar.address_bar.set_text("");
+        r.zone_manager.toolbar.address_bar.focused = true;
+        r.needs_redraw = true;
+    });
+}
+
+/// Update the active tab with the current navigation URL and title.
+/// Call this when CEF navigation state changes (URL or title update).
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_update_active_tab() {
+    let current_url = rune_scene::navigation::get_current_url();
+    let current_title = rune_scene::navigation::get_current_title();
+
+    if let Some(url) = current_url {
+        if url.trim().is_empty() {
+            return;
+        }
+
+        let title = current_title
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or_else(|| {
+                url.split('/')
+                    .last()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("Tab")
+                    .to_string()
+            });
+
+        with_renderer(|r| {
+            // If no active tab exists, create one
+            if r.zone_manager.sidebar.active_tab().is_none() {
+                r.zone_manager.sidebar.new_tab(title.clone(), url.clone());
+                log::info!("Created initial tab: {} -> {}", title, url);
+            } else {
+                // Update the active tab
+                if r.zone_manager.sidebar.update_active_tab(title.clone(), url.clone()) {
+                    log::debug!("Updated active tab: {} -> {}", title, url);
+                }
+            }
+            r.needs_redraw = true;
+        });
+    }
 }

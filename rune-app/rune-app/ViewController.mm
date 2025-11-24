@@ -13,6 +13,7 @@
 #import "include/cef_app.h"
 #import "include/cef_browser.h"
 #import "include/cef_client.h"
+#import "include/cef_devtools_message_observer.h"
 #pragma clang diagnostic pop
 
 #import <Cocoa/Cocoa.h>
@@ -33,6 +34,8 @@ static ViewController* g_viewController = nil;
 // Forward declare syncCefViewPosition for use in displayLinkCallback
 @interface ViewController (CefSync)
 - (void)syncCefViewPosition;
+- (void)toggleCefDevTools;
+- (void)devToolsDidClose;
 @end
 
 class CefNativeHandler : public CefClient,
@@ -40,10 +43,12 @@ class CefNativeHandler : public CefClient,
                          public CefDisplayHandler,
                          public CefLoadHandler,
                          public CefRequestHandler,
-                         public CefContextMenuHandler {
+                         public CefContextMenuHandler,
+                         public CefDevToolsMessageObserver {
 public:
     CefRefPtr<CefBrowser> browser;
     NSView* __weak parentView;
+    CefRefPtr<CefRegistration> devtools_registration;
 
     CefNativeHandler(NSView* parent) : parentView(parent) {}
 
@@ -54,42 +59,121 @@ public:
     virtual CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
 
     virtual void OnAfterCreated(CefRefPtr<CefBrowser> b) override {
-        browser = b;
-        NSLog(@"CEF browser created (native view mode)");
+        // Only capture the first created browser as the main one.
+        // DevTools and any other auxiliary browsers should not replace it.
+        if (!browser.get()) {
+            browser = b;
+            NSLog(@"CEF main browser created (native view mode)");
+
+            // Attach DevTools protocol observer so we can stream console
+            // messages into the Rune DevTools console without opening the
+            // Chrome DevTools window.
+            CefRefPtr<CefBrowserHost> host = browser->GetHost();
+            if (host) {
+                devtools_registration = host->AddDevToolsMessageObserver(this);
+
+                // Enable relevant DevTools domains for console logging.
+                host->ExecuteDevToolsMethod(0, "Runtime.enable", nullptr);
+                host->ExecuteDevToolsMethod(0, "Log.enable", nullptr);
+            }
+
+            // Emit a test log line so the Rune DevTools console has at least
+            // one entry even before any page console activity.
+            rune_ffi_devtools_console_log(0, "CEF main browser created; DevTools observer attached");
+        } else {
+            NSLog(@"CEF secondary browser created (DevTools or popup)");
+        }
+    }
+
+    virtual void OnBeforeClose(CefRefPtr<CefBrowser> closingBrowser) override {
+        if (browser.get() && closingBrowser.get() == browser.get()) {
+            NSLog(@"CEF main browser is closing");
+            browser = nullptr;
+            devtools_registration = nullptr;
+        } else {
+            // DevTools or other auxiliary browser is closing.
+            // Notify the ViewController so it can update UI state.
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (g_viewController) {
+                    [g_viewController devToolsDidClose];
+                }
+            });
+        }
     }
 
     virtual void OnTitleChange(CefRefPtr<CefBrowser> browser, const CefString& title) override {
-        NSString* nsTitle = [NSString stringWithUTF8String:title.ToString().c_str()];
+        std::string titleStr = title.ToString();
+        NSString* nsTitle = [NSString stringWithUTF8String:titleStr.c_str()];
         NSLog(@"CEF title changed: %@", nsTitle);
+
+        // Update Rust navigation state with the new title
+        rune_ffi_set_current_title(titleStr.c_str());
+
+        // Update the active tab with the new title
+        rune_ffi_update_active_tab();
     }
 
     // CefDisplayHandler - URL changed
     virtual void OnAddressChange(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, const CefString& url) override {
+        // Older logic that directly updates both navigation state and the
+        // address bar when the main-frame URL changes. This was working
+        // reliably before we introduced additional gating.
         if (frame->IsMain()) {
             std::string urlStr = url.ToString();
             bool canGoBack = browser->CanGoBack();
             bool canGoForward = browser->CanGoForward();
 
-            // Update Rust navigation state
-            rune_ffi_update_navigation_state(urlStr.c_str(), canGoBack, canGoForward, false);
+            // Skip data URLs (blank pages) - don't show them in address bar or store in tabs
+            bool isDataUrl = urlStr.rfind("data:", 0) == 0;
+            bool isAboutBlank = urlStr == "about:blank";
 
-            // Update the address bar to show the new URL
-            rune_ffi_set_address_bar_url(urlStr.c_str());
+            // Update Rust navigation state (URL, back/forward, loading=false here;
+            // loading flag will be updated by OnLoadingStateChange).
+            // For data URLs, pass empty string so address bar stays clean
+            const char* displayUrl = (isDataUrl || isAboutBlank) ? "" : urlStr.c_str();
+            rune_ffi_update_navigation_state(displayUrl, canGoBack, canGoForward, false);
 
-            NSLog(@"CEF URL changed: %s (back=%d, forward=%d)", urlStr.c_str(), canGoBack, canGoForward);
+            // Update the address bar to show the new URL (empty for data URLs)
+            rune_ffi_set_address_bar_url(displayUrl);
+
+            // Update the active tab with the new URL (skip for data URLs)
+            if (!isDataUrl && !isAboutBlank) {
+                rune_ffi_update_active_tab();
+            }
+
+            NSLog(@"CEF URL changed: %s (back=%d, forward=%d, isDataUrl=%d)", urlStr.c_str(), canGoBack, canGoForward, isDataUrl);
         }
     }
 
     // CefLoadHandler - loading state changed
     virtual void OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool isLoading, bool canGoBack, bool canGoForward) override {
-        // Get current URL
+        // Get current URL - use NSString for safe block capture
         CefRefPtr<CefFrame> frame = browser->GetMainFrame();
-        std::string url = frame ? frame->GetURL().ToString() : "";
+        NSString* urlNs = nil;
+        bool isMainFrame = false;
+        if (frame) {
+            urlNs = [NSString stringWithUTF8String:frame->GetURL().ToString().c_str()];
+            isMainFrame = frame->IsMain();
+        }
 
-        // Update Rust navigation state
-        rune_ffi_update_navigation_state(url.c_str(), canGoBack, canGoForward, isLoading);
+        NSLog(@"CEF loading state: loading=%d back=%d forward=%d url=%@", isLoading, canGoBack, canGoForward, urlNs);
 
-        NSLog(@"CEF loading state: loading=%d back=%d forward=%d", isLoading, canGoBack, canGoForward);
+        // Dispatch to main thread - FFI functions use thread-local storage
+        dispatch_async(dispatch_get_main_queue(), ^{
+            const char* urlCStr = urlNs ? [urlNs UTF8String] : "";
+            NSLog(@"[Rune] OnLoadingStateChange -> rune_ffi_update_navigation_state('%@', back=%d, fwd=%d, loading=%d)",
+                  urlNs, canGoBack, canGoForward, isLoading);
+            // Update Rust navigation state
+            rune_ffi_update_navigation_state(urlCStr, canGoBack, canGoForward, isLoading);
+
+            // When a new main-frame navigation starts, clear the Rune DevTools
+            // console so logs are per-page. Also emit a navigation marker.
+            if (isLoading && isMainFrame && urlNs) {
+                rune_ffi_devtools_console_clear();
+                NSString* msg = [NSString stringWithFormat:@"Navigating to: %@", urlNs];
+                rune_ffi_devtools_console_log(0, [msg UTF8String]);
+            }
+        });
     }
 
     // CefLoadHandler - load started
@@ -120,6 +204,10 @@ public:
                                CefBrowserSettings& settings,
                                CefRefPtr<CefDictionaryValue>& extra_info,
                                bool* no_javascript_access) override {
+        if (!this->browser.get() || browser.get() != this->browser.get()) {
+            // Allow popups for non-main browsers (e.g., DevTools).
+            return false;
+        }
         // Load the URL in the current browser instead of opening a popup
         std::string url = target_url.ToString();
         NSLog(@"Popup blocked, loading in same window: %s", url.c_str());
@@ -140,6 +228,10 @@ public:
                                   const CefString& target_url,
                                   WindowOpenDisposition target_disposition,
                                   bool user_gesture) override {
+        if (!this->browser.get() || browser.get() != this->browser.get()) {
+            // Allow normal behavior for non-main browsers (e.g., DevTools).
+            return false;
+        }
         // For new tab/window requests, load in the same window
         if (target_disposition != CEF_WOD_CURRENT_TAB) {
             std::string url = target_url.ToString();
@@ -163,6 +255,10 @@ public:
                                      CefRefPtr<CefFrame> frame,
                                      CefRefPtr<CefContextMenuParams> params,
                                      CefRefPtr<CefMenuModel> model) override {
+        if (!this->browser.get() || browser.get() != this->browser.get()) {
+            // Leave DevTools and auxiliary browsers' context menus intact.
+            return;
+        }
         // Clear the context menu to disable it and prevent crashes
         // This suppresses the right-click menu entirely
         model->Clear();
@@ -173,8 +269,48 @@ public:
                                       CefRefPtr<CefContextMenuParams> params,
                                       int command_id,
                                       cef_event_flags_t event_flags) override {
+        if (!this->browser.get() || browser.get() != this->browser.get()) {
+            // No custom commands for non-main browsers.
+            return false;
+        }
         // No custom commands since we cleared the menu
         return false;
+    }
+
+    // CefDevToolsMessageObserver - stream DevTools events (e.g. console) into Rune.
+    virtual void OnDevToolsEvent(CefRefPtr<CefBrowser> browser,
+                                 const CefString& method,
+                                 const void* params,
+                                 size_t params_size) override {
+        if (!this->browser.get() || browser.get() != this->browser.get()) {
+            return;
+        }
+        if (!params || params_size == 0) {
+            return;
+        }
+
+        std::string methodStr = method.ToString();
+
+        // We are primarily interested in console-related events. For now we
+        // just forward the raw JSON params into the Rune DevTools console so we
+        // can inspect them. Later we can parse and prettify.
+        const char* data = static_cast<const char*>(params);
+        std::string json(data, data + params_size);
+
+        uint32_t level = 0; // Log
+        if (methodStr == "Runtime.exceptionThrown" || methodStr == "Log.entryAdded") {
+            level = 2; // Error
+        } else if (methodStr == "Runtime.consoleAPICalled") {
+            level = 0; // Log
+        }
+
+        rune_ffi_devtools_console_log(level, json.c_str());
+    }
+
+    virtual void OnDevToolsAgentDetached(CefRefPtr<CefBrowser> browser) override {
+        if (this->browser.get() && browser.get() == this->browser.get()) {
+            devtools_registration = nullptr;
+        }
     }
 
 private:
@@ -281,6 +417,11 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
             // This ensures layout changes (like sidebar toggle) are applied instantly
             if (g_viewController) {
                 [g_viewController syncCefViewPosition];
+
+                // Check if DevTools toggle was requested
+                if (rune_ffi_devtools_toggle_requested()) {
+                    [g_viewController toggleCefDevTools];
+                }
             }
         }
     });
@@ -414,6 +555,9 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
     CefRefPtr<CefNativeHandler> _cefHandler;
     BOOL _cefBrowserCreated;
     CGRect _lastWebViewRect;
+    float _lastDevToolsHeight;
+    BOOL _devToolsWasOpened;
+    BOOL _devToolsClosedExternally;
 }
 
 #pragma mark - Navigation Command Processing
@@ -530,6 +674,9 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
     _cefHandler = new CefNativeHandler(_cefView);
     _cefBrowserCreated = NO;
     _lastWebViewRect = CGRectZero;
+    _lastDevToolsHeight = 0.0f;
+    _devToolsWasOpened = NO;
+    _devToolsClosedExternally = NO;
 
     // Start navigation command polling timer
     _navigationTimer = [NSTimer scheduledTimerWithTimeInterval:0.05  // 50ms = 20Hz polling
@@ -581,22 +728,37 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
     if (_cefBrowserCreated) return;
     _cefBrowserCreated = YES;
 
-    // Get URL from IR package
+    // Get URL from IR package; fall back to about:blank for blank page
     char* urlCStr = rune_ffi_get_webview_url();
-    NSString* url = urlCStr ? [NSString stringWithUTF8String:urlCStr] : @"https://www.google.com";
-    if (urlCStr) rune_ffi_free_string(urlCStr);
+    NSString* url = nil;
+    if (urlCStr) {
+        NSString* urlStr = [NSString stringWithUTF8String:urlCStr];
+        // Use about:blank if URL is empty
+        url = (urlStr.length > 0) ? urlStr : @"about:blank";
+        rune_ffi_free_string(urlCStr);
+    } else {
+        url = @"about:blank";
+    }
 
     // Position the CEF view at the viewport rect
     // Convert from logical coords to view coords (Y is flipped)
     float scale = _renderView.scaleFactor;
     CGFloat viewHeight = self.view.bounds.size.height;
 
-    // rect is in logical pixels from top-left; NSView coords are from bottom-left
+    // If the Rune DevTools zone is visible, shrink the CEF view height so the
+    // IR-rendered DevTools panel can occupy the bottom overlay area.
+    float devtoolsHeight = rune_ffi_get_devtools_height();
+    float cefHeight = rect.size.height;
+    if (devtoolsHeight > 0.0f && devtoolsHeight < cefHeight) {
+        cefHeight -= devtoolsHeight;
+    }
+
+    // rect is in logical pixels from top-left; NSView coords are from bottom-left.
     NSRect frame = NSMakeRect(
         rect.origin.x,
-        viewHeight - rect.origin.y - rect.size.height,
+        viewHeight - rect.origin.y - cefHeight,
         rect.size.width,
-        rect.size.height
+        cefHeight
     );
 
     NSLog(@"Positioning CEF view at: (%.1f, %.1f) %.0fx%.0f [view coords]",
@@ -606,13 +768,13 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
     _cefView.hidden = NO;
 
     // Create CEF browser in the native view
-    NSLog(@"Creating native CEF browser: URL=%@ size=%.0fx%.0f", url, rect.size.width, rect.size.height);
+    NSLog(@"Creating native CEF browser: URL=%@ size=%.0fx%.0f", url, rect.size.width, cefHeight);
 
     CefWindowInfo windowInfo;
     // Use the CEF view's native window handle
     NSView* cefNsView = _cefView;
     windowInfo.SetAsChild((__bridge CefWindowHandle)cefNsView,
-                          CefRect(0, 0, (int)rect.size.width, (int)rect.size.height));
+                          CefRect(0, 0, (int)rect.size.width, (int)cefHeight));
 
     CefBrowserSettings browserSettings;
     // Enable smooth scrolling and hardware acceleration
@@ -638,21 +800,32 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
     }
 
     CGRect newRect = CGRectMake(x, y, w, h);
+    float devtoolsHeight = rune_ffi_get_devtools_height();
 
-    // Only update if rect changed (avoid unnecessary work on every frame)
-    if (CGRectEqualToRect(newRect, _lastWebViewRect)) {
+    // Only update if rect or devtools height changed (avoid unnecessary work on every frame)
+    if (CGRectEqualToRect(newRect, _lastWebViewRect) && devtoolsHeight == _lastDevToolsHeight) {
         return;
     }
 
     _lastWebViewRect = newRect;
+    _lastDevToolsHeight = devtoolsHeight;
 
     // Convert to NSView coordinates (flip Y)
     CGFloat viewHeight = self.view.bounds.size.height;
+
+    // Shrink the CEF view height when the Rune DevTools zone is visible so the
+    // IR DevTools overlay is not covered by the native CEF NSView.
+    // (devtoolsHeight was already fetched above for the change detection)
+    float cefHeight = h;
+    if (devtoolsHeight > 0.0f && devtoolsHeight < cefHeight) {
+        cefHeight -= devtoolsHeight;
+    }
+
     NSRect frame = NSMakeRect(
         x,
-        viewHeight - y - h,
+        viewHeight - y - cefHeight,
         w,
-        h
+        cefHeight
     );
 
     // Update the CEF view frame immediately
@@ -667,7 +840,9 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
         }
     }
 
-    // Update Rust side
+    // Update Rust side with the logical webview rect (unshrunken). Rune's own
+    // hit testing and layout still use the full WebView rect; only the native
+    // CEF NSView is cropped visually on the macOS side.
     rune_ffi_position_cef_view(x, y, w, h);
 }
 
@@ -675,6 +850,81 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
     // Sync CEF view position immediately after window resize
     // The display link callback also syncs on every frame for additional safety
     [self syncCefViewPosition];
+}
+
+- (void)toggleCefDevTools {
+    if (!_cefHandler || !_cefHandler->browser) {
+        NSLog(@"Cannot toggle DevTools: browser not ready");
+        return;
+    }
+
+    CefRefPtr<CefBrowserHost> host = _cefHandler->browser->GetHost();
+    if (!host) {
+        NSLog(@"Cannot toggle DevTools: no browser host");
+        return;
+    }
+    bool hasDevTools = host->HasDevTools();
+
+    if (_devToolsClosedExternally) {
+        NSLog(@"DevTools were closed via their own window; skipping reopen to avoid CEF crash.");
+        return;
+    }
+
+    // If DevTools were previously opened via the toolbar but CEF reports that
+    // they are no longer present, assume they were closed via their own window.
+    if (_devToolsWasOpened && !hasDevTools) {
+        _devToolsClosedExternally = YES;
+        NSLog(@"DevTools closed externally; further toggles disabled for this run.");
+        return;
+    }
+
+    if (hasDevTools) {
+        NSLog(@"Closing Chrome DevTools");
+        host->CloseDevTools();
+        _devToolsWasOpened = NO;
+    } else {
+        CefWindowInfo windowInfo;
+        CefBrowserSettings settings;
+        host->ShowDevTools(windowInfo, nullptr, settings, CefPoint());
+        _devToolsWasOpened = YES;
+        NSLog(@"Opening Chrome DevTools");
+    }
+}
+
+- (void)devToolsDidClose {
+    // Called from CefNativeHandler when an auxiliary browser (e.g. DevTools
+    // using our client) closes. Treat this as an external DevTools close so we
+    // don't attempt to re-open and hit CEF assertions.
+    _devToolsClosedExternally = YES;
+    NSLog(@"DevTools browser closed (client callback)");
+}
+
+#pragma mark - Bookmark Actions
+
+- (IBAction)addBookmark:(id)sender {
+    // Add a bookmark for the current page using the FFI
+    if (rune_ffi_add_bookmark()) {
+        NSLog(@"Bookmark added via menu/keyboard shortcut");
+    } else {
+        NSLog(@"Failed to add bookmark (no URL available)");
+    }
+}
+
+#pragma mark - Tab Actions
+
+- (IBAction)newTab:(id)sender {
+    // Open a new tab via the FFI - clears address bar and focuses it
+    rune_ffi_new_tab();
+
+    // Navigate CEF to about:blank (address bar filtering will keep it empty)
+    if (_cefHandler && _cefHandler->browser) {
+        CefRefPtr<CefFrame> frame = _cefHandler->browser->GetMainFrame();
+        if (frame) {
+            frame->LoadURL("about:blank");
+        }
+    }
+
+    NSLog(@"New tab opened via menu/keyboard shortcut");
 }
 
 - (void)dealloc {

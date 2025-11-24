@@ -9,6 +9,7 @@ use winit::dpi::{LogicalPosition, LogicalSize};
 
 use super::IrRenderer;
 use crate::persistence::WindowStateStore;
+use crate::navigation;
 
 /// Main entry point for IR-based rendering flow.
 ///
@@ -266,6 +267,9 @@ pub fn run() -> Result<()> {
                                         DEVTOOLS_CONSOLE_TAB_REGION_ID,
                                         DEVTOOLS_ELEMENTS_TAB_REGION_ID, FORWARD_BUTTON_REGION_ID,
                                         REFRESH_BUTTON_REGION_ID, TOGGLE_BUTTON_REGION_ID,
+                                        SIDEBAR_BOOKMARK_REGION_BASE, SIDEBAR_TAB_REGION_BASE,
+                                        SIDEBAR_ADD_BOOKMARK_REGION_ID, SIDEBAR_TAB_CLOSE_REGION_BASE,
+                                        SIDEBAR_BOOKMARK_DELETE_REGION_BASE,
                                     };
 
                                     match region_id {
@@ -401,6 +405,102 @@ pub fn run() -> Result<()> {
                                             zone_manager
                                                 .devtools
                                                 .set_active_tab(crate::zones::DevToolsTab::Console);
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Sidebar: Add bookmark button
+                                        SIDEBAR_ADD_BOOKMARK_REGION_ID => {
+                                            if zone_manager.toolbar.address_bar.focused {
+                                                zone_manager.toolbar.address_bar.focused = false;
+                                                zone_manager.toolbar.address_bar.end_mouse_selection();
+                                            }
+                                            ir_renderer.element_state_mut().clear_all_focus();
+
+                                            // Add bookmark for current page using navigation state,
+                                            // which reflects the actual CEF/IR URL and page title.
+                                            let current_url = navigation::get_current_url()
+                                                .unwrap_or_else(|| zone_manager.toolbar.address_bar.text.clone());
+                                            if !current_url.trim().is_empty() {
+                                                // Use the CEF page title if available, otherwise derive from URL
+                                                let title = navigation::get_current_title()
+                                                    .filter(|t| !t.trim().is_empty())
+                                                    .unwrap_or_else(|| {
+                                                        current_url
+                                                            .split('/')
+                                                            .last()
+                                                            .filter(|s| !s.is_empty())
+                                                            .unwrap_or("Bookmark")
+                                                            .to_string()
+                                                    });
+                                                zone_manager.sidebar.add_bookmark(title.clone(), current_url.clone());
+                                                println!("Bookmark added: {} -> {}", title, current_url);
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Sidebar: Tab close buttons (region IDs 2300+)
+                                        id if id >= SIDEBAR_TAB_CLOSE_REGION_BASE && id < SIDEBAR_TAB_CLOSE_REGION_BASE + 100 => {
+                                            if zone_manager.toolbar.address_bar.focused {
+                                                zone_manager.toolbar.address_bar.focused = false;
+                                                zone_manager.toolbar.address_bar.end_mouse_selection();
+                                            }
+                                            ir_renderer.element_state_mut().clear_all_focus();
+
+                                            let tab_index = (id - SIDEBAR_TAB_CLOSE_REGION_BASE) as usize;
+                                            if zone_manager.sidebar.remove_tab(tab_index) {
+                                                println!("Closed tab at index {}", tab_index);
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Sidebar: Bookmark delete buttons (region IDs 2400+)
+                                        id if id >= SIDEBAR_BOOKMARK_DELETE_REGION_BASE && id < SIDEBAR_BOOKMARK_DELETE_REGION_BASE + 100 => {
+                                            if zone_manager.toolbar.address_bar.focused {
+                                                zone_manager.toolbar.address_bar.focused = false;
+                                                zone_manager.toolbar.address_bar.end_mouse_selection();
+                                            }
+                                            ir_renderer.element_state_mut().clear_all_focus();
+
+                                            let bookmark_index = (id - SIDEBAR_BOOKMARK_DELETE_REGION_BASE) as usize;
+                                            if zone_manager.sidebar.remove_bookmark(bookmark_index) {
+                                                println!("Deleted bookmark at index {}", bookmark_index);
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Sidebar: Tab items (region IDs 2100-2199)
+                                        id if id >= SIDEBAR_TAB_REGION_BASE && id < SIDEBAR_TAB_REGION_BASE + 100 => {
+                                            if zone_manager.toolbar.address_bar.focused {
+                                                zone_manager.toolbar.address_bar.focused = false;
+                                                zone_manager.toolbar.address_bar.end_mouse_selection();
+                                            }
+                                            ir_renderer.element_state_mut().clear_all_focus();
+
+                                            let tab_index = (id - SIDEBAR_TAB_REGION_BASE) as usize;
+                                            if let Some(tab) = zone_manager.sidebar.get_tab(tab_index) {
+                                                let url = tab.url.clone();
+                                                println!("Navigate to tab: {}", url);
+                                                // Set this tab as active before navigating
+                                                zone_manager.sidebar.set_active_tab(Some(tab_index));
+                                                navigation::navigate_to(&url);
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Sidebar: Bookmark items (region IDs 2000-2099)
+                                        id if id >= SIDEBAR_BOOKMARK_REGION_BASE && id < SIDEBAR_BOOKMARK_REGION_BASE + 100 => {
+                                            if zone_manager.toolbar.address_bar.focused {
+                                                zone_manager.toolbar.address_bar.focused = false;
+                                                zone_manager.toolbar.address_bar.end_mouse_selection();
+                                            }
+                                            ir_renderer.element_state_mut().clear_all_focus();
+
+                                            let bookmark_index = (id - SIDEBAR_BOOKMARK_REGION_BASE) as usize;
+                                            if let Some(bookmark) = zone_manager.sidebar.get_bookmark(bookmark_index) {
+                                                let url = bookmark.url.clone();
+                                                println!("Navigate to bookmark: {}", url);
+                                                navigation::navigate_to(&url);
+                                            }
                                             needs_redraw = true;
                                             window.request_redraw();
                                         }
@@ -1004,10 +1104,27 @@ pub fn render_frame_with_zones(
         canvas.pop_transform();
     }
 
+    // Render sidebar with tabs and bookmarks when visible
+    if zone_manager.sidebar.is_visible() {
+        use crate::zones::ZoneId;
+        use engine_core::Transform2D;
+
+        let sidebar_rect = zone_manager.layout.get_zone(ZoneId::Sidebar);
+
+        // Render sidebar content in sidebar-local coordinates
+        canvas.push_transform(Transform2D::translate(sidebar_rect.x, sidebar_rect.y));
+
+        zone_manager
+            .sidebar
+            .render(&mut canvas, sidebar_rect, provider.as_ref());
+
+        canvas.pop_transform();
+    }
+
     // Render devtools overlay when visible (mirrors legacy visuals and hit regions).
     if zone_manager.is_devtools_visible() {
         use crate::zones::{
-            DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID,
+            ConsoleLevel, DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID,
             DEVTOOLS_ELEMENTS_TAB_REGION_ID, DevToolsTab, ZoneId,
         };
         use engine_core::{Brush, Color, ColorLinPremul, SvgStyle, Transform2D};
@@ -1219,18 +1336,65 @@ pub fn render_frame_with_zones(
             10260,
         );
 
-        let content_text = match active_tab {
-            DevToolsTab::Console => "Console",
-            DevToolsTab::Elements => "Elements",
-        };
         let label_color: ColorLinPremul = ColorLinPremul::rgba(220, 230, 240, 255);
-        canvas.draw_text_run(
-            [tab_padding + 4.0, header_height + 14.0],
-            content_text.to_string(),
-            12.0,
-            label_color,
-            10260,
+
+        // Content area background (below header)
+        let content_y = header_height;
+        let content_h = (devtools_rect.h - header_height).max(0.0);
+        canvas.fill_rect(
+            0.0,
+            content_y,
+            devtools_rect.w,
+            content_h,
+            Brush::Solid(ColorLinPremul::rgba(28, 34, 48, 255)),
+            10105,
         );
+
+        match active_tab {
+            DevToolsTab::Elements => {
+                canvas.draw_text_run(
+                    [tab_padding + 4.0, header_height + 14.0],
+                    "Elements (stub)".to_string(),
+                    12.0,
+                    label_color,
+                    10260,
+                );
+            }
+            DevToolsTab::Console => {
+                // Simple console log view: render each entry on its own line.
+                let line_height = 14.0;
+                let mut y = header_height + 4.0;
+                let left_margin = tab_padding + 4.0;
+
+                for entry in zone_manager.devtools.console_entries.iter() {
+                    let (icon, color) = match entry.level {
+                        ConsoleLevel::Warn => ("⚠", ColorLinPremul::rgba(255, 200, 120, 255)),
+                        ConsoleLevel::Error => ("⨯", ColorLinPremul::rgba(255, 140, 140, 255)),
+                        ConsoleLevel::Log => ("•", label_color),
+                    };
+
+                    canvas.draw_text_run(
+                        [left_margin, y],
+                        icon.to_string(),
+                        11.0,
+                        color,
+                        10260,
+                    );
+                    canvas.draw_text_run(
+                        [left_margin + 16.0, y],
+                        entry.message.clone(),
+                        11.0,
+                        label_color,
+                        10260,
+                    );
+
+                    y += line_height;
+                    if y > devtools_rect.h - 4.0 {
+                        break;
+                    }
+                }
+            }
+        }
 
         canvas.pop_transform();
     }

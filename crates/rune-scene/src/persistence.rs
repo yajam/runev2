@@ -9,6 +9,7 @@ const APP_HOME_DIR: &str = ".rune";
 const WINDOW_STATE_FILE: &str = "window_state.json";
 const BOOKMARKS_FILE: &str = "bookmarks.json";
 const TABS_FILE: &str = "tabs.json";
+const HISTORY_FILE: &str = "history.json";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct WindowSize {
@@ -57,7 +58,12 @@ impl WindowStateStore {
                 if error.kind() != io::ErrorKind::NotFound {
                     warn!(?error, ?path, "failed to read persisted window state");
                 }
-                WindowPreferences::default()
+                // Ensure the .rune folder and an initial file exist on first run
+                let default_state = WindowPreferences::default();
+                if let Err(err) = write_state(&path, &default_state) {
+                    warn!(?err, ?path, "failed to create initial window state file");
+                }
+                default_state
             }
         };
 
@@ -231,6 +237,16 @@ impl BookmarksStore {
         self.dirty = false;
         Ok(())
     }
+
+    pub fn remove_at(&mut self, index: usize) -> bool {
+        if index < self.state.bookmarks.len() {
+            self.state.bookmarks.remove(index);
+            self.dirty = true;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl Drop for BookmarksStore {
@@ -269,15 +285,28 @@ fn write_bookmarks(path: &PathBuf, doc: &BookmarksDocument) -> Result<()> {
 // Tabs persistence
 // ------------------------------
 
+/// A single history entry within a tab
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TabEntry {
     pub title: String,
     pub url: String,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TabsDocument {
     pub tabs: Vec<TabEntry>,
+    /// Index of the currently active tab (None if no tabs)
+    #[serde(default)]
+    pub active_tab: Option<usize>,
+}
+
+impl Default for TabsDocument {
+    fn default() -> Self {
+        Self {
+            tabs: Vec::new(),
+            active_tab: None,
+        }
+    }
 }
 
 pub struct TabsStore {
@@ -324,9 +353,64 @@ impl TabsStore {
         // De-duplicate by URL: move to end (most-recent) and refresh title
         if let Some(pos) = self.state.tabs.iter().position(|t| t.url == url) {
             self.state.tabs.remove(pos);
+            // Adjust active_tab if needed
+            if let Some(active) = self.state.active_tab {
+                if pos < active {
+                    self.state.active_tab = Some(active - 1);
+                } else if pos == active {
+                    self.state.active_tab = None;
+                }
+            }
         }
         self.state.tabs.push(TabEntry { title, url });
         self.dirty = true;
+    }
+
+    /// Get the currently active tab index
+    pub fn active_tab(&self) -> Option<usize> {
+        self.state.active_tab
+    }
+
+    /// Set the active tab index
+    pub fn set_active_tab(&mut self, index: Option<usize>) {
+        if index != self.state.active_tab {
+            self.state.active_tab = index;
+            self.dirty = true;
+        }
+    }
+
+    /// Create a new tab and make it active. Returns the new tab's index.
+    pub fn new_tab(&mut self, title: String, url: String) -> usize {
+        self.state.tabs.push(TabEntry { title, url });
+        let index = self.state.tabs.len() - 1;
+        self.state.active_tab = Some(index);
+        self.dirty = true;
+        index
+    }
+
+    /// Update the active tab's URL and title.
+    /// Returns true if updated.
+    pub fn update_active_tab(&mut self, title: String, url: String) -> bool {
+        if let Some(index) = self.state.active_tab {
+            if index < self.state.tabs.len() {
+                let tab = &mut self.state.tabs[index];
+                let url_changed = tab.url != url;
+                let title_changed = tab.title != title;
+
+                if url_changed || title_changed {
+                    tab.title = title;
+                    tab.url = url;
+                    self.dirty = true;
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Get the active tab entry
+    pub fn get_active_tab(&self) -> Option<&TabEntry> {
+        self.state.active_tab.and_then(|i| self.state.tabs.get(i))
     }
 
     pub fn save(&mut self) -> Result<()> {
@@ -361,6 +445,20 @@ impl TabsStore {
     pub fn remove_at(&mut self, index: usize) -> bool {
         if index < self.state.tabs.len() {
             self.state.tabs.remove(index);
+            // Adjust active_tab if needed
+            if let Some(active) = self.state.active_tab {
+                if index < active {
+                    self.state.active_tab = Some(active - 1);
+                } else if index == active {
+                    // Removed the active tab - select previous or next
+                    if self.state.tabs.is_empty() {
+                        self.state.active_tab = None;
+                    } else if active >= self.state.tabs.len() {
+                        self.state.active_tab = Some(self.state.tabs.len() - 1);
+                    }
+                    // else keep same index (now points to next tab)
+                }
+            }
             self.dirty = true;
             true
         } else {

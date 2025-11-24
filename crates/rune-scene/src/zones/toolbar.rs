@@ -17,7 +17,7 @@ pub struct Toolbar {
 impl Toolbar {
     pub fn new() -> Self {
         // Create address bar input box (will be resized on first render)
-        // Start with empty URL - will be updated when CEF loads the home tab
+        // Start with an empty URL - will be updated when CEF or navigation loads the first page
         let address_bar = InputBox::new(
             Rect {
                 x: 0.0,
@@ -35,7 +35,7 @@ impl Toolbar {
         Self {
             style: Self::default_style(),
             address_bar,
-            is_loading: false,
+            is_loading: true, // Start loading - CEF will set to false when done
             loading_icon_visible: true,
             blink_time: 0.0,
         }

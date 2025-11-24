@@ -15,7 +15,7 @@ pub mod ir_adapter;
 pub mod ir_renderer;
 pub mod layout;
 pub mod navigation;
-mod persistence;
+pub mod persistence;
 pub mod scene;
 pub mod text;
 pub mod zones;

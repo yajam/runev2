@@ -22,7 +22,7 @@
     {
       "id": "main_webview",
       "type": "web_view",
-      "url": "https://www.google.com",
+      "url": "about:blank",
       "webview_id": "mainweb1",
       "javascript_enabled": true,
       "scale_factor": 1

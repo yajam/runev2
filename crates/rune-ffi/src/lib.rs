@@ -233,6 +233,9 @@ impl AppRenderer {
             DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID,
             DEVTOOLS_ELEMENTS_TAB_REGION_ID, DevToolsTab, FORWARD_BUTTON_REGION_ID,
             REFRESH_BUTTON_REGION_ID, TOGGLE_BUTTON_REGION_ID,
+            SIDEBAR_BOOKMARK_REGION_BASE, SIDEBAR_TAB_REGION_BASE,
+            SIDEBAR_ADD_BOOKMARK_REGION_ID, SIDEBAR_TAB_CLOSE_REGION_BASE,
+            SIDEBAR_BOOKMARK_DELETE_REGION_BASE,
         };
         use rune_scene::event_handler::MouseClickEvent;
         use winit::event::{ElementState, MouseButton};
@@ -319,7 +322,10 @@ impl AppRenderer {
                                 self.ir_renderer
                                     .element_state_mut()
                                     .clear_all_focus();
-
+                                // Always toggle the Rune DevTools zone. When a native CEF view
+                                // is active, the macOS side will shrink the CEF NSView so the
+                                // IR-rendered DevTools panel is visible instead of opening the
+                                // Chrome DevTools popup.
                                 self.zone_manager.toggle_devtools();
                                 self.needs_redraw = true;
                             }
@@ -460,6 +466,98 @@ impl AppRenderer {
                                     .set_active_tab(DevToolsTab::Console);
                                 self.needs_redraw = true;
                             }
+                            // Sidebar: Add bookmark button
+                            SIDEBAR_ADD_BOOKMARK_REGION_ID => {
+                                if self.zone_manager.toolbar.address_bar.focused {
+                                    self.zone_manager.toolbar.address_bar.focused = false;
+                                    self.zone_manager
+                                        .toolbar
+                                        .address_bar
+                                        .end_mouse_selection();
+                                }
+                                self.ir_renderer.element_state_mut().clear_all_focus();
+
+                                // Add bookmark for current page using navigation state
+                                let current_url = rune_scene::navigation::get_current_url()
+                                    .unwrap_or_else(|| self.zone_manager.toolbar.address_bar.text.clone());
+                                if !current_url.trim().is_empty() {
+                                    let title = rune_scene::navigation::get_current_title()
+                                        .filter(|t| !t.trim().is_empty())
+                                        .unwrap_or_else(|| {
+                                            current_url
+                                                .split('/')
+                                                .last()
+                                                .filter(|s| !s.is_empty())
+                                                .unwrap_or("Bookmark")
+                                                .to_string()
+                                        });
+                                    self.zone_manager.sidebar.add_bookmark(title.clone(), current_url.clone());
+                                    log::info!("Bookmark added: {} -> {}", title, current_url);
+                                }
+                                self.needs_redraw = true;
+                            }
+                            // Sidebar: Tab close buttons (region IDs 2300+)
+                            id if id >= SIDEBAR_TAB_CLOSE_REGION_BASE && id < SIDEBAR_TAB_CLOSE_REGION_BASE + 100 => {
+                                if self.zone_manager.toolbar.address_bar.focused {
+                                    self.zone_manager.toolbar.address_bar.focused = false;
+                                    self.zone_manager.toolbar.address_bar.end_mouse_selection();
+                                }
+                                self.ir_renderer.element_state_mut().clear_all_focus();
+
+                                let tab_index = (id - SIDEBAR_TAB_CLOSE_REGION_BASE) as usize;
+                                if self.zone_manager.sidebar.remove_tab(tab_index) {
+                                    log::info!("Closed tab at index {}", tab_index);
+                                }
+                                self.needs_redraw = true;
+                            }
+                            // Sidebar: Bookmark delete buttons (region IDs 2400+)
+                            id if id >= SIDEBAR_BOOKMARK_DELETE_REGION_BASE && id < SIDEBAR_BOOKMARK_DELETE_REGION_BASE + 100 => {
+                                if self.zone_manager.toolbar.address_bar.focused {
+                                    self.zone_manager.toolbar.address_bar.focused = false;
+                                    self.zone_manager.toolbar.address_bar.end_mouse_selection();
+                                }
+                                self.ir_renderer.element_state_mut().clear_all_focus();
+
+                                let bookmark_index = (id - SIDEBAR_BOOKMARK_DELETE_REGION_BASE) as usize;
+                                if self.zone_manager.sidebar.remove_bookmark(bookmark_index) {
+                                    log::info!("Deleted bookmark at index {}", bookmark_index);
+                                }
+                                self.needs_redraw = true;
+                            }
+                            // Sidebar: Tab items (region IDs 2100-2199)
+                            id if id >= SIDEBAR_TAB_REGION_BASE && id < SIDEBAR_TAB_REGION_BASE + 100 => {
+                                if self.zone_manager.toolbar.address_bar.focused {
+                                    self.zone_manager.toolbar.address_bar.focused = false;
+                                    self.zone_manager.toolbar.address_bar.end_mouse_selection();
+                                }
+                                self.ir_renderer.element_state_mut().clear_all_focus();
+
+                                let tab_index = (id - SIDEBAR_TAB_REGION_BASE) as usize;
+                                if let Some(tab) = self.zone_manager.sidebar.get_tab(tab_index) {
+                                    let url = tab.url.clone();
+                                    log::info!("Navigate to tab: {}", url);
+                                    // Set this tab as active before navigating
+                                    self.zone_manager.sidebar.set_active_tab(Some(tab_index));
+                                    rune_scene::navigation::navigate_to(&url);
+                                }
+                                self.needs_redraw = true;
+                            }
+                            // Sidebar: Bookmark items (region IDs 2000-2099)
+                            id if id >= SIDEBAR_BOOKMARK_REGION_BASE && id < SIDEBAR_BOOKMARK_REGION_BASE + 100 => {
+                                if self.zone_manager.toolbar.address_bar.focused {
+                                    self.zone_manager.toolbar.address_bar.focused = false;
+                                    self.zone_manager.toolbar.address_bar.end_mouse_selection();
+                                }
+                                self.ir_renderer.element_state_mut().clear_all_focus();
+
+                                let bookmark_index = (id - SIDEBAR_BOOKMARK_REGION_BASE) as usize;
+                                if let Some(bookmark) = self.zone_manager.sidebar.get_bookmark(bookmark_index) {
+                                    let url = bookmark.url.clone();
+                                    log::info!("Navigate to bookmark: {}", url);
+                                    rune_scene::navigation::navigate_to(&url);
+                                }
+                                self.needs_redraw = true;
+                            }
                             _ => {
                                 // IR element region: dispatch click into IR element state
                                 if let Some(view_node_id) = self
@@ -597,6 +695,7 @@ impl AppRenderer {
         const VK_ESCAPE: u32 = 53;
         const VK_RETURN: u32 = 36;
         const VK_NUMPAD_ENTER: u32 = 76;
+        const VK_D: u32 = 2;
 
         log::debug!("Key event: keycode={} pressed={}", keycode, pressed);
 
@@ -672,6 +771,11 @@ impl AppRenderer {
             }
         }
 
+        // Global shortcuts (when address bar is not focused)
+        // Note: Cmd+D bookmark shortcut is handled via the macOS app menu.
+        // See ViewController.mm addBookmark: action.
+        let _ = VK_D; // Keep constant defined for future use
+
         // Forward key presses to IR elements for their own keyboard handling.
         if pressed {
             if let Some(key_code) = map_macos_keycode_to_winit(keycode) {
@@ -745,6 +849,14 @@ impl AppRenderer {
 
     /// Set the address bar text (e.g., when CEF navigates to a new URL)
     pub fn set_address_bar_text(&mut self, url: &str) {
+        // Log the address bar update so we can debug cases where the URL
+        // appears stuck or out of sync with CEF.
+        let prev = self.zone_manager.toolbar.address_bar.text.clone();
+        eprintln!(
+            "[AppRenderer] set_address_bar_text: prev='{}' new='{}'",
+            prev, url
+        );
+
         self.zone_manager.toolbar.address_bar.set_text(url);
         self.needs_redraw = true;
     }
@@ -812,6 +924,36 @@ impl AppRenderer {
             }
         }
         None
+    }
+
+    /// Get the height of the DevTools zone in logical pixels.
+    /// Returns 0.0 if DevTools is not visible.
+    pub fn get_devtools_height(&self) -> f32 {
+        if self.zone_manager.is_devtools_visible() {
+            use rune_scene::zones::ZoneId;
+            let rect = self.zone_manager.layout.get_zone(ZoneId::DevTools);
+            rect.h
+        } else {
+            0.0
+        }
+    }
+
+    /// Append a message to the DevTools console.
+    pub fn devtools_console_log(
+        &mut self,
+        level: rune_scene::zones::ConsoleLevel,
+        message: impl Into<String>,
+    ) {
+        self.zone_manager
+            .devtools
+            .log_console(level, message.into());
+        self.needs_redraw = true;
+    }
+
+    /// Clear all DevTools console entries.
+    pub fn devtools_console_clear(&mut self) {
+        self.zone_manager.devtools.clear_console();
+        self.needs_redraw = true;
     }
 }
 

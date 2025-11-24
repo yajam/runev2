@@ -9,11 +9,14 @@
 - [x] Add Rune-ir
 - [x] Rune-layout using taffy
 - [ ] Address input, forward, backward, refresh implementation in toolbar
+- [ ] Download impementation
 - [x] Port persistence.rs
-- [ ] Bookmark, Tabs
+- [x] Bookmark, Tabs
 - [ ] Port Boa, csslightning (canonical)
 - [ ] Test gradients in layers
 - [x] Full svg vector support
+- [ ] Address bar autocomplete though local SqLite DB
+- [ ] Drag support for nodes
 - [ ] Multi select
 - [ ] Custom widgets through IR blocks using primitives
 - [ ] wire to wasm, fetch, form submission
@@ -24,7 +27,8 @@
 - [ ] Theming support dark mode, light mode system mode
 - [ ] Native menus support
 - [x] Web page rendering (NSView CEF via rune-ffi)
-- [ ] Fallback theough headless CEF
+- [x] Fallback theough headless CEF
+- [ ] Canvas with depth testing off with drag support
 
 ## IR Porting
 

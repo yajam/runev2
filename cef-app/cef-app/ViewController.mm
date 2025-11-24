@@ -248,7 +248,7 @@ typedef enum MouseEventKind : NSUInteger {
     CefBrowserHost::CreateBrowser(
         cefWindowInfo,
         cefHandler,
-        "https://www.google.com",
+        "about:blank",
         cefBrowserSettings,
         nullptr,
         nullptr);

@@ -234,6 +234,21 @@ void rune_ffi_update_navigation_state(const char* url, bool can_go_back, bool ca
 char* rune_ffi_get_current_url(void);
 
 /*
+ * Get the current page title from navigation state.
+ *
+ * @return Title string (must be freed with rune_ffi_free_string), or NULL
+ */
+char* rune_ffi_get_current_title(void);
+
+/*
+ * Set the current page title.
+ * Call this when CEF reports a title change (OnTitleChange).
+ *
+ * @param title The page title (may be NULL)
+ */
+void rune_ffi_set_current_title(const char* title);
+
+/*
  * Get the current render target.
  *
  * @return RUNE_RENDER_IR (0) or RUNE_RENDER_CEF (1)
@@ -260,6 +275,63 @@ bool rune_ffi_is_loading(void);
  * Call this each frame to animate the spinner while loading.
  */
 void rune_ffi_update_toolbar_loading(void);
+
+/* ==========================================================================
+ * DevTools API
+ * ========================================================================== */
+
+/*
+ * Check if Chrome DevTools toggle was requested.
+ * Poll this after render to detect when the devtools button was clicked.
+ * The flag is automatically cleared after being read.
+ *
+ * @return true if DevTools toggle was requested, false otherwise
+ */
+bool rune_ffi_devtools_toggle_requested(void);
+
+/*
+ * Get the height of the DevTools zone in logical pixels.
+ * Returns 0.0 if DevTools is not visible.
+ */
+float rune_ffi_get_devtools_height(void);
+
+/*
+ * Log a message to the Rune DevTools console.
+ *
+ * @param level 0=Log, 1=Warn, 2=Error
+ * @param msg   Null-terminated UTF-8 string
+ */
+void rune_ffi_devtools_console_log(uint32_t level, const char* msg);
+
+/*
+ * Clear all entries from the Rune DevTools console.
+ */
+void rune_ffi_devtools_console_clear(void);
+
+/* ==========================================================================
+ * Bookmark API
+ * ========================================================================== */
+
+/*
+ * Add a bookmark for the current page.
+ * Uses the current URL and title from navigation state.
+ *
+ * @return true if a bookmark was added, false otherwise (e.g., no URL available)
+ */
+bool rune_ffi_add_bookmark(void);
+
+/*
+ * Open a new tab by navigating to a blank page.
+ * Creates a new tab entry and makes it active.
+ * Clears the address bar and focuses it for user input.
+ */
+void rune_ffi_new_tab(void);
+
+/*
+ * Update the active tab with the current navigation URL and title.
+ * Call this when CEF navigation state changes (URL or title update).
+ */
+void rune_ffi_update_active_tab(void);
 
 #ifdef __cplusplus
 }
