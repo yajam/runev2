@@ -1,0 +1,6 @@
+cef
+build/
+lib/*.a
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcworkspace/contents.xcworkspacedata
