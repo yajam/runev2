@@ -18,6 +18,8 @@ tiny-skia = "0.11"
 rune-surface = { path = "../rune-surface" }
 rune-scene = { path = "../rune-scene" }
 rune-config = { path = "../rune-config" }
+rune-cef = { path = "../rune-cef", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 
 [[bin]]
 name = "demo-app"
@@ -27,3 +29,7 @@ path = "src/main.rs"
 default = ["cosmic_text_shaper"]
 cosmic_text_shaper = ["engine-core/cosmic_text_shaper"]
 freetype_ffi = ["engine-core/freetype_ffi"]
+# Enable CEF headless rendering scene (native CEF - requires complex setup)
+cef = ["dep:rune-cef"]
+# Enable CDP headless rendering (Chrome DevTools Protocol - easier setup)
+cdp = ["dep:rune-cef", "rune-cef/cdp", "dep:tokio"]

@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0.0",
+  "entrypoint": {
+    "id": "welcome",
+    "data": "views/data/welcome.json",
+    "view": "views/layout/welcome.vizr",
+    "page_title": "Welcome",
+    "logic": "logic/hello.wasm"
+  },
+  "locales": {
+    "en-US": {
+      "data": "views/data/welcome.json",
+      "view": "views/layout/welcome.vizr"
+    }
+  },
+  "capabilities": ["clipboard.read", "ui.metrics"],
+  "integrity": null
+}

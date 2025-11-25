@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0.0",
+  "entrypoint": {
+    "id": "webview_demo",
+    "data": "views/data/webview.json",
+    "view": "views/layout/webview.vizr",
+    "page_title": "WebView Demo • CEF Integration"
+  },
+  "locales": {
+    "en-US": {
+      "data": "views/data/webview.json",
+      "view": "views/layout/webview.vizr"
+    }
+  },
+  "capabilities": ["network.fetch"],
+  "integrity": null
+}

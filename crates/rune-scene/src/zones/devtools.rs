@@ -1,6 +1,21 @@
 use super::common::ZoneStyle;
 use engine_core::{ColorLinPremul, Rect};
 
+/// Console log level for DevTools console.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleLevel {
+    Log,
+    Warn,
+    Error,
+}
+
+/// Single console entry shown in the DevTools console tab.
+#[derive(Debug, Clone)]
+pub struct ConsoleEntry {
+    pub level: ConsoleLevel,
+    pub message: String,
+}
+
 /// DevTools tab types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DevToolsTab {
@@ -13,6 +28,8 @@ pub struct DevTools {
     pub style: ZoneStyle,
     pub visible: bool,
     pub active_tab: DevToolsTab,
+    pub console_entries: Vec<ConsoleEntry>,
+    pub max_console_entries: usize,
 }
 
 impl DevTools {
@@ -21,6 +38,8 @@ impl DevTools {
             style: Self::default_style(),
             visible: false,
             active_tab: DevToolsTab::Elements,
+            console_entries: Vec::new(),
+            max_console_entries: 256,
         }
     }
 
@@ -38,6 +57,19 @@ impl DevTools {
 
     pub fn get_active_tab(&self) -> DevToolsTab {
         self.active_tab
+    }
+
+    pub fn log_console(&mut self, level: ConsoleLevel, message: String) {
+        self.console_entries.push(ConsoleEntry { level, message });
+        if self.console_entries.len() > self.max_console_entries {
+            let overflow = self.console_entries.len() - self.max_console_entries;
+            self.console_entries.drain(0..overflow);
+        }
+    }
+
+    /// Clear all console entries.
+    pub fn clear_console(&mut self) {
+        self.console_entries.clear();
     }
 
     pub fn default_style() -> ZoneStyle {

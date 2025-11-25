@@ -9,6 +9,7 @@ use winit::dpi::{LogicalPosition, LogicalSize};
 
 use super::IrRenderer;
 use crate::persistence::WindowStateStore;
+use crate::navigation;
 
 /// Main entry point for IR-based rendering flow.
 ///
@@ -42,7 +43,8 @@ pub fn run() -> Result<()> {
     eprintln!("IR rendering mode enabled (USE_IR=1)");
 
     // Load IR package from CLI path or use default home_tab sample
-    let (data_doc, view_doc) = load_ir_package()?;
+    // These are mutable to support dynamic package switching via navigation
+    let (mut data_doc, mut view_doc) = load_ir_package()?;
 
     eprintln!("Loaded IR package:");
     eprintln!("  - Data document ID: {}", data_doc.document_id);
@@ -125,10 +127,7 @@ pub fn run() -> Result<()> {
     let mut click_count: u32 = 0;
     let double_click_threshold = Duration::from_millis(500);
     let mut needs_redraw = true;
-    // Debounce resize redraws similar to legacy lib_old to avoid hot redraw loops.
-    let mut last_resize_time: Option<Instant> = None;
-    let mut first_resize_time: Option<Instant> = None;
-    let mut needs_background_redraw = false;
+    // Resize debounce removed: redraw immediately when needed for smoother resizing.
 
     eprintln!("✓ Rendering pipeline initialized");
     eprintln!("✓ Zone layout: viewport={:?}", zone_manager.layout.viewport);
@@ -166,12 +165,7 @@ pub fn run() -> Result<()> {
                     window_state.update_size(logical.width, logical.height);
                     window_state.update_maximized(window.is_maximized());
 
-                    let now = Instant::now();
-                    if first_resize_time.is_none() {
-                        first_resize_time = Some(now);
-                    }
-                    last_resize_time = Some(now);
-                    needs_background_redraw = true;
+                    // Mark that we need a redraw for the new size immediately.
                     needs_redraw = true;
                 }
                 WindowEvent::CursorMoved { position, .. } => {
@@ -183,8 +177,8 @@ pub fn run() -> Result<()> {
                     let viewport = zone_manager.layout.viewport;
                     // NOTE: Keep event coords in the same viewport-local space used for rendering
                     // (apply viewport origin + scroll here, not inside elements), or hit testing breaks.
-                    let scene_x = logical_x - viewport.x;
-                    let scene_y = logical_y - viewport.y + zone_manager.viewport.scroll_offset;
+                    let scene_x = logical_x - viewport.x + zone_manager.viewport.scroll_offset_x;
+                    let scene_y = logical_y - viewport.y + zone_manager.viewport.scroll_offset_y;
 
                     use crate::event_handler::MouseMoveEvent;
                     let move_event = MouseMoveEvent {
@@ -203,15 +197,15 @@ pub fn run() -> Result<()> {
                 WindowEvent::MouseWheel { delta, .. } => {
                     use winit::event::MouseScrollDelta;
 
-                    let scroll_delta = match delta {
-                        MouseScrollDelta::LineDelta(_x, y) => y * 20.0,
-                        MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+                    let (scroll_x, scroll_y) = match delta {
+                        MouseScrollDelta::LineDelta(x, y) => (x * 20.0, y * 20.0),
+                        MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
                     };
 
                     let viewport_rect = zone_manager.layout.get_zone(crate::zones::ZoneId::Viewport);
                     zone_manager
                         .viewport
-                        .scroll(-scroll_delta, viewport_rect.h);
+                        .scroll(-scroll_x, -scroll_y, viewport_rect.w, viewport_rect.h);
                     needs_redraw = true;
                     window.request_redraw();
                 }
@@ -242,9 +236,10 @@ pub fn run() -> Result<()> {
 
                             // Calculate scene coordinates for select overlay check
                             let viewport = zone_manager.layout.viewport;
-                            let scene_x = logical_x - viewport.x;
+                            let scene_x =
+                                logical_x - viewport.x + zone_manager.viewport.scroll_offset_x;
                             let scene_y =
-                                logical_y - viewport.y + zone_manager.viewport.scroll_offset;
+                                logical_y - viewport.y + zone_manager.viewport.scroll_offset_y;
 
                             // Close open select dropdowns unless clicking on their overlay
                             ir_renderer
@@ -264,8 +259,21 @@ pub fn run() -> Result<()> {
                                         DEVTOOLS_BUTTON_REGION_ID, DEVTOOLS_CLOSE_BUTTON_REGION_ID,
                                         DEVTOOLS_CONSOLE_TAB_REGION_ID,
                                         DEVTOOLS_ELEMENTS_TAB_REGION_ID, FORWARD_BUTTON_REGION_ID,
-                                        REFRESH_BUTTON_REGION_ID, TOGGLE_BUTTON_REGION_ID,
+                                        HOME_BUTTON_REGION_ID, REFRESH_BUTTON_REGION_ID,
+                                        TOGGLE_BUTTON_REGION_ID, SIDEBAR_BOOKMARK_REGION_BASE,
+                                        SIDEBAR_TAB_REGION_BASE, SIDEBAR_ADD_BOOKMARK_REGION_ID,
+                                        SIDEBAR_TAB_CLOSE_REGION_BASE, SIDEBAR_BOOKMARK_DELETE_REGION_BASE,
+                                        CHAT_BUTTON_REGION_ID, CHAT_FAB_REGION_ID,
+                                        CHAT_CLOSE_BUTTON_REGION_ID, CHAT_INPUT_REGION_ID,
+                                        CHAT_SEND_BUTTON_REGION_ID,
                                     };
+
+                                    // Blur chat input for any click that is not on the chat
+                                    // input region itself so keyboard events don't keep routing
+                                    // to the sidebar once focus moves elsewhere.
+                                    if region_id != CHAT_INPUT_REGION_ID {
+                                        zone_manager.chat.input.focused = false;
+                                    }
 
                                     match region_id {
                                         TOGGLE_BUTTON_REGION_ID => {
@@ -326,6 +334,19 @@ pub fn run() -> Result<()> {
                                             ir_renderer.element_state_mut().clear_all_focus();
 
                                             println!("Refresh button clicked");
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        HOME_BUTTON_REGION_ID => {
+                                            if zone_manager.toolbar.address_bar.focused {
+                                                zone_manager.toolbar.address_bar.focused = false;
+                                                zone_manager.toolbar.address_bar.end_mouse_selection();
+                                            }
+                                            ir_renderer.element_state_mut().clear_all_focus();
+
+                                            // Single click opens Dock overlay
+                                            zone_manager.show_dock();
+                                            println!("Home button clicked - opening Dock overlay");
                                             needs_redraw = true;
                                             window.request_redraw();
                                         }
@@ -403,6 +424,217 @@ pub fn run() -> Result<()> {
                                             needs_redraw = true;
                                             window.request_redraw();
                                         }
+                                        // Sidebar: Add bookmark button
+                                        SIDEBAR_ADD_BOOKMARK_REGION_ID => {
+                                            if zone_manager.toolbar.address_bar.focused {
+                                                zone_manager.toolbar.address_bar.focused = false;
+                                                zone_manager.toolbar.address_bar.end_mouse_selection();
+                                            }
+                                            ir_renderer.element_state_mut().clear_all_focus();
+
+                                            // Add bookmark for current page using navigation state,
+                                            // which reflects the actual CEF/IR URL and page title.
+                                            let current_url = navigation::get_current_url()
+                                                .unwrap_or_else(|| zone_manager.toolbar.address_bar.text.clone());
+                                            if !current_url.trim().is_empty() {
+                                                // Use the CEF page title if available, otherwise derive from URL
+                                                let title = navigation::get_current_title()
+                                                    .filter(|t| !t.trim().is_empty())
+                                                    .unwrap_or_else(|| {
+                                                        current_url
+                                                            .split('/')
+                                                            .last()
+                                                            .filter(|s| !s.is_empty())
+                                                            .unwrap_or("Bookmark")
+                                                            .to_string()
+                                                    });
+                                                zone_manager.sidebar.add_bookmark(title.clone(), current_url.clone());
+                                                println!("Bookmark added: {} -> {}", title, current_url);
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Sidebar: Tab close buttons (region IDs 2300+)
+                                        id if id >= SIDEBAR_TAB_CLOSE_REGION_BASE && id < SIDEBAR_TAB_CLOSE_REGION_BASE + 100 => {
+                                            if zone_manager.toolbar.address_bar.focused {
+                                                zone_manager.toolbar.address_bar.focused = false;
+                                                zone_manager.toolbar.address_bar.end_mouse_selection();
+                                            }
+                                            ir_renderer.element_state_mut().clear_all_focus();
+
+                                            let tab_index = (id - SIDEBAR_TAB_CLOSE_REGION_BASE) as usize;
+                                            if zone_manager.sidebar.remove_tab(tab_index) {
+                                                println!("Closed tab at index {}", tab_index);
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Sidebar: Bookmark delete buttons (region IDs 2400+)
+                                        id if id >= SIDEBAR_BOOKMARK_DELETE_REGION_BASE && id < SIDEBAR_BOOKMARK_DELETE_REGION_BASE + 100 => {
+                                            if zone_manager.toolbar.address_bar.focused {
+                                                zone_manager.toolbar.address_bar.focused = false;
+                                                zone_manager.toolbar.address_bar.end_mouse_selection();
+                                            }
+                                            ir_renderer.element_state_mut().clear_all_focus();
+
+                                            let bookmark_index = (id - SIDEBAR_BOOKMARK_DELETE_REGION_BASE) as usize;
+                                            if zone_manager.sidebar.remove_bookmark(bookmark_index) {
+                                                println!("Deleted bookmark at index {}", bookmark_index);
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Sidebar: Tab items (region IDs 2100-2199)
+                                        id if id >= SIDEBAR_TAB_REGION_BASE && id < SIDEBAR_TAB_REGION_BASE + 100 => {
+                                            if zone_manager.toolbar.address_bar.focused {
+                                                zone_manager.toolbar.address_bar.focused = false;
+                                                zone_manager.toolbar.address_bar.end_mouse_selection();
+                                            }
+                                            ir_renderer.element_state_mut().clear_all_focus();
+
+                                            let tab_index = (id - SIDEBAR_TAB_REGION_BASE) as usize;
+                                            if let Some(tab) = zone_manager.sidebar.get_tab(tab_index) {
+                                                let url = tab.url.clone();
+                                                println!("Navigate to tab: {}", url);
+                                                // Set this tab as active before navigating
+                                                zone_manager.sidebar.set_active_tab(Some(tab_index));
+                                                navigation::navigate_to(&url);
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Sidebar: Bookmark items (region IDs 2000-2099)
+                                        id if id >= SIDEBAR_BOOKMARK_REGION_BASE && id < SIDEBAR_BOOKMARK_REGION_BASE + 100 => {
+                                            if zone_manager.toolbar.address_bar.focused {
+                                                zone_manager.toolbar.address_bar.focused = false;
+                                                zone_manager.toolbar.address_bar.end_mouse_selection();
+                                            }
+                                            ir_renderer.element_state_mut().clear_all_focus();
+
+                                            let bookmark_index = (id - SIDEBAR_BOOKMARK_REGION_BASE) as usize;
+                                            if let Some(bookmark) = zone_manager.sidebar.get_bookmark(bookmark_index) {
+                                                let url = bookmark.url.clone();
+                                                println!("Navigate to bookmark: {}", url);
+                                                navigation::navigate_to(&url);
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Chat button in toolbar
+                                        CHAT_BUTTON_REGION_ID => {
+                                            let logical_width = (size.width as f32 / scale_factor) as u32;
+                                            let logical_height = (size.height as f32 / scale_factor) as u32;
+                                            zone_manager.toggle_chat(logical_width, logical_height);
+                                            println!("Chat button clicked - toggling chat panel");
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Chat FAB (floating action button)
+                                        CHAT_FAB_REGION_ID => {
+                                            let logical_width = (size.width as f32 / scale_factor) as u32;
+                                            let logical_height = (size.height as f32 / scale_factor) as u32;
+                                            zone_manager.show_chat(logical_width, logical_height);
+                                            println!("Chat FAB clicked - opening chat panel");
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Chat close button
+                                        CHAT_CLOSE_BUTTON_REGION_ID => {
+                                            let logical_width = (size.width as f32 / scale_factor) as u32;
+                                            let logical_height = (size.height as f32 / scale_factor) as u32;
+                                            zone_manager.hide_chat(logical_width, logical_height);
+                                            println!("Chat close button clicked");
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Chat input region
+                                        CHAT_INPUT_REGION_ID => {
+                                            zone_manager.chat.input.focused = true;
+                                            println!("Chat input focused");
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Chat send button
+                                        CHAT_SEND_BUTTON_REGION_ID => {
+                                            let text = zone_manager.chat.input.text.trim().to_string();
+                                            if !text.is_empty() {
+                                                zone_manager.chat.add_user_message(text);
+                                                zone_manager.chat.input.text.clear();
+                                                zone_manager.chat.input.cursor_position = 0;
+                                                println!("Chat message sent");
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Dock: Scrim click (dismiss dock)
+                                        crate::zones::DOCK_SCRIM_REGION_ID => {
+                                            zone_manager.hide_dock();
+                                            println!("Dock dismissed via scrim click");
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Dock: Panel region (prevents click-through, do nothing)
+                                        crate::zones::DOCK_PANEL_REGION_ID => {
+                                            // Clicking the panel itself does nothing
+                                        }
+                                        // Dock: Pinned apps (region IDs 5100-5199)
+                                        id if id >= crate::zones::DOCK_PINNED_APP_REGION_BASE && id < crate::zones::DOCK_PINNED_APP_REGION_BASE + 100 => {
+                                            let app_index = (id - crate::zones::DOCK_PINNED_APP_REGION_BASE) as usize;
+                                            if let Some(app) = zone_manager.dock.pinned_apps.get(app_index) {
+                                                let url = app.url.clone();
+                                                let name = app.name.clone();
+                                                println!("Navigate to pinned app: {} -> {}", name, url);
+                                                zone_manager.hide_dock();
+
+                                                // Try to load IR package if it's an IR URL
+                                                let render_target = navigation::determine_render_target(&url);
+                                                if render_target == navigation::RenderTarget::Ir {
+                                                    if let Some((new_data, new_view)) = try_load_ir_from_url(&url) {
+                                                        data_doc = new_data;
+                                                        view_doc = new_view;
+                                                        ir_renderer.element_state_mut().clear_all_focus();
+                                                        println!("Loaded IR package: {}", url);
+                                                    }
+                                                }
+
+                                                navigation::navigate_to(&url);
+                                                // Update layout for new navigation mode
+                                                let logical_width = (size.width as f32 / scale_factor) as u32;
+                                                let logical_height = (size.height as f32 / scale_factor) as u32;
+                                                zone_manager.update_for_navigation_mode(logical_width, logical_height);
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
+                                        // Dock: Recent items (region IDs 5200-5299)
+                                        id if id >= crate::zones::DOCK_RECENT_ITEM_REGION_BASE && id < crate::zones::DOCK_RECENT_ITEM_REGION_BASE + 100 => {
+                                            let item_index = (id - crate::zones::DOCK_RECENT_ITEM_REGION_BASE) as usize;
+                                            if let Some(item) = zone_manager.dock.recent_items.get(item_index) {
+                                                let url = item.url.clone();
+                                                let name = item.name.clone();
+                                                println!("Navigate to recent item: {} -> {}", name, url);
+                                                zone_manager.hide_dock();
+
+                                                // Try to load IR package if it's an IR URL
+                                                let render_target = navigation::determine_render_target(&url);
+                                                if render_target == navigation::RenderTarget::Ir {
+                                                    if let Some((new_data, new_view)) = try_load_ir_from_url(&url) {
+                                                        data_doc = new_data;
+                                                        view_doc = new_view;
+                                                        ir_renderer.element_state_mut().clear_all_focus();
+                                                        println!("Loaded IR package: {}", url);
+                                                    }
+                                                }
+
+                                                navigation::navigate_to(&url);
+                                                // Update layout for new navigation mode
+                                                let logical_width = (size.width as f32 / scale_factor) as u32;
+                                                let logical_height = (size.height as f32 / scale_factor) as u32;
+                                                zone_manager.update_for_navigation_mode(logical_width, logical_height);
+                                            }
+                                            needs_redraw = true;
+                                            window.request_redraw();
+                                        }
                                         // Root viewport region (empty surface/text): blur everything.
                                         std::u32::MAX => {
                                             if zone_manager.toolbar.address_bar.focused {
@@ -473,10 +705,11 @@ pub fn run() -> Result<()> {
 
                                                     let viewport = zone_manager.layout.viewport;
                                                     let scene_x =
-                                                        logical_x - viewport.x;
+                                                        logical_x - viewport.x
+                                                            + zone_manager.viewport.scroll_offset_x;
                                                     let scene_y = logical_y
                                                         - viewport.y
-                                                        + zone_manager.viewport.scroll_offset;
+                                                        + zone_manager.viewport.scroll_offset_y;
 
                                                     let event = MouseClickEvent {
                                                         button: winit::event::MouseButton::Left,
@@ -533,9 +766,10 @@ pub fn run() -> Result<()> {
                                 let logical_x = cursor_x / scale_factor;
                                 let logical_y = cursor_y / scale_factor;
                                 let viewport = zone_manager.layout.viewport;
-                                let scene_x = logical_x - viewport.x;
+                                let scene_x =
+                                    logical_x - viewport.x + zone_manager.viewport.scroll_offset_x;
                                 let scene_y =
-                                    logical_y - viewport.y + zone_manager.viewport.scroll_offset;
+                                    logical_y - viewport.y + zone_manager.viewport.scroll_offset_y;
 
                                 use crate::event_handler::MouseClickEvent;
                                 let release_event = MouseClickEvent {
@@ -590,6 +824,20 @@ pub fn run() -> Result<()> {
                                 needs_redraw = true;
                                 window.request_redraw();
                             }
+                        } else if zone_manager.chat.input.focused && zone_manager.chat.is_visible()
+                        {
+                            let mut inserted = false;
+                            for ch in text.chars() {
+                                if !ch.is_control() || ch == ' ' {
+                                    zone_manager.chat.input.insert_char(ch);
+                                    inserted = true;
+                                }
+                            }
+                            if inserted {
+                                zone_manager.chat.input.update_scroll();
+                                needs_redraw = true;
+                                window.request_redraw();
+                            }
                         } else if !has_cmd && !has_ctrl && !has_alt && !text.is_empty() {
                             let result = ir_renderer.element_state_mut().handle_text_input(&text);
                             if result.is_handled() {
@@ -608,63 +856,67 @@ pub fn run() -> Result<()> {
                         let has_cmd = modifiers_state.contains(ModifiersState::SUPER);
                         let has_ctrl = modifiers_state.contains(ModifiersState::CONTROL);
                         let has_alt = modifiers_state.contains(ModifiersState::ALT);
-                        let has_shift = modifiers_state.contains(ModifiersState::SHIFT);
 
-                        let line_modifier = has_cmd || has_ctrl;
-                        let word_modifier = has_alt;
+                        // First, delegate navigation/editing shortcuts (selection, clipboard, undo/redo, etc.)
+                        // to the shared InputBox keyboard handler so the toolbar address bar matches
+                        // the behavior of in-viewport input boxes.
+                        if let PhysicalKey::Code(key_code) = event.physical_key {
+                            let keyboard_event = crate::event_handler::KeyboardEvent {
+                                key: key_code,
+                                state: event.state,
+                                modifiers: modifiers_state,
+                            };
 
+                            let result = crate::event_handler::EventHandler::handle_keyboard(
+                                &mut zone_manager.toolbar.address_bar,
+                                keyboard_event,
+                            );
+                            if result.is_handled() {
+                                needs_redraw = true;
+                                window.request_redraw();
+                            }
+                        }
+
+                        // Then handle toolbar-specific keys that InputBox doesn't know about.
                         match event.physical_key {
-                            PhysicalKey::Code(KeyCode::KeyA) if line_modifier && !has_shift => {
-                                zone_manager.toolbar.address_bar.select_all();
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
-                            PhysicalKey::Code(KeyCode::Backspace) => {
-                                zone_manager.toolbar.address_bar.delete_before_cursor();
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
-                            PhysicalKey::Code(KeyCode::Delete) => {
-                                zone_manager.toolbar.address_bar.delete_after_cursor();
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
-                            PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                                if word_modifier {
-                                    zone_manager.toolbar.address_bar.move_cursor_left_word();
-                                } else {
-                                    zone_manager.toolbar.address_bar.move_cursor_left();
-                                }
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
-                            PhysicalKey::Code(KeyCode::ArrowRight) => {
-                                if word_modifier {
-                                    zone_manager.toolbar.address_bar.move_cursor_right_word();
-                                } else {
-                                    zone_manager.toolbar.address_bar.move_cursor_right();
-                                }
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
-                            PhysicalKey::Code(KeyCode::Home) => {
-                                zone_manager.toolbar.address_bar.move_cursor_to_start();
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
-                            PhysicalKey::Code(KeyCode::End) => {
-                                zone_manager.toolbar.address_bar.move_cursor_to_end();
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
                             PhysicalKey::Code(KeyCode::Escape) => {
                                 zone_manager.toolbar.address_bar.focused = false;
+                                // Also dismiss dock if visible
+                                if zone_manager.is_dock_visible() {
+                                    zone_manager.hide_dock();
+                                }
                                 needs_redraw = true;
                                 window.request_redraw();
                             }
                             PhysicalKey::Code(KeyCode::Enter) => {
                                 let url = zone_manager.toolbar.address_bar.text.trim().to_string();
-                                println!("Navigate to: {}", url);
+                                if !url.is_empty() {
+                                    println!("Navigate to: {}", url);
+
+                                    // Try to load as IR package if it's an IR URL
+                                    let render_target = navigation::determine_render_target(&url);
+                                    if render_target == navigation::RenderTarget::Ir {
+                                        // Try to load IR package
+                                        if let Some((new_data, new_view)) = try_load_ir_from_url(&url) {
+                                            data_doc = new_data;
+                                            view_doc = new_view;
+                                            ir_renderer.element_state_mut().clear_all_focus();
+                                            println!("Loaded IR package: {}", url);
+                                        }
+                                    }
+
+                                    // Navigate (updates mode and queues command for CEF if needed)
+                                    navigation::navigate_to(&url);
+
+                                    // Update layout for new navigation mode
+                                    let logical_width = (size.width as f32 / scale_factor) as u32;
+                                    let logical_height = (size.height as f32 / scale_factor) as u32;
+                                    zone_manager
+                                        .update_for_navigation_mode(logical_width, logical_height);
+
+                                    // Blur address bar after navigation
+                                    zone_manager.toolbar.address_bar.focused = false;
+                                }
                                 needs_redraw = true;
                                 window.request_redraw();
                             }
@@ -689,6 +941,56 @@ pub fn run() -> Result<()> {
                             }
                         }
                     } else if event.state == winit::event::ElementState::Pressed {
+                        // Chat input keyboard handling (navigation/editing shortcuts + Enter to send)
+                        if zone_manager.chat.input.focused && zone_manager.chat.is_visible() {
+                            use crate::event_handler::{EventHandler, KeyboardEvent};
+
+                            if let PhysicalKey::Code(key_code) = event.physical_key {
+                                // Treat Enter as "send" for the chat panel.
+                                if let KeyCode::Enter | KeyCode::NumpadEnter = key_code {
+                                    let text =
+                                        zone_manager.chat.input.text.trim().to_string();
+                                    if !text.is_empty() {
+                                        zone_manager.chat.add_user_message(text);
+                                        zone_manager.chat.input.text.clear();
+                                        zone_manager.chat.input.cursor_position = 0;
+                                        println!("Chat message sent via Enter key");
+                                    }
+                                    needs_redraw = true;
+                                    window.request_redraw();
+                                    return;
+                                }
+
+                                let keyboard_event = KeyboardEvent {
+                                    key: key_code,
+                                    state: winit::event::ElementState::Pressed,
+                                    modifiers: modifiers_state,
+                                };
+
+                                if zone_manager
+                                    .chat
+                                    .input
+                                    .handle_keyboard(keyboard_event)
+                                    .is_handled()
+                                {
+                                    needs_redraw = true;
+                                    window.request_redraw();
+                                    return;
+                                }
+                            }
+                        }
+
+                        // Global keyboard shortcuts (regardless of focus)
+                        if let PhysicalKey::Code(KeyCode::Escape) = event.physical_key {
+                            // Escape dismisses dock if visible
+                            if zone_manager.is_dock_visible() {
+                                zone_manager.hide_dock();
+                                println!("Dock dismissed via Escape key");
+                                needs_redraw = true;
+                                window.request_redraw();
+                            }
+                        }
+
                         // Keyboard events for IR elements (when toolbar is not focused)
                         use crate::event_handler::KeyboardEvent;
 
@@ -730,19 +1032,14 @@ pub fn run() -> Result<()> {
                     }
                 }
                 WindowEvent::RedrawRequested => {
-                    // Respect resize debounce like legacy implementation to reduce churn.
-                    let resize_settled = last_resize_time
-                        .map(|t| t.elapsed() >= Duration::from_millis(200))
-                        .unwrap_or(false);
-                    let max_debounce_exceeded = first_resize_time
-                        .map(|t| t.elapsed() >= Duration::from_millis(300))
-                        .unwrap_or(false);
-                    let should_render = (needs_redraw || needs_background_redraw)
-                        && (last_resize_time.is_none() || resize_settled || max_debounce_exceeded);
+                    // Render immediately when a redraw is needed instead of debouncing
+                    // window resize events. This keeps IR layout updates smooth during
+                    // interactive window resizing (matching native CEF behavior).
+                    let should_render = needs_redraw;
 
                     if should_render {
                         needs_redraw = false;
-                        needs_background_redraw = false;
+                        // no-op: no resize debounce state to reset
 
                         // Get current logical size
                         let logical_width = (size.width as f32 / scale_factor) as u32;
@@ -751,11 +1048,15 @@ pub fn run() -> Result<()> {
                         // Update toolbar and IR element caret blink
                         let now = Instant::now();
                         let delta_time = (now - last_frame_time).as_secs_f32();
+                        let delta_ms = delta_time * 1000.0;
                         last_frame_time = now;
                         zone_manager.toolbar.address_bar.update_blink(delta_time);
                         ir_renderer
                             .element_state_mut()
                             .update_blink_animation(delta_time);
+
+                        // Update CSS-like animations (transitions and keyframes)
+                        let has_active_animations = ir_renderer.update_animations(delta_ms);
 
                         // Render frame with zones
                         match render_frame_with_zones(
@@ -773,9 +1074,12 @@ pub fn run() -> Result<()> {
                         ) {
                             Ok(index) => {
                                 hit_index = Some(index);
-                                // Keep redraws flowing while the address bar or any IR element is focused so the caret blinks.
+                                // Keep redraws flowing while:
+                                // - Address bar or IR element is focused (caret blink)
+                                // - CSS-like animations are active
                                 if zone_manager.toolbar.address_bar.focused
                                     || ir_renderer.element_state().get_focused_element().is_some()
+                                    || has_active_animations
                                 {
                                     needs_redraw = true;
                                 }
@@ -785,30 +1089,13 @@ pub fn run() -> Result<()> {
                             }
                         }
 
-                        // Reset resize timers once we've painted a settled frame.
-                        if resize_settled || max_debounce_exceeded {
-                            last_resize_time = None;
-                            first_resize_time = None;
-                            needs_background_redraw = false;
-                        }
+                        // No resize debounce state to reset.
                     }
                 }
                 _ => {}
             },
             Event::AboutToWait => {
-                if let Some(last_time) = last_resize_time {
-                    let settled = last_time.elapsed() >= Duration::from_millis(200);
-                    let max_exceeded = first_resize_time
-                        .map(|t| t.elapsed() >= Duration::from_millis(300))
-                        .unwrap_or(false);
-
-                    if settled || max_exceeded {
-                        last_resize_time = None;
-                        needs_background_redraw = true;
-                        needs_redraw = true;
-                        window.request_redraw();
-                    }
-                } else if needs_redraw {
+                if needs_redraw {
                     window.request_redraw();
                 }
             }
@@ -892,77 +1179,104 @@ fn load_default_package() -> Result<(DataDocument, ViewDocument)> {
     Ok((data.clone(), view.clone()))
 }
 
+/// Try to load an IR package from a URL.
+///
+/// Supported URL patterns:
+/// - `rune://home` or `rune://peco` → home_tab sample
+/// - `rune://sample/first-node` → examples/sample_first_node
+/// - `rune://sample/webview` → examples/sample_webview
+/// - `rune://sample/form` → examples/sample_form
+/// - `ir://path/to/package` → load from filesystem path
+/// - `file:///path/to/package` → load from filesystem path
+///
+/// Returns None if the URL doesn't match a known IR package or loading fails.
+fn try_load_ir_from_url(url: &str) -> Option<(DataDocument, ViewDocument)> {
+    let url_lower = url.to_lowercase();
+
+    // Handle rune:// scheme
+    if url_lower.starts_with("rune://") {
+        let path = &url[7..]; // Strip "rune://"
+
+        // Home/Peco - load default sample
+        if path == "home" || path == "peco" || path.is_empty() {
+            return load_default_package().ok();
+        }
+
+        // Sample packages
+        if path.starts_with("sample/") || path.starts_with("samples/") {
+            let sample_name = path.split('/').nth(1).unwrap_or("");
+            return load_sample_package(sample_name);
+        }
+
+        // Direct sample name shortcuts
+        match path {
+            "first-node" | "firstnode" => return load_sample_package("first-node"),
+            "webview" => return load_sample_package("webview"),
+            "form" => return load_sample_package("form"),
+            _ => {}
+        }
+    }
+
+    // Handle ir:// scheme - treat as filesystem path
+    if url_lower.starts_with("ir://") {
+        let path = &url[5..]; // Strip "ir://"
+        return load_package_from_path(path).ok();
+    }
+
+    // Handle file:// scheme
+    if url_lower.starts_with("file://") {
+        let path = &url[7..]; // Strip "file://"
+        return load_package_from_path(path).ok();
+    }
+
+    // Handle direct filesystem paths (for development)
+    if url.starts_with('/') || url.starts_with("examples/") || url.contains("/sample_") {
+        return load_package_from_path(url).ok();
+    }
+
+    None
+}
+
+/// Load a sample package by name.
+fn load_sample_package(name: &str) -> Option<(DataDocument, ViewDocument)> {
+    let sample_dir = match name {
+        "first-node" | "firstnode" | "first_node" => "examples/sample_first_node",
+        "webview" | "web-view" => "examples/sample_webview",
+        "form" => "examples/sample_form",
+        _ => {
+            eprintln!("Unknown sample package: {}", name);
+            return None;
+        }
+    };
+
+    match load_package_from_path(sample_dir) {
+        Ok((data, view)) => {
+            eprintln!("✓ Loaded sample package: {} from {}", name, sample_dir);
+            Some((data, view))
+        }
+        Err(e) => {
+            eprintln!("✗ Failed to load sample package '{}': {}", name, e);
+            None
+        }
+    }
+}
+
 /// Create text provider (uses system fonts with RGB subpixel rendering).
 fn create_text_provider() -> Result<impl engine_core::TextProvider> {
     engine_core::RuneTextProvider::from_system_fonts(engine_core::SubpixelOrientation::RGB)
         .context("Failed to load system fonts")
 }
 
-/// Render zone backgrounds and borders (toolbar, sidebar, viewport, devtools).
-fn render_zones(
-    canvas: &mut rune_surface::Canvas,
-    zone_manager: &mut crate::zones::ZoneManager,
-    _provider: &dyn engine_core::TextProvider,
-) {
-    use crate::zones::ZoneId;
-    use engine_core::Brush;
-
-    for zone_id in [ZoneId::Viewport, ZoneId::Toolbar, ZoneId::Sidebar] {
-        let z = match zone_id {
-            ZoneId::Toolbar => 9000,
-            _ => 0,
-        };
-        // Draw borders slightly above backgrounds so content can sit
-        // between them in z-order (e.g. IR backgrounds inside viewport).
-        let border_z = z + 1;
-
-        let rect = zone_manager.layout.get_zone(zone_id);
-        let style = zone_manager.get_style(zone_id);
-
-        // Background
-        canvas.fill_rect(
-            rect.x,
-            rect.y,
-            rect.w,
-            rect.h,
-            Brush::Solid(style.bg_color),
-            z,
-        );
-
-        // Border (draw as four rectangles)
-        let bw = style.border_width;
-        let border_brush = Brush::Solid(style.border_color);
-
-        // Top border
-        canvas.fill_rect(rect.x, rect.y, rect.w, bw, border_brush.clone(), border_z);
-        // Bottom border
-        canvas.fill_rect(
-            rect.x,
-            rect.y + rect.h - bw,
-            rect.w,
-            bw,
-            border_brush.clone(),
-            border_z,
-        );
-        // Left border
-        canvas.fill_rect(rect.x, rect.y, bw, rect.h, border_brush.clone(), border_z);
-        // Right border
-        canvas.fill_rect(
-            rect.x + rect.w - bw,
-            rect.y,
-            bw,
-            rect.h,
-            border_brush,
-            border_z,
-        );
-    }
-}
+// Use the shared render_zones function from the zones module
+use crate::zones::render_zones;
 
 /// Render a single frame with zones (toolbar, sidebar, viewport, devtools).
 ///
 /// This is the main rendering function for the full application UI.
 /// IR content is rendered within the viewport zone bounds.
-fn render_frame_with_zones(
+///
+/// Returns a HitIndex for hit testing interactive elements.
+pub fn render_frame_with_zones(
     surf: &mut rune_surface::RuneSurface,
     ir_renderer: &mut IrRenderer,
     zone_manager: &mut crate::zones::ZoneManager,
@@ -1005,23 +1319,24 @@ fn render_frame_with_zones(
         h: viewport_rect.h,
     });
     canvas.push_transform(Transform2D::translate(
-        0.0,
-        -zone_manager.viewport.scroll_offset,
+        -zone_manager.viewport.scroll_offset_x,
+        -zone_manager.viewport.scroll_offset_y,
     ));
 
-    // Render using the larger of current viewport height and last known content
-    // height so root backgrounds fill the full scroll extent.
-    let render_height = zone_manager.viewport.content_height.max(viewport_rect.h);
-    let content_height = ir_renderer.render_canvas_at_offset(
+    // Compute layout using the visible viewport height so coordinates stay anchored
+    // to the viewport instead of feeding back the previous frame's content height.
+    let layout_height = viewport_rect.h;
+    let (content_height, content_width) = ir_renderer.render_canvas_at_offset(
         &mut canvas,
         data_doc,
         view_doc,
         0.0,
         0.0,
         viewport_rect.w,
-        render_height,
+        layout_height,
         viewport_rect.h,
-        zone_manager.viewport.scroll_offset,
+        zone_manager.viewport.scroll_offset_x,
+        zone_manager.viewport.scroll_offset_y,
         provider.as_ref(),
     )?;
 
@@ -1031,26 +1346,52 @@ fn render_frame_with_zones(
 
     zone_manager
         .viewport
-        .set_content_height(content_height, viewport_rect.h);
+        .set_content_size(content_width, content_height, viewport_rect.w, viewport_rect.h);
 
     // Render toolbar with navigation controls and address bar,
     // matching the legacy implementation's layout behavior.
     //
     // Use toolbar-local coordinates for hit regions and icons by
     // translating the canvas to the toolbar origin before rendering.
-    {
+    //
+    // Toolbar is only visible in Browser mode.
+    if crate::navigation::should_show_toolbar() {
         use crate::zones::ZoneId;
         use engine_core::Transform2D;
 
         let toolbar_rect = zone_manager.layout.get_zone(ZoneId::Toolbar);
 
+        // Get navigation state for back/forward button styling
+        let nav_state = crate::navigation::get_state();
+
         // Render toolbar with transform for visual positioning
         // but pass the GLOBAL toolbar_rect so hit regions use global coordinates
         canvas.push_transform(Transform2D::translate(toolbar_rect.x, toolbar_rect.y));
 
+        zone_manager.toolbar.render(
+            &mut canvas,
+            toolbar_rect,
+            provider.as_ref(),
+            nav_state.can_go_back,
+            nav_state.can_go_forward,
+        );
+
+        canvas.pop_transform();
+    }
+
+    // Render sidebar with tabs and bookmarks when visible
+    if zone_manager.sidebar.is_visible() {
+        use crate::zones::ZoneId;
+        use engine_core::Transform2D;
+
+        let sidebar_rect = zone_manager.layout.get_zone(ZoneId::Sidebar);
+
+        // Render sidebar content in sidebar-local coordinates
+        canvas.push_transform(Transform2D::translate(sidebar_rect.x, sidebar_rect.y));
+
         zone_manager
-            .toolbar
-            .render(&mut canvas, toolbar_rect, provider.as_ref());
+            .sidebar
+            .render(&mut canvas, sidebar_rect, provider.as_ref());
 
         canvas.pop_transform();
     }
@@ -1058,7 +1399,7 @@ fn render_frame_with_zones(
     // Render devtools overlay when visible (mirrors legacy visuals and hit regions).
     if zone_manager.is_devtools_visible() {
         use crate::zones::{
-            DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID,
+            ConsoleLevel, DEVTOOLS_CLOSE_BUTTON_REGION_ID, DEVTOOLS_CONSOLE_TAB_REGION_ID,
             DEVTOOLS_ELEMENTS_TAB_REGION_ID, DevToolsTab, ZoneId,
         };
         use engine_core::{Brush, Color, ColorLinPremul, SvgStyle, Transform2D};
@@ -1270,23 +1611,93 @@ fn render_frame_with_zones(
             10260,
         );
 
-        let content_text = match active_tab {
-            DevToolsTab::Console => "Console",
-            DevToolsTab::Elements => "Elements",
-        };
         let label_color: ColorLinPremul = ColorLinPremul::rgba(220, 230, 240, 255);
-        canvas.draw_text_run(
-            [tab_padding + 4.0, header_height + 14.0],
-            content_text.to_string(),
-            12.0,
-            label_color,
-            10260,
+
+        // Content area background (below header)
+        let content_y = header_height;
+        let content_h = (devtools_rect.h - header_height).max(0.0);
+        canvas.fill_rect(
+            0.0,
+            content_y,
+            devtools_rect.w,
+            content_h,
+            Brush::Solid(ColorLinPremul::rgba(28, 34, 48, 255)),
+            10105,
         );
+
+        match active_tab {
+            DevToolsTab::Elements => {
+                canvas.draw_text_run(
+                    [tab_padding + 4.0, header_height + 14.0],
+                    "Elements (stub)".to_string(),
+                    12.0,
+                    label_color,
+                    10260,
+                );
+            }
+            DevToolsTab::Console => {
+                // Simple console log view: render each entry on its own line.
+                let line_height = 14.0;
+                let mut y = header_height + 4.0;
+                let left_margin = tab_padding + 4.0;
+
+                for entry in zone_manager.devtools.console_entries.iter() {
+                    let (icon, color) = match entry.level {
+                        ConsoleLevel::Warn => ("⚠", ColorLinPremul::rgba(255, 200, 120, 255)),
+                        ConsoleLevel::Error => ("⨯", ColorLinPremul::rgba(255, 140, 140, 255)),
+                        ConsoleLevel::Log => ("•", label_color),
+                    };
+
+                    canvas.draw_text_run(
+                        [left_margin, y],
+                        icon.to_string(),
+                        11.0,
+                        color,
+                        10260,
+                    );
+                    canvas.draw_text_run(
+                        [left_margin + 16.0, y],
+                        entry.message.clone(),
+                        11.0,
+                        label_color,
+                        10260,
+                    );
+
+                    y += line_height;
+                    if y > devtools_rect.h - 4.0 {
+                        break;
+                    }
+                }
+            }
+        }
 
         canvas.pop_transform();
     }
 
-    // Build hit index for interactive regions (toolbar buttons, address bar, devtools)
+    // Render chat panel when visible
+    if zone_manager.is_chat_visible() {
+        let chat_rect = zone_manager.layout.chat;
+        canvas.push_transform(Transform2D::translate(chat_rect.x, chat_rect.y));
+        zone_manager.chat.render(&mut canvas, chat_rect, provider.as_ref());
+        canvas.pop_transform();
+    }
+
+    // Render FAB when chat is hidden and not in Home mode
+    if !zone_manager.is_chat_visible() && crate::navigation::get_navigation_mode() != crate::navigation::NavigationMode::Home {
+        let viewport_rect = zone_manager.layout.viewport;
+        canvas.push_transform(Transform2D::translate(viewport_rect.x, viewport_rect.y));
+        crate::zones::render_chat_fab(&mut canvas, viewport_rect, zone_manager.chat.has_unread);
+        canvas.pop_transform();
+    }
+
+    // Render dock overlay when visible (rendered last to be on top of everything)
+    if zone_manager.is_dock_visible() {
+        let logical_width = _logical_width as f32;
+        let logical_height = _logical_height as f32;
+        zone_manager.dock.render(&mut canvas, logical_width, logical_height, provider.as_ref());
+    }
+
+    // Build hit index for interactive regions (toolbar buttons, address bar, devtools, dock, chat)
     let hit_index = HitIndex::build(canvas.display_list());
 
     // End frame and present

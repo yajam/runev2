@@ -21,6 +21,7 @@ pub mod selection_renderer;
 pub mod table;
 pub mod text;
 pub mod text_area;
+pub mod webview;
 
 pub use alert::{Alert, AlertPosition};
 pub use button::{Button, ButtonClickResult};
@@ -39,3 +40,11 @@ pub use select::Select;
 pub use table::{Alignment, Column, Table, TableCell, TableRow};
 pub use text::Text;
 pub use text_area::TextArea;
+#[cfg(feature = "webview-cef")]
+pub use webview::WebView;
+// Export webview layout and native CEF view functions for FFI use
+pub use webview::{
+    clear_webview_rect, get_native_cef_view, get_native_cef_view_rect, get_webview_rect,
+    has_native_cef_view, position_native_cef_view, set_native_cef_view,
+    set_native_cef_view_position_callback, set_webview_rect,
+};

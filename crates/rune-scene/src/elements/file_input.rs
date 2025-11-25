@@ -44,7 +44,8 @@ impl FileInput {
             rect,
             label: None,
             label_size: 14.0,
-            label_color: ColorLinPremul::from_srgba_u8([240, 240, 240, 255]),
+            // Default label + text color: black
+            label_color: ColorLinPremul::from_srgba_u8([0, 0, 0, 255]),
             selected_files: Vec::new(),
             multi,
             placeholder: if multi {
@@ -54,11 +55,28 @@ impl FileInput {
             },
             accept: None,
             focused: false,
-            bg_color: ColorLinPremul::from_srgba_u8([255, 255, 255, 255]),
+            // Default background: transparent so parent/background style shows through
+            bg_color: ColorLinPremul::from_srgba_u8([0, 0, 0, 0]),
             button_bg_color: ColorLinPremul::from_srgba_u8([230, 230, 230, 255]),
-            button_text_color: ColorLinPremul::from_srgba_u8([60, 60, 60, 255]),
-            file_text_color: ColorLinPremul::from_srgba_u8([80, 80, 80, 255]),
+            // Default placeholder + file name text color: black
+            button_text_color: ColorLinPremul::from_srgba_u8([0, 0, 0, 255]),
+            file_text_color: ColorLinPremul::from_srgba_u8([0, 0, 0, 255]),
             radius: 4.0,
+        }
+    }
+
+    /// Apply styling from a SurfaceStyle (background, radius, etc.).
+    pub fn apply_surface_style(&mut self, style: &rune_ir::view::SurfaceStyle) {
+        if let Some(bg) = &style.background {
+            if let rune_ir::view::ViewBackground::Solid { color } = bg {
+                if let Some(parsed) = crate::ir_adapter::parse_color(color) {
+                    self.bg_color = parsed;
+                }
+            }
+        }
+
+        if let Some(radius) = style.corner_radius {
+            self.radius = radius as f32;
         }
     }
 
@@ -205,11 +223,27 @@ impl FileInput {
                     .to_string()
             };
 
-            // Truncate if too long
+            // Truncate if too long. Compute an approximate character budget based on
+            // available width, then trim on Unicode scalar boundaries to avoid
+            // slicing in the middle of a UTF-8 codepoint (which would panic).
             let available_width = container_rect.x + container_rect.w - file_name_x - 12.0;
-            let max_chars = (available_width / 7.0) as usize;
-            let display_text = if file_name.len() > max_chars && max_chars > 3 {
-                format!("{}...", &file_name[..max_chars.saturating_sub(3)])
+            let approx_max = if available_width > 0.0 {
+                (available_width / 7.0) as usize
+            } else {
+                0
+            };
+
+            let display_text = if approx_max > 3 && file_name.chars().count() > approx_max {
+                let keep = approx_max.saturating_sub(3);
+                let mut truncated = String::new();
+                for (i, ch) in file_name.chars().enumerate() {
+                    if i >= keep {
+                        break;
+                    }
+                    truncated.push(ch);
+                }
+                truncated.push_str("...");
+                truncated
             } else {
                 file_name
             };
@@ -268,26 +302,44 @@ impl FileInput {
 
     /// Open the file picker dialog
     pub fn open_file_picker(&mut self) {
-        use rfd::FileDialog;
-
-        let mut dialog = FileDialog::new();
-
-        // Set file filters if provided
-        if let Some(ref accept) = self.accept {
-            // Group extensions by common types
-            let extensions: Vec<&str> = accept.iter().map(|s| s.as_str()).collect();
-            if !extensions.is_empty() {
-                dialog = dialog.add_filter("Accepted files", &extensions);
-            }
+        // NOTE: On macOS when embedded via CEF (`webview-cef` feature), spawning a native
+        // file dialog directly from the IR renderer thread crashes the host app
+        // (AppKit dialogs must be driven from the primary Cocoa runloop / CEF host).
+        //
+        // To avoid crashing the macOS app, we currently no-op in that configuration.
+        // The host is expected to provide its own file dialog integration for IR
+        // FileInput widgets in CEF builds.
+        #[cfg(all(target_os = "macos", feature = "webview-cef"))]
+        {
+            log::warn!(
+                "FileInput::open_file_picker is disabled on macOS CEF builds; \
+                 host integration must provide a file picker."
+            );
+            return;
         }
 
-        // Open dialog based on single/multi mode
-        if self.multi {
-            if let Some(files) = dialog.pick_files() {
-                self.selected_files = files;
+        // For non-CEF / winit-based builds, use rfd directly.
+        #[cfg(not(all(target_os = "macos", feature = "webview-cef")))]
+        {
+            use rfd::FileDialog;
+
+            let mut dialog = FileDialog::new();
+
+            // Set file filters if provided
+            if let Some(ref accept) = self.accept {
+                // Group extensions by common types
+                let extensions: Vec<&str> = accept.iter().map(|s| s.as_str()).collect();
+                if !extensions.is_empty() {
+                    dialog = dialog.add_filter("Accepted files", &extensions);
+                }
             }
-        } else {
-            if let Some(file) = dialog.pick_file() {
+
+            // Open dialog based on single/multi mode
+            if self.multi {
+                if let Some(files) = dialog.pick_files() {
+                    self.selected_files = files;
+                }
+            } else if let Some(file) = dialog.pick_file() {
                 self.selected_files = vec![file];
             }
         }

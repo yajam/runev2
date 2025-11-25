@@ -1,0 +1,122 @@
+{
+  "$schema": "../../../../crates/rune-ir/schema/data_document.schema.json",
+  "document_id": "sample-form-data",
+  "nodes": [
+    {
+      "node_id": "FRMTITLE",
+      "kind": "text",
+      "text": "WASM mutation demo form",
+      "semantic_role": { "role": "heading", "level": 2 }
+    },
+    {
+      "node_id": "FRMSUB01",
+      "kind": "text",
+      "text": "Use this sample to wire WASM mutations for prefill, fetch, and submission flows.",
+      "semantic_role": { "role": "paragraph" }
+    },
+    {
+      "node_id": "STATLINE",
+      "kind": "text",
+      "text": "Status: waiting for WASM event",
+      "semantic_role": { "role": "paragraph" }
+    },
+    {
+      "node_id": "PLANINFO",
+      "kind": "text",
+      "text": "Selected plan: Starter",
+      "semantic_role": { "role": "paragraph" }
+    },
+    {
+      "node_id": "RESULT01",
+      "kind": "text",
+      "text": "Response from WASM will appear here.",
+      "semantic_role": { "role": "paragraph" }
+    },
+    {
+      "node_id": "PREFBTN1",
+      "kind": "action",
+      "label": "Prefill with WASM"
+    },
+    {
+      "node_id": "FETCHBTN",
+      "kind": "action",
+      "label": "Fetch server copy"
+    },
+    {
+      "node_id": "SUBMITB1",
+      "kind": "action",
+      "label": "Submit via WASM"
+    },
+    {
+      "node_id": "RESETBTN",
+      "kind": "action",
+      "label": "Reset form"
+    },
+    {
+      "node_id": "NAMELBL1",
+      "kind": "text",
+      "text": "Full name",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "EMAILBL1",
+      "kind": "text",
+      "text": "Work email",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "COMPANY1",
+      "kind": "text",
+      "text": "Company",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "MSGELBL1",
+      "kind": "text",
+      "text": "Project details",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "TOPICLB1",
+      "kind": "text",
+      "text": "Topic",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "PRIORITY",
+      "kind": "text",
+      "text": "Priority",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "FASTLBL1",
+      "kind": "text",
+      "text": "Fast-track",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "NORMALL1",
+      "kind": "text",
+      "text": "Standard",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "UPDATELB",
+      "kind": "text",
+      "text": "Send product updates",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "DATEDUE1",
+      "kind": "text",
+      "text": "Preferred follow-up",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "FILELBL2",
+      "kind": "text",
+      "text": "Attachments",
+      "semantic_role": { "role": "label" }
+    }
+  ]
+}

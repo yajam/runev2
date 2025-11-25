@@ -19,8 +19,26 @@ mod text_measure;
 
 pub use core::IrRenderer;
 pub use hit_region::HitRegionRegistry;
-pub use runner::run;
+pub use runner::{render_frame_with_zones, run};
 pub use state::{IrElementState, IrElementType};
+
+use rune_ir::{data::document::DataDocument, view::ViewDocument};
+
+/// Render IR documents to a canvas (convenience function for FFI).
+///
+/// This creates a temporary IrRenderer and renders the documents.
+/// For repeated rendering, prefer using `IrRenderer` directly.
+pub fn render_ir_document(
+    canvas: &mut rune_surface::Canvas,
+    data_doc: &DataDocument,
+    view_doc: &ViewDocument,
+    width: f32,
+    height: f32,
+    provider: &dyn engine_core::TextProvider,
+) {
+    let mut renderer = IrRenderer::new();
+    let _ = renderer.render_canvas(canvas, data_doc, view_doc, width, height, provider);
+}
 
 #[cfg(test)]
 mod tests;

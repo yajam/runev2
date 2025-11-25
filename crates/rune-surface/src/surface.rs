@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 
@@ -20,6 +20,25 @@ fn apply_transform_to_point(point: [f32; 2], transform: Transform2D) -> [f32; 2]
     let x = point[0];
     let y = point[1];
     [a * x + c * y + e, b * x + d * y + f]
+}
+
+/// Storage for the last rendered raw image rect (used for hit testing WebViews).
+static LAST_RAW_IMAGE_RECT: Mutex<Option<(f32, f32, f32, f32)>> = Mutex::new(None);
+
+/// Set the last raw image rect (called during rendering).
+fn set_last_raw_image_rect(x: f32, y: f32, w: f32, h: f32) {
+    if let Ok(mut guard) = LAST_RAW_IMAGE_RECT.lock() {
+        *guard = Some((x, y, w, h));
+    }
+}
+
+/// Get the last raw image rect (for hit testing from FFI).
+pub fn get_last_raw_image_rect() -> Option<(f32, f32, f32, f32)> {
+    if let Ok(guard) = LAST_RAW_IMAGE_RECT.lock() {
+        *guard
+    } else {
+        None
+    }
 }
 
 /// Overlay callback signature: called after main rendering with full PassManager access.
@@ -234,6 +253,7 @@ impl RuneSurface {
             glyph_draws: Vec::new(),
             svg_draws: Vec::new(),
             image_draws: Vec::new(),
+            raw_image_draws: Vec::new(),
             dpi_scale: self.dpi_scale,
             clip_stack: vec![None],
             overlay_draws: Vec::new(),
@@ -309,8 +329,15 @@ impl RuneSurface {
         let unified_scene =
             engine_core::upload_display_list_unified(&mut self.allocator, &self.queue, &list)?;
 
-        // Sort SVG draws by z-index
-        let mut svg_draws = canvas.svg_draws.clone();
+        // Sort SVG draws by z-index and resolve paths for app bundle
+        let mut svg_draws: Vec<_> = canvas
+            .svg_draws
+            .iter()
+            .map(|(path, origin, max_size, style, z, transform)| {
+                let resolved_path = crate::resolve_asset_path(path);
+                (resolved_path, *origin, *max_size, *style, *z, *transform)
+            })
+            .collect();
         svg_draws.sort_by_key(|(_, _, _, _, z, _)| *z);
 
         // Sort image draws by z-index and prepare simplified data (for unified pass)
@@ -326,12 +353,15 @@ impl RuneSurface {
         // they will be scaled by PassManager via logical_pixels/dpi.
         let mut prepared_images: Vec<(std::path::PathBuf, [f32; 2], [f32; 2], i32)> = Vec::new();
         for (path, origin, size, fit, z, transform) in image_draws.iter() {
+            // Resolve path to check app bundle resources
+            let resolved_path = crate::resolve_asset_path(path);
+
             // Synchronously load (or fetch from cache) to ensure the texture
             // is available for this frame. This mirrors the demo-app unified
             // path and avoids images only appearing after a later redraw.
             if let Some((tex_view, img_w, img_h)) = self
                 .pass
-                .load_image_to_view(std::path::Path::new(path), &self.queue)
+                .load_image_to_view(&resolved_path, &self.queue)
             {
                 drop(tex_view); // Only need dimensions here
                 let transformed_origin = apply_transform_to_point(*origin, *transform);
@@ -342,8 +372,112 @@ impl RuneSurface {
                     img_h as f32,
                     *fit,
                 );
-                prepared_images.push((path.clone(), render_origin, render_size, *z));
+                prepared_images.push((resolved_path.clone(), render_origin, render_size, *z));
             }
+        }
+
+        // Process raw image draws (e.g., WebView CEF pixels)
+        // Optimizations:
+        // 1. Always reuse textures - only recreate if size changes
+        // 2. Use BGRA format to match CEF native output (no CPU conversion)
+        // 3. Support dirty rect partial uploads
+        for (i, raw_draw) in canvas.raw_image_draws.iter().enumerate() {
+            if raw_draw.src_width == 0 || raw_draw.src_height == 0 {
+                continue;
+            }
+
+            // Use a fixed path for webview texture - reused across frames
+            let raw_path = std::path::PathBuf::from(format!("__webview_texture_{}__", i));
+
+            // If pixels are empty, reuse cached texture from previous frame
+            let has_new_pixels = !raw_draw.pixels.is_empty();
+
+            // Check if we need a new texture (only if size changed)
+            let need_new_texture = if let Some((_, cached_w, cached_h)) =
+                self.pass.try_get_image_view(&raw_path)
+            {
+                // Only recreate if dimensions changed - always reuse otherwise
+                cached_w != raw_draw.src_width || cached_h != raw_draw.src_height
+            } else {
+                true
+            };
+
+            // Create texture only when needed (first time or size change)
+            if need_new_texture && has_new_pixels {
+                // Create texture with BGRA format to match CEF's native output
+                // This eliminates CPU-side BGRA->RGBA conversion
+                let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("cef-webview-texture"),
+                    size: wgpu::Extent3d {
+                        width: raw_draw.src_width,
+                        height: raw_draw.src_height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    // BGRA format matches CEF native output - no conversion needed
+                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+
+                // Store in image cache for reuse
+                self.pass.store_loaded_image(
+                    &raw_path,
+                    Arc::new(texture),
+                    raw_draw.src_width,
+                    raw_draw.src_height,
+                );
+            }
+
+            // Upload pixels only when we have new data
+            if has_new_pixels {
+                if let Some((tex, _, _)) = self.pass.get_cached_texture(&raw_path) {
+                    // Always upload full frame - CEF provides complete buffer even for partial updates.
+                    // The dirty_rects are informational but the buffer is always complete.
+                    // This ensures no flickering from partial/stale data.
+                    self.queue.write_texture(
+                        wgpu::ImageCopyTexture {
+                            texture: &tex,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        &raw_draw.pixels,
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(raw_draw.src_width * 4),
+                            rows_per_image: Some(raw_draw.src_height),
+                        },
+                        wgpu::Extent3d {
+                            width: raw_draw.src_width,
+                            height: raw_draw.src_height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                }
+            }
+
+            // Skip rendering if no cached texture exists (no pixels uploaded yet)
+            if self.pass.try_get_image_view(&raw_path).is_none() {
+                continue;
+            }
+
+            // Apply the canvas transform to the origin - same as regular images.
+            // The origin from draw_raw_image is in local (viewport) coordinates and
+            // needs to be transformed to screen coordinates.
+            let transformed_origin = apply_transform_to_point(raw_draw.origin, raw_draw.transform);
+
+            // Store the transformed rect for hit testing (accessible via get_last_raw_image_rect)
+            set_last_raw_image_rect(
+                transformed_origin[0],
+                transformed_origin[1],
+                raw_draw.dst_size[0],
+                raw_draw.dst_size[1],
+            );
+
+            prepared_images.push((raw_path, transformed_origin, raw_draw.dst_size, raw_draw.z));
         }
 
         // Merge glyphs supplied explicitly via Canvas (draw_text_run/draw_text_direct)

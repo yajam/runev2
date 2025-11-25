@@ -145,7 +145,11 @@ pub fn run() -> Result<()> {
                                 focused: false,
                                 label: Some("Checkbox".to_string()),
                                 label_size: 16.0,
-                                color: Color::rgba(240, 240, 240, 255),
+                                label_color: Color::rgba(240, 240, 240, 255),
+                                box_fill: Color::rgba(50, 50, 50, 255),
+                                border_color: Color::rgba(100, 100, 100, 255),
+                                border_width: 1.0,
+                                check_color: Color::rgba(100, 200, 100, 255),
                             };
                             let cb2 = rune_scene::elements::checkbox::Checkbox {
                                 rect: Rect {
@@ -158,7 +162,11 @@ pub fn run() -> Result<()> {
                                 focused: true,
                                 label: Some("Checked + Focus".to_string()),
                                 label_size: 16.0,
-                                color: Color::rgba(240, 240, 240, 255),
+                                label_color: Color::rgba(240, 240, 240, 255),
+                                box_fill: Color::rgba(50, 50, 50, 255),
+                                border_color: Color::rgba(100, 180, 255, 255),
+                                border_width: 2.0,
+                                check_color: Color::rgba(100, 200, 100, 255),
                             };
                             cb1.render(&mut canvas, 5);
                             cb2.render(&mut canvas, 5);

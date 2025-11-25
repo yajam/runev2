@@ -4,6 +4,7 @@ use crate::elements::selection_renderer::{self, SelectionRenderConfig};
 use engine_core::{
     Brush, Color, ColorLinPremul, FillRule, Path, PathCmd, Rect, RoundedRadii, RoundedRect,
 };
+use rune_ir::view::TextAlign;
 use rune_surface::Canvas;
 use rune_surface::shapes;
 use rune_text::font::load_system_default_font;
@@ -47,6 +48,7 @@ pub struct InputBox {
     pub text_size: f32,
     pub text_color: ColorLinPremul,
     pub placeholder: Option<String>,
+    pub text_align: TextAlign,
     pub focused: bool,
     pub bg_color: ColorLinPremul,
     pub border_color: ColorLinPremul,
@@ -99,6 +101,7 @@ impl InputBox {
             text_size,
             text_color,
             placeholder,
+            text_align: TextAlign::Start,
             focused,
             bg_color: ColorLinPremul::from_srgba_u8([45, 52, 71, 255]),
             border_color: ColorLinPremul::from_srgba_u8([80, 90, 110, 255]),
@@ -106,8 +109,8 @@ impl InputBox {
             caret: CaretBlink::new(focused),
             cursor_position: initial_cursor,
             scroll_x: 0.0,
-            padding_x: 8.0,
-            padding_y: 6.0,
+            padding_x: 12.0,
+            padding_y: 10.0,
             rt_layout,
             rt_selection: RtSelection::collapsed(initial_cursor),
             mouse_selecting: false,
@@ -199,6 +202,41 @@ impl InputBox {
         self.caret.reset_manual();
     }
 
+    fn estimated_text_width(&self, text: &str) -> f32 {
+        if !self.text.is_empty() && text == self.text {
+            if let Some(layout) = self.rt_layout.as_ref() {
+                let layout_width = layout
+                    .measure_range_width(0, layout.text().len())
+                    .or_else(|| layout.lines().iter().map(|l| l.width).reduce(f32::max))
+                    .unwrap_or(0.0);
+                if layout_width > 0.0 {
+                    return layout_width;
+                }
+            }
+        }
+
+        text.chars().count() as f32 * self.text_size * 0.55
+    }
+
+    fn alignment_offset(&self, content_width: f32) -> f32 {
+        let display_text = if !self.text.is_empty() {
+            Some(self.text.as_str())
+        } else {
+            self.placeholder.as_deref()
+        };
+
+        let Some(text) = display_text else {
+            return 0.0;
+        };
+
+        let text_width = self.estimated_text_width(text);
+        match self.text_align {
+            TextAlign::Center => (content_width - text_width).max(0.0) * 0.5,
+            TextAlign::End => (content_width - text_width).max(0.0),
+            TextAlign::Start => 0.0,
+        }
+    }
+
     /// Insert a character at the cursor position.
     pub fn insert_char(&mut self, ch: char) {
         self.with_layout_edit(|layout, font, selection, size| {
@@ -218,6 +256,28 @@ impl InputBox {
             let new_selection = RtSelection::collapsed(new_cursor);
             (new_cursor, new_selection)
         });
+    }
+
+    /// Set the entire text content, replacing any existing text.
+    /// Moves cursor to end of text and clears selection.
+    pub fn set_text(&mut self, new_text: &str) {
+        self.text = new_text.to_string();
+        self.cursor_position = self.text.len();
+        self.rt_selection = RtSelection::collapsed(self.cursor_position);
+        self.scroll_x = 0.0;
+
+        // Rebuild the text layout with new content
+        if let Some(ref mut layout) = self.rt_layout {
+            if let Ok(font) = load_system_default_font() {
+                *layout = RtTextLayout::with_wrap(
+                    self.text.clone(),
+                    &font,
+                    self.text_size,
+                    None,
+                    RtWrapMode::NoWrap,
+                );
+            }
+        }
     }
 
     /// Delete the character before the cursor (backspace).
@@ -1038,15 +1098,29 @@ impl InputBox {
         let content_y = self.rect.y + self.padding_y;
         let content_width = self.rect.w - self.padding_x * 2.0;
         let content_height = self.rect.h - self.padding_y * 2.0;
+        let align_offset = self.alignment_offset(content_width);
 
-        // Set up clipping for text area
+        // Logical content rect used for text, selection, and caret positioning.
         let content_rect = Rect {
             x: content_x,
             y: content_y,
             w: content_width,
             h: content_height,
         };
-        canvas.push_clip_rect(content_rect);
+
+        // Clip rect is slightly wider than the logical content rect to accommodate
+        // fonts with negative left side bearings so the first glyph (placeholder
+        // or input text) isn't visually clipped at the left edge. This should
+        // affect clipping only, not caret/text positioning.
+        let clip_rect = Rect {
+            x: content_x - 2.0,
+            y: content_y,
+            w: content_width + 4.0,
+            h: content_height,
+        };
+        canvas.push_clip_rect(clip_rect);
+
+        let is_empty = self.text.is_empty();
 
         // Text origin/baseline: align to the layout's baseline offset, centered
         // vertically in the content box so caret/selection track the glyphs.
@@ -1067,15 +1141,16 @@ impl InputBox {
             let top = content_y + ((content_height - line_height).max(0.0) * 0.5);
             (top + baseline.min(line_height), baseline.min(line_height))
         };
-        let text_x = content_x - self.scroll_x;
+        let text_x = content_x + align_offset - self.scroll_x;
 
-        if !self.text.is_empty() {
+        if !is_empty {
             // Draw selection highlight before text using shared renderer
             if self.focused && !self.rt_selection.is_collapsed() {
                 if let Some(layout) = self.rt_layout.as_ref() {
                     let selection_config = SelectionRenderConfig {
                         content_rect,
                         text_baseline_y: text_y,
+                        align_x: align_offset,
                         scroll_x: self.scroll_x,
                         scroll_y: 0.0, // No vertical scroll for InputBox
                         color: Color::rgba(63, 130, 246, 80),
@@ -1108,6 +1183,7 @@ impl InputBox {
                         content_rect,
                         text_baseline_y: text_y,
                         baseline_offset,
+                        align_x: align_offset,
                         scroll_x: self.scroll_x,
                         scroll_y: 0.0, // No vertical scroll for InputBox
                         color: Color::rgba(63, 130, 246, 255),
@@ -1197,8 +1273,15 @@ impl InputBox {
         if let Some(width) = style.border_width {
             self.border_width = width as f32;
         }
-        self.padding_x = style.padding.left as f32;
-        self.padding_y = style.padding.top as f32;
+        let has_custom_padding = style.padding.left != 0.0
+            || style.padding.right != 0.0
+            || style.padding.top != 0.0
+            || style.padding.bottom != 0.0;
+
+        if has_custom_padding {
+            self.padding_x = style.padding.left.max(style.padding.right) as f32;
+            self.padding_y = style.padding.top.max(style.padding.bottom) as f32;
+        }
     }
 }
 

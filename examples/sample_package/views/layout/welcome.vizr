@@ -1,0 +1,1152 @@
+{
+  "$schema": "../../../../crates/rune-ir/schema/view_document.schema.json",
+  "view_id": "welcome",
+  "root": "root_view",
+  "nodes": [
+    {
+      "id": "root_view",
+      "node_id": "r8X4K1nP",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 24
+      },
+      "padding": {
+        "top": 32,
+        "right": 48,
+        "bottom": 32,
+        "left": 48
+      },
+      "background": {
+        "type": "linear_gradient",
+        "angle": 15,
+        "stops": [
+          [
+            "#0d1b4d",
+            0
+          ],
+          [
+            "#00b4db",
+            1
+          ]
+        ]
+      },
+      "scroll": {
+        "vertical": true
+      },
+      "children": [
+        "status_view",
+        "card_view"
+      ],
+      "widget_id": "wvN8p2xQ"
+    },
+    {
+      "id": "fetch_diff_button_view",
+      "node_id": "FETCHR01",
+      "type": "button",
+      "on_click_intent": "fetch.ir_diff",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#3b82f6"
+        },
+        "padding": {
+          "top": 10,
+          "right": 14,
+          "bottom": 10,
+          "left": 14
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#ffffff"
+      }
+    },
+    {
+      "id": "status_view",
+      "node_id": "S3D5F7G9",
+      "type": "text",
+      "style": {
+        "color": "#0f172a",
+        "background": {
+          "type": "solid",
+          "color": "#f8fafc"
+        },
+        "padding": {
+          "top": 6,
+          "right": 12,
+          "bottom": 6,
+          "left": 12
+        },
+        "margin": {
+          "top": 0,
+          "right": 0,
+          "bottom": 12,
+          "left": 0
+        },
+        "corner_radius": 6
+      },
+      "widget_id": "ws3D5f7G"
+    },
+    {
+      "id": "card_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 20
+      },
+      "padding": {
+        "top": 28,
+        "right": 32,
+        "bottom": 28,
+        "left": 32
+      },
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "corner_radius": 18,
+      "children": [
+        "hero_title_view",
+        "hero_copy_view",
+        "cta_stack_view",
+        "contact_form_title_view",
+        "form_section_view",
+        "plain_form_title_view",
+        "plain_form_view",
+        "intercept_form_title_view",
+        "intercept_form_view",
+        "hero_image_view",
+        "insight_card_view",
+        "payments_table_view",
+        "footer_view"
+      ]
+    },
+    {
+      "id": "payments_table_view",
+      "node_id": "TBLDEMO1",
+      "type": "table",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#ffffff"
+        },
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "corner_radius": 12
+      },
+      "header_style": {
+        "font_weight": 900,
+        "padding": {
+          "top": 10,
+          "right": 8,
+          "bottom": 10,
+          "left": 8
+        }
+      },
+      "cell_style": {
+        "padding": {
+          "top": 10,
+          "right": 8,
+          "bottom": 10,
+          "left": 8
+        }
+      },
+      "column_gap": 24,
+      "row_gap": 0,
+      "zebra": false
+    },
+    {
+      "id": "hero_title_view",
+      "node_id": "K3S8WcLP",
+      "type": "text",
+      "style": {
+        "color": "#0f172a",
+        "background": {
+          "type": "solid",
+          "color": "#f1f5f9"
+        },
+        "padding": {
+          "top": 12,
+          "right": 16,
+          "bottom": 12,
+          "left": 16
+        },
+        "corner_radius": 8
+      },
+      "widget_id": "whT3v6Lp"
+    },
+    {
+      "id": "contact_form_title_view",
+      "node_id": "TLCNTCT1",
+      "type": "text",
+      "style": {
+        "color": "#0f172a",
+        "background": {
+          "type": "solid",
+          "color": "#e2e8f0"
+        },
+        "padding": {
+          "top": 6,
+          "right": 10,
+          "bottom": 6,
+          "left": 10
+        },
+        "corner_radius": 6,
+        "margin": {
+          "top": 8,
+          "right": 0,
+          "bottom": 4,
+          "left": 0
+        }
+      }
+    },
+    {
+      "id": "plain_form_view",
+      "type": "form_container",
+      "layout": {
+        "direction": "column",
+        "gap": 12
+      },
+      "padding": {
+        "top": 12,
+        "right": 12,
+        "bottom": 12,
+        "left": 12
+      },
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "corner_radius": 12,
+      "form_id": "plain",
+      "form_action": "http://localhost:3000/log",
+      "form_method": "post",
+      "form_encoding": "json",
+      "children": [
+        "plain_name_input_view",
+        "plain_message_area_view",
+        "plain_file_input_view",
+        "plain_files_input_view",
+        "plain_submit_button_view",
+        "plain_reset_button_view"
+      ]
+    },
+    {
+      "id": "plain_form_title_view",
+      "node_id": "TLPLAIN1",
+      "type": "text",
+      "style": {
+        "color": "#0f172a",
+        "background": {
+          "type": "solid",
+          "color": "#e2e8f0"
+        },
+        "padding": {
+          "top": 6,
+          "right": 10,
+          "bottom": 6,
+          "left": 10
+        },
+        "corner_radius": 6,
+        "margin": {
+          "top": 8,
+          "right": 0,
+          "bottom": 4,
+          "left": 0
+        }
+      }
+    },
+    {
+      "id": "plain_name_input_view",
+      "type": "input_box",
+      "widget_id": "WPLAIN01",
+      "control_id": "plain-name",
+      "placeholder": "Plain: Your name",
+      "width": 320
+    },
+    {
+      "id": "plain_message_area_view",
+      "type": "text_area",
+      "widget_id": "WPLAIN02",
+      "control_id": "plain-message",
+      "placeholder": "Plain: Message",
+      "width": 520
+    },
+    {
+      "id": "plain_file_input_view",
+      "type": "file_input",
+      "control_id": "plain-file",
+      "placeholder": "Plain: Choose a file",
+      "width": 360,
+      "multi": false
+    },
+    {
+      "id": "plain_files_input_view",
+      "type": "file_input",
+      "control_id": "plain-files",
+      "placeholder": "Plain: Choose files",
+      "width": 420,
+      "multi": true
+    },
+    {
+      "id": "plain_submit_button_view",
+      "node_id": "F0RMSUB1",
+      "type": "button",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#0ea5e9"
+        },
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#ffffff"
+      },
+      "button_type": "submit",
+      "form_id": "plain"
+    },
+    {
+      "id": "plain_reset_button_view",
+      "node_id": "F0RMRES1",
+      "type": "button",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#94a3b8"
+        },
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#ffffff"
+      },
+      "button_type": "reset",
+      "form_id": "plain"
+    },
+    {
+      "id": "intercept_form_view",
+      "type": "form_container",
+      "layout": {
+        "direction": "column",
+        "gap": 12
+      },
+      "padding": {
+        "top": 12,
+        "right": 12,
+        "bottom": 12,
+        "left": 12
+      },
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "corner_radius": 12,
+      "form_id": "intercept",
+      "form_action": "http://localhost:3000/log",
+      "form_method": "post",
+      "form_encoding": "json",
+      "children": [
+        "intercept_name_input_view",
+        "intercept_message_area_view",
+        "intercept_submit_button_view",
+        "intercept_reset_button_view"
+      ]
+    },
+    {
+      "id": "intercept_form_title_view",
+      "node_id": "TLINTCP1",
+      "type": "text",
+      "style": {
+        "color": "#0f172a",
+        "background": {
+          "type": "solid",
+          "color": "#e2e8f0"
+        },
+        "padding": {
+          "top": 6,
+          "right": 10,
+          "bottom": 6,
+          "left": 10
+        },
+        "corner_radius": 6,
+        "margin": {
+          "top": 8,
+          "right": 0,
+          "bottom": 4,
+          "left": 0
+        }
+      }
+    },
+    {
+      "id": "intercept_name_input_view",
+      "type": "input_box",
+      "widget_id": "WINTRC01",
+      "control_id": "intercept-name",
+      "placeholder": "Intercept: Your name",
+      "width": 320
+    },
+    {
+      "id": "intercept_message_area_view",
+      "type": "text_area",
+      "widget_id": "WINTRC02",
+      "control_id": "intercept-message",
+      "placeholder": "Intercept: Message",
+      "width": 520
+    },
+    {
+      "id": "intercept_submit_button_view",
+      "node_id": "F0RMSUB1",
+      "type": "button",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#ea580c"
+        },
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#ffffff"
+      },
+      "button_type": "submit",
+      "form_id": "intercept"
+    },
+    {
+      "id": "intercept_reset_button_view",
+      "node_id": "F0RMRES1",
+      "type": "button",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#9ca3af"
+        },
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#ffffff"
+      },
+      "button_type": "reset",
+      "form_id": "intercept"
+    },
+    {
+      "id": "hero_copy_view",
+      "node_id": "P5Q9LkD2",
+      "width": 980,
+      "type": "text",
+      "style": {
+        "color": "#0f172a"
+      },
+      "widget_id": "wcP5z9D2"
+    },
+    {
+      "id": "cta_stack_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "justify": "start",
+        "align": "center",
+        "gap": 12
+      },
+      "children": [
+        "cta_primary_view",
+        "cta_secondary_view",
+        "open_alert_button_view",
+        "open_modal_button_view",
+        "open_confirm_button_view",
+        "fetch_diff_button_view"
+      ]
+    },
+    {
+      "id": "form_section_view",
+      "type": "form_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 12
+      },
+      "padding": {
+        "top": 18,
+        "right": 18,
+        "bottom": 18,
+        "left": 18
+      },
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "corner_radius": 12,
+      "form_id": "contact",
+      "form_action": "http://localhost:3000/log",
+      "form_method": "post",
+      "form_encoding": "json",
+      "onsubmit_intent": "submit_contact_form",
+      "children": [
+        "first_name_input_view",
+        "last_name_input_view",
+        "email_input_view",
+        "password_input_view",
+        "age_number_input_view",
+        "site_search_input_view",
+        "subscription_date_label_view",
+        "subscription_date_input_view",
+        "feedback_area_view",
+        "message_area_view",
+        "issue_type_select_view",
+        "priority_select_view",
+        "subscribe_row_view",
+        "contact_time_morning_row_view",
+        "contact_time_afternoon_row_view",
+        "contact_method_email_row_view",
+        "contact_method_phone_row_view",
+        "form_submit_button_view",
+        "form_reset_button_view"
+      ]
+    },
+    {
+      "id": "subscription_date_label_view",
+      "type": "text",
+      "node_id": "SUBDAT01"
+    },
+    {
+      "id": "subscription_date_input_view",
+      "type": "input_box",
+      "control_id": "subscription-date",
+      "form_id": "contact",
+      "placeholder": "June 01, 2025",
+      "input_type": "date",
+      "width": 360
+    },
+    {
+      "id": "email_input_view",
+      "type": "input_box",
+      "control_id": "email",
+      "form_id": "contact",
+      "placeholder": "Email (validates)",
+      "input_type": "email",
+      "width": 320
+    },
+    {
+      "id": "password_input_view",
+      "type": "input_box",
+      "control_id": "password",
+      "form_id": "contact",
+      "placeholder": "Password (masked)",
+      "input_type": "password",
+      "width": 320
+    },
+    {
+      "id": "age_number_input_view",
+      "type": "input_box",
+      "control_id": "age",
+      "form_id": "contact",
+      "placeholder": "Age (number)",
+      "input_type": "number",
+      "default_value": "42",
+      "width": 200
+    },
+    {
+      "id": "site_search_input_view",
+      "type": "input_box",
+      "control_id": "site-search",
+      "form_id": "contact",
+      "placeholder": "Search...",
+      "input_type": "search",
+      "width": 360
+    },
+    {
+      "id": "priority_select_view",
+      "type": "select",
+      "control_id": "priority",
+      "form_id": "contact",
+      "placeholder": "Select priority",
+      "width": 260,
+      "options": [
+        {
+          "label": "Low",
+          "value": "low"
+        },
+        {
+          "label": "Medium",
+          "value": "medium",
+          "selected": true
+        },
+        {
+          "label": "High",
+          "value": "high"
+        }
+      ]
+    },
+    {
+      "id": "first_name_input_view",
+      "type": "input_box",
+      "widget_id": "WF1A2B3C",
+      "control_id": "first-name",
+      "default_value": "Ada",
+      "placeholder": "First name",
+      "width": 320
+    },
+    {
+      "id": "contact_time_morning_row_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "align": "center",
+        "gap": 8
+      },
+      "children": [
+        "contact_time_morning_radio_view",
+        "contact_time_morning_label_view"
+      ]
+    },
+    {
+      "id": "contact_time_morning_radio_view",
+      "type": "radio",
+      "group": "contact-time",
+      "value": "morning",
+      "default_selected": false,
+      "size": 18
+    },
+    {
+      "id": "contact_time_morning_label_view",
+      "type": "text",
+      "node_id": "CTMORN01"
+    },
+    {
+      "id": "contact_time_afternoon_row_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "align": "center",
+        "gap": 8
+      },
+      "children": [
+        "contact_time_afternoon_radio_view",
+        "contact_time_afternoon_label_view"
+      ]
+    },
+    {
+      "id": "contact_time_afternoon_radio_view",
+      "type": "radio",
+      "group": "contact-time",
+      "value": "afternoon",
+      "default_selected": false,
+      "size": 18
+    },
+    {
+      "id": "contact_time_afternoon_label_view",
+      "type": "text",
+      "node_id": "CTAFTR01"
+    },
+    {
+      "id": "issue_type_select_view",
+      "type": "select",
+      "control_id": "issue-type",
+      "form_id": "contact",
+      "multiple": true,
+      "placeholder": "Select a topic",
+      "width": 260,
+      "options": [
+        {
+          "label": "Bug report",
+          "value": "bug",
+          "selected": true
+        },
+        {
+          "label": "Feature request",
+          "value": "feature",
+          "selected": true
+        },
+        {
+          "label": "Other",
+          "value": "other"
+        }
+      ]
+    },
+    {
+      "id": "subscribe_row_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "align": "center",
+        "gap": 8
+      },
+      "children": [
+        "subscribe_checkbox_view",
+        "subscribe_label_view",
+        "subscribe_checkbox_view_opt1",
+        "subscribe_label_opt1_view",
+        "subscribe_checkbox_view_opt2",
+        "subscribe_label_opt2_view"
+      ]
+    },
+    {
+      "id": "subscribe_checkbox_view_opt1",
+      "type": "checkbox",
+      "control_id": "subscribe-newsletter",
+      "form_id": "contact",
+      "value": "weekly",
+      "default_checked": false,
+      "size": 18
+    },
+    {
+      "id": "subscribe_checkbox_view_opt2",
+      "type": "checkbox",
+      "control_id": "subscribe-newsletter",
+      "form_id": "contact",
+      "value": "monthly",
+      "default_checked": false,
+      "size": 18
+    },
+    {
+      "id": "subscribe_checkbox_view",
+      "type": "checkbox",
+      "control_id": "subscribe-newsletter",
+      "form_id": "contact",
+      "value": "yes",
+      "default_checked": false,
+      "size": 18
+    },
+    {
+      "id": "subscribe_label_view",
+      "type": "text",
+      "node_id": "SBSCB001"
+    },
+    {
+      "id": "subscribe_label_opt1_view",
+      "type": "text",
+      "node_id": "SBSCBWK1"
+    },
+    {
+      "id": "subscribe_label_opt2_view",
+      "type": "text",
+      "node_id": "SBSCBMN1"
+    },
+    {
+      "id": "contact_method_email_row_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "align": "center",
+        "gap": 8
+      },
+      "children": [
+        "contact_method_email_radio_view",
+        "contact_method_email_label_view"
+      ]
+    },
+    {
+      "id": "contact_method_email_radio_view",
+      "type": "radio",
+      "group": "contact-method",
+      "value": "email",
+      "default_selected": true,
+      "size": 18
+    },
+    {
+      "id": "contact_method_email_label_view",
+      "type": "text",
+      "node_id": "CTEMAL01"
+    },
+    {
+      "id": "contact_method_phone_row_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "align": "center",
+        "gap": 8
+      },
+      "children": [
+        "contact_method_phone_radio_view",
+        "contact_method_phone_label_view"
+      ]
+    },
+    {
+      "id": "contact_method_phone_radio_view",
+      "type": "radio",
+      "group": "contact-method",
+      "value": "phone",
+      "default_selected": false,
+      "size": 18
+    },
+    {
+      "id": "contact_method_phone_label_view",
+      "type": "text",
+      "node_id": "CTPHON01"
+    },
+    {
+      "id": "last_name_input_view",
+      "type": "input_box",
+      "widget_id": "WF4D5E6G",
+      "control_id": "last-name",
+      "default_value": "Lovelace",
+      "placeholder": "Last name",
+      "width": 320
+    },
+    {
+      "id": "feedback_area_view",
+      "type": "text_area",
+      "widget_id": "WF7H8J9K",
+      "control_id": "feedback",
+      "placeholder": "Share feedback or jot quick notes...",
+      "width": 520
+    },
+    {
+      "id": "message_area_view",
+      "type": "text_area",
+      "widget_id": "WF7H8J9U",
+      "control_id": "messageav",
+      "placeholder": "Enter a message...",
+      "width": 520
+    },
+    {
+      "id": "form_submit_button_view",
+      "node_id": "F0RMSUB1",
+      "type": "button",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#16a34a"
+        },
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#ffffff"
+      },
+      "button_type": "submit",
+      "form_id": "contact"
+    },
+    {
+      "id": "form_reset_button_view",
+      "node_id": "F0RMRES1",
+      "type": "button",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#64748b"
+        },
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#ffffff"
+      },
+      "button_type": "reset",
+      "form_id": "contact"
+    },
+    {
+      "id": "cta_primary_view",
+      "node_id": "A1B2C3D4",
+      "widget_id": "wa1B2c3D",
+      "type": "button",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#4338ca"
+        },
+        "padding": {
+          "top": 12,
+          "right": 18,
+          "bottom": 12,
+          "left": 18
+        },
+        "corner_radius": 10
+      },
+      "label_style": {
+        "color": "#ffffff"
+      }
+    },
+    {
+      "id": "cta_secondary_view",
+      "node_id": "M7N6V5T4",
+      "type": "link",
+      "style": {
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "corner_radius": 6
+      },
+      "label_style": {
+        "color": "#0f172a"
+      },
+      "widget_id": "wm7N6v5T"
+    },
+    {
+      "id": "open_alert_button_view",
+      "node_id": "OPALRT01",
+      "type": "button",
+      "on_click_intent": "overlay.open.alert",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#0ea5e9"
+        },
+        "padding": {
+          "top": 10,
+          "right": 14,
+          "bottom": 10,
+          "left": 14
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#ffffff"
+      }
+    },
+    {
+      "id": "open_modal_button_view",
+      "node_id": "OPMODL01",
+      "type": "button",
+      "on_click_intent": "overlay.open.modal",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#22c55e"
+        },
+        "padding": {
+          "top": 10,
+          "right": 14,
+          "bottom": 10,
+          "left": 14
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#ffffff"
+      }
+    },
+    {
+      "id": "open_confirm_button_view",
+      "node_id": "OPCNFM01",
+      "type": "button",
+      "on_click_intent": "overlay.open.confirm",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#f59e0b"
+        },
+        "padding": {
+          "top": 10,
+          "right": 14,
+          "bottom": 10,
+          "left": 14
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#111827"
+      }
+    },
+    {
+      "id": "hero_image_view",
+      "node_id": "Z8Y7X6W5",
+      "type": "image",
+      "width": 240,
+      "widget_id": "wz8Y7x6W"
+    },
+    {
+      "id": "insight_card_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 14
+      },
+      "padding": {
+        "top": 20,
+        "right": 24,
+        "bottom": 20,
+        "left": 24
+      },
+      "background": {
+        "type": "solid",
+        "color": "#0f172a"
+      },
+      "corner_radius": 12,
+      "children": [
+        "insight_heading_view",
+        "insight_list_view"
+      ]
+    },
+    {
+      "id": "insight_heading_view",
+      "node_id": "H4J6L8N0",
+      "type": "text",
+      "style": {
+        "color": "#ffffff"
+      },
+      "widget_id": "wh4J6l8N"
+    },
+    {
+      "id": "insight_list_view",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "justify": "start",
+        "align": "stretch",
+        "gap": 10
+      },
+      "children": [
+        "insight_item_one_view",
+        "insight_item_two_view",
+        "insight_item_three_view"
+      ]
+    },
+    {
+      "id": "insight_item_one_view",
+      "node_id": "T2G4H6J8",
+      "type": "text",
+      "style": {
+        "color": "#ffffff"
+      },
+      "widget_id": "wt2G4h6J"
+    },
+    {
+      "id": "insight_item_two_view",
+      "node_id": "C9V7B5N3",
+      "type": "text",
+      "style": {
+        "color": "#ffffff"
+      },
+      "widget_id": "wc9V7b5N"
+    },
+    {
+      "id": "insight_item_three_view",
+      "node_id": "L1P3R5T7",
+      "type": "text",
+      "style": {
+        "color": "#ffffff"
+      },
+      "widget_id": "wl1P3r5T"
+    },
+    {
+      "id": "footer_view",
+      "node_id": "Q2W4E6R8",
+      "type": "text",
+      "style": {
+        "color": "#0f172a"
+      },
+      "widget_id": "wq2W4e6R"
+    },
+    {
+      "id": "edit_profile_modal",
+      "type": "modal",
+      "width": 520,
+      "height": 360,
+      "dismissible": true,
+      "show_close": true,
+      "children": [
+        "modal_title_view",
+        "modal_desc_view",
+        "modal_cancel_button_view",
+        "modal_save_button_view"
+      ]
+    },
+    {
+      "id": "modal_title_view",
+      "node_id": "MODLTTL1",
+      "type": "text",
+      "style": {
+        "color": "#0f172a",
+        "font_size": 18
+      }
+    },
+    {
+      "id": "modal_desc_view",
+      "node_id": "MODLDSC1",
+      "type": "text",
+      "style": {
+        "color": "#0f172a",
+        "font_size": 14
+      }
+    },
+    {
+      "id": "modal_cancel_button_view",
+      "node_id": "MODLCAN1",
+      "type": "button",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#e2e8f0"
+        },
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#0f172a"
+      }
+    },
+    {
+      "id": "modal_save_button_view",
+      "node_id": "MODLSAV1",
+      "type": "button",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#111827"
+        },
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "corner_radius": 8
+      },
+      "label_style": {
+        "color": "#ffffff"
+      }
+    }
+  ]
+}

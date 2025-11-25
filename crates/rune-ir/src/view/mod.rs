@@ -1,4 +1,14 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+pub mod animation;
+
+pub use animation::{
+    AnimationDirectionSpec, AnimationFillModeSpec, AnimationRefSpec, EasingSpec,
+    IterationCountSpec, KeyframeAnimationSpec, KeyframeSpec, NamedOriginSpec,
+    NodeAnimationFields, StepPositionSpec, TransformOriginSpec, TransformSpec,
+    TransitionGroupSpec, TransitionSpecDef, TransitionTargetSpec, VisibilitySpec,
+};
 
 pub type ViewNodeId = String;
 
@@ -8,6 +18,10 @@ pub struct ViewDocument {
     pub root: ViewNodeId,
     #[serde(default)]
     pub nodes: Vec<ViewNode>,
+    /// Named keyframe animations that can be referenced by nodes.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub animations: HashMap<String, KeyframeAnimationSpec>,
 }
 
 impl ViewDocument {
@@ -56,6 +70,8 @@ pub enum ViewNodeKind {
     Modal(OverlayContainerSpec),
     /// A confirm dialog overlay (content-defined). Defaults to centered.
     Confirm(OverlayContainerSpec),
+    /// Embedded web browser view (CEF/Chrome)
+    WebView(WebViewSpec),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,6 +200,27 @@ pub struct FlexContainerSpec {
     pub scroll: ScrollBehavior,
     #[serde(default)]
     pub children: Vec<ViewNodeId>,
+    // Animation properties
+    /// Transition configuration for property changes.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transition: Option<TransitionGroupSpec>,
+    /// Keyframe animation reference.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animation: Option<AnimationRefSpec>,
+    /// 2D transform (translate, scale, rotate, skew).
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transform: Option<TransformSpec>,
+    /// Opacity (0.0 = fully transparent, 1.0 = fully opaque).
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f64>,
+    /// Visibility state (visible, hidden, collapsed).
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<VisibilitySpec>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -264,6 +301,27 @@ pub struct GridContainerSpec {
     /// Per-child placement aligned with `children` length
     #[serde(default)]
     pub placements: Vec<GridItemPlacement>,
+    // Animation properties
+    /// Transition configuration for property changes.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transition: Option<TransitionGroupSpec>,
+    /// Keyframe animation reference.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animation: Option<AnimationRefSpec>,
+    /// 2D transform (translate, scale, rotate, skew).
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transform: Option<TransformSpec>,
+    /// Opacity (0.0 = fully transparent, 1.0 = fully opaque).
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f64>,
+    /// Visibility state (visible, hidden, collapsed).
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<VisibilitySpec>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -536,7 +594,7 @@ pub struct ScrollBehavior {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextSpec {
-    #[serde(default)]
+    #[serde(default, rename = "text_style", alias = "style")]
     pub style: TextStyle,
 }
 
@@ -742,6 +800,8 @@ pub struct InputBoxSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<f64>,
     #[serde(default)]
+    pub text_style: TextStyle,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
     #[serde(default)]
@@ -768,6 +828,10 @@ pub struct TextAreaSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<f64>,
     #[serde(default)]
+    pub style: SurfaceStyle,
+    #[serde(default)]
+    pub text_style: TextStyle,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
     #[serde(default)]
@@ -786,6 +850,13 @@ pub struct CheckboxSpec {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<f64>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_style: Option<TextStyle>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Optional label color when using inline labels (hex/rgb/rgba string).
+    pub label_color: Option<String>,
     #[serde(default)]
     pub style: SurfaceStyle,
     #[serde(default)]
@@ -809,6 +880,13 @@ pub struct RadioSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<f64>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_style: Option<TextStyle>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Optional label color when using inline labels (hex/rgb/rgba string).
+    pub label_color: Option<String>,
+    #[serde(default)]
     pub style: SurfaceStyle,
     /// Radio group name (controls exclusivity)
     #[serde(default)]
@@ -828,6 +906,8 @@ pub struct RadioSpec {
 pub struct SelectSpec {
     #[serde(default)]
     pub style: SurfaceStyle,
+    #[serde(default)]
+    pub label_style: TextStyle,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<f64>,
@@ -866,9 +946,14 @@ pub struct SelectOptionSpec {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FileInputSpec {
+    /// Container styling (background, padding, margin, radius, width/height)
+    #[serde(default)]
+    pub style: SurfaceStyle,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<f64>,
+    #[serde(default)]
+    pub label_style: TextStyle,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
@@ -889,6 +974,8 @@ pub struct DatePickerSpec {
     #[serde(default)]
     pub style: SurfaceStyle,
     #[serde(default)]
+    pub label_style: TextStyle,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<f64>,
     #[serde(default)]
@@ -904,4 +991,43 @@ pub struct DatePickerSpec {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_value: Option<String>,
+}
+
+/// Embedded web browser view specification (CEF/Chrome).
+///
+/// Renders web content to a texture within the IR scene graph.
+/// Supports both URL navigation and inline HTML content.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WebViewSpec {
+    /// Container styling (background, padding, margin, radius, width/height)
+    #[serde(default)]
+    pub style: SurfaceStyle,
+    /// URL to navigate to (mutually exclusive with `html`)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// HTML content to render directly (mutually exclusive with `url`)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
+    /// Base URL for resolving relative paths in HTML content
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    /// Device scale factor (1.0 = 96 DPI, 2.0 = Retina)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale_factor: Option<f64>,
+    /// Whether JavaScript execution is enabled (default: true)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub javascript_enabled: Option<bool>,
+    /// Custom user agent string
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_agent: Option<String>,
+    /// Unique identifier for this webview instance
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webview_id: Option<String>,
 }

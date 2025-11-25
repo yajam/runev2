@@ -1,0 +1,843 @@
+{
+  "$schema": "../../../../crates/rune-ir/schema/view_document.schema.json",
+  "view_id": "sample_form",
+  "root": "root",
+  "nodes": [
+    {
+      "id": "root",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "align": "center",
+        "justify": "start",
+        "gap": 20
+      },
+      "padding": {
+        "top": 24,
+        "right": 24,
+        "bottom": 32,
+        "left": 24
+      },
+      "background": {
+        "type": "linear_gradient",
+        "angle": 90,
+        "stops": [
+          [
+            "#0f172a",
+            0
+          ],
+          [
+            "#0b1120",
+            1
+          ]
+        ]
+      },
+      "scroll": {
+        "vertical": true
+      },
+      "children": [
+        "page_shell"
+      ]
+    },
+    {
+      "id": "page_shell",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "align": "stretch",
+        "justify": "start",
+        "gap": 16
+      },
+      "padding": {
+        "top": 20,
+        "right": 20,
+        "bottom": 20,
+        "left": 20
+      },
+      "background": {
+        "type": "solid",
+        "color": "#0b1220"
+      },
+      "corner_radius": 16,
+      "max_width": 1080,
+      "margin_left_auto": true,
+      "margin_right_auto": true,
+      "border_width": 1,
+      "border_color": "rgba(148, 163, 184, 0.35)",
+      "box_shadow": {
+        "offset_x": 0,
+        "offset_y": 14,
+        "blur": 28,
+        "color": "rgba(0, 0, 0, 0.35)"
+      },
+      "children": [
+        "header_stack",
+        "status_box",
+        "action_row",
+        "form_card",
+        "response_box"
+      ]
+    },
+    {
+      "id": "header_stack",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "align": "start",
+        "justify": "start",
+        "gap": 6
+      },
+      "children": [
+        "title_text",
+        "subtitle_text"
+      ]
+    },
+    {
+      "id": "title_text",
+      "type": "text",
+      "node_id": "FRMTITLE",
+      "style": {
+        "color": "#ffffff",
+        "font_size": 28,
+        "font_weight": 700,
+        "line_height": 34
+      }
+    },
+    {
+      "id": "subtitle_text",
+      "type": "text",
+      "node_id": "FRMSUB01",
+      "style": {
+        "color": "#ffffff",
+        "font_size": 16,
+        "line_height": 24
+      }
+    },
+    {
+      "id": "status_box",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "align": "start",
+        "justify": "start",
+        "gap": 6
+      },
+      "padding": {
+        "top": 12,
+        "right": 12,
+        "bottom": 12,
+        "left": 12
+      },
+      "background": {
+        "type": "solid",
+        "color": "#0f172a"
+      },
+      "corner_radius": 12,
+      "border_width": 1,
+      "border_color": "rgba(94, 234, 212, 0.4)",
+      "children": [
+        "status_text",
+        "plan_text"
+      ]
+    },
+    {
+      "id": "status_text",
+      "type": "text",
+      "node_id": "STATLINE",
+      "style": {
+        "color": "#67e8f9",
+        "font_size": 14,
+        "font_weight": 600,
+        "line_height": 20
+      }
+    },
+    {
+      "id": "plan_text",
+      "type": "text",
+      "node_id": "PLANINFO",
+      "style": {
+        "color": "#ffffff",
+        "font_size": 13,
+        "line_height": 18
+      }
+    },
+    {
+      "id": "action_row",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "align": "center",
+        "justify": "start",
+        "gap": 12,
+        "wrap": true
+      },
+      "children": [
+        "prefill_button",
+        "fetch_button"
+      ]
+    },
+    {
+      "id": "prefill_button",
+      "type": "button",
+      "node_id": "PREFBTN1",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#22d3ee"
+        },
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "corner_radius": 10
+      },
+      "label_style": {
+        "color": "#0b1220",
+        "font_size": 14,
+        "font_weight": 700
+      },
+      "on_click_intent": "mutation:prefill_contact",
+      "button_type": "button"
+    },
+    {
+      "id": "fetch_button",
+      "type": "button",
+      "node_id": "FETCHBTN",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#38bdf8"
+        },
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "corner_radius": 10
+      },
+      "label_style": {
+        "color": "#0b1220",
+        "font_size": 14,
+        "font_weight": 700
+      },
+      "on_click_intent": "mutation:fetch_copy",
+      "button_type": "button"
+    },
+    {
+      "id": "form_card",
+      "type": "form_container",
+      "layout": {
+        "direction": "column",
+        "align": "stretch",
+        "justify": "start",
+        "gap": 12
+      },
+      "padding": {
+        "top": 18,
+        "right": 18,
+        "bottom": 18,
+        "left": 18
+      },
+      "background": {
+        "type": "solid",
+        "color": "#0d1424"
+      },
+      "corner_radius": 14,
+      "border_width": 1,
+      "border_color": "rgba(148, 163, 184, 0.25)",
+      "form_id": "contact_form",
+      "form_action": "/api/contact",
+      "form_method": "post",
+      "form_encoding": "json",
+      "onsubmit_intent": "mutation:submit_contact",
+      "children": [
+        "name_field",
+        "email_field",
+        "company_field",
+        "topic_field",
+        "priority_group",
+        "updates_row",
+        "message_field",
+        "file_field",
+        "date_field",
+        "form_actions"
+      ]
+    },
+    {
+      "id": "name_field",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "align": "start",
+        "justify": "start",
+        "gap": 6
+      },
+      "children": [
+        "name_label",
+        "name_input"
+      ]
+    },
+    {
+      "id": "name_label",
+      "type": "text",
+      "node_id": "NAMELBL1",
+      "style": {
+        "color": "#ffffff",
+        "font_size": 14,
+        "line_height": 20
+      }
+    },
+    {
+      "id": "name_input",
+      "type": "input_box",
+      "widget_id": "NAMEINP1",
+      "placeholder": "Jane Appleseed",
+      "control_id": "full_name",
+      "form_id": "contact_form",
+      "width": 480,
+      "text_style": {
+        "color": "#ffffff",
+        "font_size": 14
+      },
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#0b1220"
+        },
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "corner_radius": 10,
+        "border_width": 1,
+        "border_color": "rgba(148, 163, 184, 0.35)"
+      }
+    },
+    {
+      "id": "email_field",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "align": "start",
+        "justify": "start",
+        "gap": 6
+      },
+      "children": [
+        "email_label",
+        "email_input"
+      ]
+    },
+    {
+      "id": "email_label",
+      "type": "text",
+      "node_id": "EMAILBL1",
+      "style": {
+        "color": "#ffffff",
+        "font_size": 14,
+        "line_height": 20
+      }
+    },
+    {
+      "id": "email_input",
+      "type": "input_box",
+      "widget_id": "EMAILIN1",
+      "placeholder": "jane@example.com",
+      "control_id": "work_email",
+      "form_id": "contact_form",
+      "input_type": "email",
+      "width": 480,
+      "text_style": {
+        "color": "#ffffff",
+        "font_size": 14
+      },
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#0b1220"
+        },
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "corner_radius": 10,
+        "border_width": 1,
+        "border_color": "rgba(148, 163, 184, 0.35)"
+      }
+    },
+    {
+      "id": "company_field",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "align": "start",
+        "justify": "start",
+        "gap": 6
+      },
+      "children": [
+        "company_label",
+        "company_input"
+      ]
+    },
+    {
+      "id": "company_label",
+      "type": "text",
+      "node_id": "COMPANY1",
+      "style": {
+        "color": "#ffffff",
+        "font_size": 14,
+        "line_height": 20
+      }
+    },
+    {
+      "id": "company_input",
+      "type": "input_box",
+      "widget_id": "COMPINP1",
+      "placeholder": "Team, LLC",
+      "control_id": "company",
+      "form_id": "contact_form",
+      "width": 480,
+      "text_style": {
+        "color": "#ffffff",
+        "font_size": 14
+      },
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#0b1220"
+        },
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "corner_radius": 10,
+        "border_width": 1,
+        "border_color": "rgba(148, 163, 184, 0.35)"
+      }
+    },
+    {
+      "id": "topic_field",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "align": "start",
+        "justify": "start",
+        "gap": 6
+      },
+      "children": [
+        "topic_label",
+        "topic_select"
+      ]
+    },
+    {
+      "id": "topic_label",
+      "type": "text",
+      "node_id": "TOPICLB1",
+      "style": {
+        "color": "#ffffff",
+        "font_size": 14,
+        "line_height": 20
+      }
+    },
+    {
+      "id": "topic_select",
+      "type": "select",
+      "widget_id": "SELECT01",
+      "placeholder": "Pick a topic",
+      "control_id": "topic",
+      "form_id": "contact_form",
+      "width": 360,
+      "label_style": {
+        "color": "#ffffff",
+        "font_size": 14
+      },
+      "options": [
+        {
+          "label": "Product feedback",
+          "value": "product_feedback",
+          "selected": true
+        },
+        {
+          "label": "Design review",
+          "value": "design_review",
+          "selected": false
+        },
+        {
+          "label": "Partnership",
+          "value": "partnership",
+          "selected": false
+        },
+        {
+          "label": "Bug report",
+          "value": "bug_report",
+          "selected": false
+        }
+      ],
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#0b1220"
+        },
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "corner_radius": 10,
+        "border_width": 1,
+        "border_color": "rgba(148, 163, 184, 0.35)"
+      }
+    },
+    {
+      "id": "priority_group",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "align": "start",
+        "justify": "start",
+        "gap": 6
+      },
+      "children": [
+        "priority_label",
+        "priority_options"
+      ]
+    },
+    {
+      "id": "priority_label",
+      "type": "text",
+      "node_id": "PRIORITY",
+      "style": {
+        "color": "#f2f2f2",
+        "font_size": 14,
+        "line_height": 20
+      }
+    },
+    {
+      "id": "priority_options",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "align": "center",
+        "justify": "start",
+        "gap": 12
+      },
+      "children": [
+        "priority_radio_fast",
+        "priority_radio_normal"
+      ]
+    },
+    {
+      "id": "priority_radio_fast",
+      "type": "radio",
+      "node_id": "FASTLBL1",
+      "widget_id": "RADFAST1",
+      "group": "priority",
+      "value": "fast-track",
+      "default_selected": true,
+      "size": 18,
+      "label_color": "#ffffff"
+    },
+    {
+      "id": "priority_radio_normal",
+      "type": "radio",
+      "node_id": "NORMALL1",
+      "widget_id": "RADNORM1",
+      "group": "priority",
+      "value": "standard",
+      "default_selected": false,
+      "size": 18,
+      "label_color": "#ffffff"
+    },
+    {
+      "id": "updates_row",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "align": "center",
+        "justify": "start",
+        "gap": 10
+      },
+      "children": [
+        "updates_checkbox"
+      ]
+    },
+    {
+      "id": "updates_checkbox",
+      "type": "checkbox",
+      "node_id": "UPDATELB",
+      "widget_id": "CHKUPDT1",
+      "control_id": "product_updates",
+      "form_id": "contact_form",
+      "value": "yes",
+      "default_checked": false,
+      "size": 18,
+      "label_color": "#ffffff"
+    },
+    {
+      "id": "message_field",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "align": "start",
+        "justify": "start",
+        "gap": 6
+      },
+      "children": [
+        "message_label",
+        "message_area"
+      ]
+    },
+    {
+      "id": "message_label",
+      "type": "text",
+      "node_id": "MSGELBL1",
+      "style": {
+        "color": "#f2f2f2",
+        "font_size": 14,
+        "line_height": 20
+      }
+    },
+    {
+      "id": "message_area",
+      "type": "text_area",
+      "widget_id": "TEXTAREA",
+      "placeholder": "Share context that the WASM module can act on...",
+      "control_id": "project_details",
+      "form_id": "contact_form",
+      "width": 780,
+      "text_style": {
+        "color": "#ffffff",
+        "font_size": 14
+      },
+      "style": {
+        "padding": {
+          "top": 12,
+          "right": 12,
+          "bottom": 12,
+          "left": 12
+        },
+        "corner_radius": 10,
+        "border_width": 1,
+        "border_color": "rgba(148, 163, 184, 0.35)"
+      }
+    },
+    {
+      "id": "file_field",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "align": "start",
+        "justify": "start",
+        "gap": 6
+      },
+      "children": [
+        "file_label",
+        "file_input"
+      ]
+    },
+    {
+      "id": "file_label",
+      "type": "text",
+      "node_id": "FILELBL2",
+      "style": {
+        "color": "#ffffff",
+        "font_size": 14,
+        "line_height": 20
+      }
+    },
+    {
+      "id": "file_input",
+      "type": "file_input",
+      "widget_id": "FILEINP1",
+      "placeholder": "Drop files or browse",
+      "control_id": "attachments",
+      "form_id": "contact_form",
+      "multi": true,
+      "width": 360,
+      "label_style": {
+        "color": "#ffffff",
+        "font_size": 14
+      },
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#0b1220"
+        },
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "corner_radius": 10,
+        "border_width": 1,
+        "border_color": "rgba(148, 163, 184, 0.35)"
+      }
+    },
+    {
+      "id": "date_field",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "align": "start",
+        "justify": "start",
+        "gap": 6
+      },
+      "children": [
+        "date_label",
+        "date_picker"
+      ]
+    },
+    {
+      "id": "date_label",
+      "type": "text",
+      "node_id": "DATEDUE1",
+      "style": {
+        "color": "#ffffff",
+        "font_size": 14,
+        "line_height": 20
+      }
+    },
+    {
+      "id": "date_picker",
+      "type": "date_picker",
+      "widget_id": "DATEPCK1",
+      "placeholder": "Pick a date",
+      "control_id": "follow_up",
+      "form_id": "contact_form",
+      "width": 260,
+      "label_style": {
+        "color": "#ffffff",
+        "font_size": 14
+      },
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#0b1220"
+        },
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "corner_radius": 10,
+        "border_width": 1,
+        "border_color": "rgba(148, 163, 184, 0.35)"
+      }
+    },
+    {
+      "id": "form_actions",
+      "type": "flex_container",
+      "layout": {
+        "direction": "row",
+        "align": "center",
+        "justify": "start",
+        "gap": 12
+      },
+      "children": [
+        "submit_button",
+        "reset_button"
+      ]
+    },
+    {
+      "id": "submit_button",
+      "type": "button",
+      "node_id": "SUBMITB1",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#22d3ee"
+        },
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "corner_radius": 10
+      },
+      "label_style": {
+        "color": "#0b1220",
+        "font_size": 14,
+        "font_weight": 700
+      },
+      "on_click_intent": "mutation:submit_contact",
+      "button_type": "submit",
+      "form_id": "contact_form"
+    },
+    {
+      "id": "reset_button",
+      "type": "button",
+      "node_id": "RESETBTN",
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#1f2937"
+        },
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "corner_radius": 10,
+        "border_width": 1,
+        "border_color": "rgba(148, 163, 184, 0.35)"
+      },
+      "label_style": {
+        "color": "#ffffff",
+        "font_size": 14,
+        "font_weight": 600
+      },
+      "on_click_intent": "mutation:reset_contact_form",
+      "button_type": "reset",
+      "form_id": "contact_form"
+    },
+    {
+      "id": "response_box",
+      "type": "flex_container",
+      "layout": {
+        "direction": "column",
+        "align": "start",
+        "justify": "start",
+        "gap": 6
+      },
+      "padding": {
+        "top": 12,
+        "right": 12,
+        "bottom": 12,
+        "left": 12
+      },
+      "background": {
+        "type": "solid",
+        "color": "#0f172a"
+      },
+      "corner_radius": 12,
+      "border_width": 1,
+      "border_color": "rgba(148, 163, 184, 0.35)",
+      "children": [
+        "response_text"
+      ]
+    },
+    {
+      "id": "response_text",
+      "type": "text",
+      "node_id": "RESULT01",
+      "style": {
+        "color": "#ffffff",
+        "font_size": 14,
+        "line_height": 20
+      }
+    }
+  ]
+}

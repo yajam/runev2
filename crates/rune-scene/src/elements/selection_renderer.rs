@@ -8,6 +8,8 @@ pub struct SelectionRenderConfig {
     pub content_rect: Rect,
     /// Text baseline Y position (for alignment)
     pub text_baseline_y: f32,
+    /// Horizontal alignment offset applied to the text content
+    pub align_x: f32,
     /// Horizontal scroll offset (0.0 for TextArea)
     pub scroll_x: f32,
     /// Vertical scroll offset (0.0 for InputBox)
@@ -63,7 +65,8 @@ pub fn render_selection(
         // Transform layout coordinates to screen coordinates
         // text_baseline_y is where the text baseline is drawn
         // We need to offset by -baseline_offset to get to the top of the line
-        let mut highlight_x = config.content_rect.x - config.scroll_x + sel_rect.x;
+        let mut highlight_x =
+            config.content_rect.x + config.align_x - config.scroll_x + sel_rect.x;
         let mut highlight_y =
             config.text_baseline_y - baseline_offset + sel_rect.y - config.scroll_y;
         let mut highlight_w = sel_rect.width;

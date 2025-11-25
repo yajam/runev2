@@ -531,6 +531,15 @@ impl PassManager {
         self.image_cache.store_ready(path, tex, width, height);
     }
 
+    /// Get a cached texture directly (for updating pixel data in-place).
+    /// Returns the Arc<Texture> and dimensions if found.
+    pub fn get_cached_texture(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Option<(Arc<wgpu::Texture>, u32, u32)> {
+        self.image_cache.get(path)
+    }
+
     /// Set the platform DPI scale factor. On macOS this is used to correct
     /// radial gradient centering when using normalized UVs for fullscreen fills.
     pub fn set_scale_factor(&mut self, sf: f32) {

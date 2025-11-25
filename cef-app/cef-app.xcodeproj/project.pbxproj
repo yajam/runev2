@@ -1,0 +1,1351 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 50;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		33F6D1F92ED2D30A0024D2C8 /* libcef_demo.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 33F6D1F82ED2D30A0024D2C8 /* libcef_demo.a */; };
+		33F6D1FB2ED2D3250024D2C8 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 33F6D1FA2ED2D3250024D2C8 /* CoreGraphics.framework */; };
+		33F6D1FC2ED2D32F0024D2C8 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E4183370255EA38D000B1F04 /* CoreFoundation.framework */; };
+		33F6D1FE2ED2D3400024D2C8 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 33F6D1FD2ED2D3400024D2C8 /* IOKit.framework */; };
+		33F6D2002ED2D34A0024D2C8 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 33F6D1FF2ED2D34A0024D2C8 /* IOSurface.framework */; };
+		E41831FF255E8C3B000B1F04 /* process_helper_mac.cc in Sources */ = {isa = PBXBuildFile; fileRef = E41831FD255E8C3B000B1F04 /* process_helper_mac.cc */; };
+		E4183232255E8CB1000B1F04 /* process_helper_mac.cc in Sources */ = {isa = PBXBuildFile; fileRef = E41831FD255E8C3B000B1F04 /* process_helper_mac.cc */; };
+		E4183237255E8CB6000B1F04 /* process_helper_mac.cc in Sources */ = {isa = PBXBuildFile; fileRef = E41831FD255E8C3B000B1F04 /* process_helper_mac.cc */; };
+		E418323C255E8CBD000B1F04 /* process_helper_mac.cc in Sources */ = {isa = PBXBuildFile; fileRef = E41831FD255E8C3B000B1F04 /* process_helper_mac.cc */; };
+		E41832C0255E90CF000B1F04 /* libcef_dll_wrapper.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E41832A4255E90B2000B1F04 /* libcef_dll_wrapper.a */; };
+		E4183306255E91FD000B1F04 /* libcef_dll_wrapper.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E41832A4255E90B2000B1F04 /* libcef_dll_wrapper.a */; };
+		E4183307255E9202000B1F04 /* libcef_dll_wrapper.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E41832A4255E90B2000B1F04 /* libcef_dll_wrapper.a */; };
+		E4183308255E9207000B1F04 /* libcef_dll_wrapper.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E41832A4255E90B2000B1F04 /* libcef_dll_wrapper.a */; };
+		E4183309255E920B000B1F04 /* libcef_dll_wrapper.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E41832A4255E90B2000B1F04 /* libcef_dll_wrapper.a */; };
+		E418330F255E927B000B1F04 /* Chromium Embedded Framework.framework in CopyFiles */ = {isa = PBXBuildFile; fileRef = E418330E255E927A000B1F04 /* Chromium Embedded Framework.framework */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E4183384255EA38D000B1F04 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E4183370255EA38D000B1F04 /* CoreFoundation.framework */; };
+		E4183385255EA396000B1F04 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E4183370255EA38D000B1F04 /* CoreFoundation.framework */; };
+		E4183386255EA39C000B1F04 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E4183370255EA38D000B1F04 /* CoreFoundation.framework */; };
+		E4183387255EA3A3000B1F04 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E4183370255EA38D000B1F04 /* CoreFoundation.framework */; };
+		E461B8BB255EB171005667A3 /* cef-app Helper (Renderer)-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E461B8B8255EB171005667A3 /* cef-app Helper (Renderer)-Info.plist */; };
+		E461B8BC255EB171005667A3 /* cef-app Helper (GPU)-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E461B8B9255EB171005667A3 /* cef-app Helper (GPU)-Info.plist */; };
+		E461B8BD255EB171005667A3 /* cef-app Helper (Plugin)-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E461B8BA255EB171005667A3 /* cef-app Helper (Plugin)-Info.plist */; };
+		E4856B9625552D6800E02BBF /* ViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = E4856B9525552D6800E02BBF /* ViewController.mm */; };
+		E4856B9825552D6800E02BBF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E4856B9725552D6800E02BBF /* Assets.xcassets */; };
+		E4856B9B25552D6800E02BBF /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = E4856B9925552D6800E02BBF /* Main.storyboard */; };
+		E4856B9E25552D6800E02BBF /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = E4856B9D25552D6800E02BBF /* main.mm */; };
+		E485709325584A6E00E02BBF /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E485709225584A6E00E02BBF /* Cocoa.framework */; };
+		E485709525584A7300E02BBF /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E485709425584A7300E02BBF /* AppKit.framework */; };
+		E485709625584A8200E02BBF /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E485709225584A6E00E02BBF /* Cocoa.framework */; };
+		E485709725584A8600E02BBF /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E485709425584A7300E02BBF /* AppKit.framework */; };
+		E485709825584A8C00E02BBF /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E485709225584A6E00E02BBF /* Cocoa.framework */; };
+		E485709925584A9100E02BBF /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E485709425584A7300E02BBF /* AppKit.framework */; };
+		E485709A25584A9600E02BBF /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E485709225584A6E00E02BBF /* Cocoa.framework */; };
+		E485709B25584A9B00E02BBF /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E485709425584A7300E02BBF /* AppKit.framework */; };
+		E48571352559551100E02BBF /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = E48571342559551100E02BBF /* AppDelegate.m */; };
+		E485715E25595A4900E02BBF /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E485709225584A6E00E02BBF /* Cocoa.framework */; };
+		E485716D2559789800E02BBF /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E485716B2559789800E02BBF /* MetalKit.framework */; };
+		E485716E2559789800E02BBF /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E485716C2559789800E02BBF /* Metal.framework */; };
+		E4857170255978A000E02BBF /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E485716F255978A000E02BBF /* QuartzCore.framework */; };
+		E4CBAD49255A810D005220CE /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = E4CBAD48255A810D005220CE /* Shaders.metal */; };
+		E4CBADA9255D6B40005220CE /* Renderer.mm in Sources */ = {isa = PBXBuildFile; fileRef = E4CBADA8255D6B40005220CE /* Renderer.mm */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		33F6D1F22ED2D2780024D2C8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 4187A700572E4E9CAA88C729;
+			remoteInfo = cefclient_Helper_alerts;
+		};
+		33F6D1F42ED2D2780024D2C8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = C6C5ED840F6244E0A14DBCE2;
+			remoteInfo = cefsimple_Helper_alerts;
+		};
+		33F6D1F62ED2D2780024D2C8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 29BFF7E2C8BD4404AA7CB6AD;
+			remoteInfo = ceftests_Helper_alerts;
+		};
+		E4183283255E90B2000B1F04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 225DEA272B7142A09100DE2B;
+			remoteInfo = cef_gtest;
+		};
+		E4183285255E90B2000B1F04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = BBF695F183054108B463215C;
+			remoteInfo = cefclient;
+		};
+		E4183287255E90B2000B1F04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 0A7F236871584ACF85B48F51;
+			remoteInfo = cefclient_Helper;
+		};
+		E4183289255E90B2000B1F04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 90A60B4D48274A0E8F08B8E5;
+			remoteInfo = cefclient_Helper_gpu;
+		};
+		E418328B255E90B2000B1F04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = E6AB3557853046C1A146B409;
+			remoteInfo = cefclient_Helper_plugin;
+		};
+		E418328D255E90B2000B1F04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 32723176804249808A84DBE2;
+			remoteInfo = cefclient_Helper_renderer;
+		};
+		E418328F255E90B2000B1F04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = F9E2F2A38BB14E14A0C0D4ED;
+			remoteInfo = cefsimple;
+		};
+		E4183291255E90B2000B1F04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 04267608E9FF402CB697C545;
+			remoteInfo = cefsimple_Helper;
+		};
+		E4183293255E90B2000B1F04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 77A5C6863DA64B16B63FD330;
+			remoteInfo = cefsimple_Helper_gpu;
+		};
+		E4183295255E90B2000B1F04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 380FBF62DA014A14AA070E17;
+			remoteInfo = cefsimple_Helper_plugin;
+		};
+		E4183297255E90B2000B1F04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = D897838ACA134E2592F24073;
+			remoteInfo = cefsimple_Helper_renderer;
+		};
+		E41832A3255E90B2000B1F04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = BF4CD782B1BE456CB573C321;
+			remoteInfo = libcef_dll_wrapper;
+		};
+		E461B8AE255EB167005667A3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 9E80E38EFD4349D0BD5A573C;
+			remoteInfo = ceftests;
+		};
+		E461B8B0255EB167005667A3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 9AAC385D9E1A4FADA4F382C2;
+			remoteInfo = ceftests_Helper;
+		};
+		E461B8B2255EB167005667A3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 7117CFAC033C4CD18C447661;
+			remoteInfo = ceftests_Helper_gpu;
+		};
+		E461B8B4255EB167005667A3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 099C99A926414005B28552AC;
+			remoteInfo = ceftests_Helper_plugin;
+		};
+		E461B8B6255EB167005667A3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 9CD2F366BB8A452E8CAAA3B2;
+			remoteInfo = ceftests_Helper_renderer;
+		};
+		E4856FEE2557F77F00E02BBF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E4856B8625552D6800E02BBF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E4856F2A2557ECED00E02BBF;
+			remoteInfo = "cef-app Helper";
+		};
+		E4856FF02557F77F00E02BBF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E4856B8625552D6800E02BBF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E4856FB32557F4EE00E02BBF;
+			remoteInfo = "cef-app Helper (GPU)";
+		};
+		E4856FF22557F77F00E02BBF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E4856B8625552D6800E02BBF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E4856FCB2557F69300E02BBF;
+			remoteInfo = "cef-app Helper (Plugin)";
+		};
+		E4856FF42557F77F00E02BBF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E4856B8625552D6800E02BBF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E4856FDA2557F6AE00E02BBF;
+			remoteInfo = "cef-app Helper (Renderer)";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		E4856C172556FAED00E02BBF /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 12;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				E418330F255E927B000B1F04 /* Chromium Embedded Framework.framework in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		33F6D1F82ED2D30A0024D2C8 /* libcef_demo.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libcef_demo.a; path = lib/libcef_demo.a; sourceTree = "<group>"; };
+		33F6D1FA2ED2D3250024D2C8 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		33F6D1FD2ED2D3400024D2C8 /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
+		33F6D1FF2ED2D34A0024D2C8 /* IOSurface.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOSurface.framework; path = System/Library/Frameworks/IOSurface.framework; sourceTree = SDKROOT; };
+		E41831FC255E8C3B000B1F04 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		E41831FD255E8C3B000B1F04 /* process_helper_mac.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = process_helper_mac.cc; sourceTree = "<group>"; };
+		E418326D255E90B1000B1F04 /* cef.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = cef.xcodeproj; path = cef/build/cef.xcodeproj; sourceTree = "<group>"; };
+		E418330E255E927A000B1F04 /* Chromium Embedded Framework.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = "Chromium Embedded Framework.framework"; path = "cef/Release/Chromium Embedded Framework.framework"; sourceTree = "<group>"; };
+		E4183370255EA38D000B1F04 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
+		E41833E6255EA9C4000B1F04 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		E461B8B8255EB171005667A3 /* cef-app Helper (Renderer)-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = "cef-app Helper (Renderer)-Info.plist"; path = "cef-app Helper/cef-app Helper (Renderer)-Info.plist"; sourceTree = SOURCE_ROOT; };
+		E461B8B9255EB171005667A3 /* cef-app Helper (GPU)-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = "cef-app Helper (GPU)-Info.plist"; path = "cef-app Helper/cef-app Helper (GPU)-Info.plist"; sourceTree = SOURCE_ROOT; };
+		E461B8BA255EB171005667A3 /* cef-app Helper (Plugin)-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; name = "cef-app Helper (Plugin)-Info.plist"; path = "cef-app Helper/cef-app Helper (Plugin)-Info.plist"; sourceTree = SOURCE_ROOT; };
+		E4856B9125552D6800E02BBF /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
+		E4856B9425552D6800E02BBF /* ViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ViewController.h; sourceTree = "<group>"; };
+		E4856B9525552D6800E02BBF /* ViewController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ViewController.mm; sourceTree = "<group>"; };
+		E4856B9725552D6800E02BBF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		E4856B9A25552D6800E02BBF /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		E4856B9C25552D6800E02BBF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		E4856B9D25552D6800E02BBF /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		E4856B9F25552D6800E02BBF /* cef-app.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "cef-app.entitlements"; sourceTree = "<group>"; };
+		E4856EA82557047500E02BBF /* libcef_dll_wrapper.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libcef_dll_wrapper.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		E4856FFC25583BC500E02BBF /* cef-app.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "cef-app.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E4857066255845CD00E02BBF /* cef-app Helper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "cef-app Helper.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E4857067255845DD00E02BBF /* cef-app Helper (GPU).app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "cef-app Helper (GPU).app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E4857074255845EA00E02BBF /* cef-app Helper (Plugin).app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "cef-app Helper (Plugin).app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E4857075255845F600E02BBF /* cef-app Helper (Renderer).app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "cef-app Helper (Renderer).app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E485709225584A6E00E02BBF /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
+		E485709425584A7300E02BBF /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
+		E48571342559551100E02BBF /* AppDelegate.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
+		E485716B2559789800E02BBF /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		E485716C2559789800E02BBF /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		E485716F255978A000E02BBF /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		E4CBAD48255A810D005220CE /* Shaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shaders.metal; sourceTree = "<group>"; };
+		E4CBAD94255D6ADC005220CE /* Renderer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Renderer.h; sourceTree = "<group>"; };
+		E4CBADA8255D6B40005220CE /* Renderer.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Renderer.mm; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E4856B8B25552D6800E02BBF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				33F6D2002ED2D34A0024D2C8 /* IOSurface.framework in Frameworks */,
+				33F6D1FE2ED2D3400024D2C8 /* IOKit.framework in Frameworks */,
+				33F6D1FC2ED2D32F0024D2C8 /* CoreFoundation.framework in Frameworks */,
+				33F6D1FB2ED2D3250024D2C8 /* CoreGraphics.framework in Frameworks */,
+				33F6D1F92ED2D30A0024D2C8 /* libcef_demo.a in Frameworks */,
+				E41832C0255E90CF000B1F04 /* libcef_dll_wrapper.a in Frameworks */,
+				E4857170255978A000E02BBF /* QuartzCore.framework in Frameworks */,
+				E485716D2559789800E02BBF /* MetalKit.framework in Frameworks */,
+				E485715E25595A4900E02BBF /* Cocoa.framework in Frameworks */,
+				E485716E2559789800E02BBF /* Metal.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4856F282557ECED00E02BBF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E4183384255EA38D000B1F04 /* CoreFoundation.framework in Frameworks */,
+				E485709525584A7300E02BBF /* AppKit.framework in Frameworks */,
+				E485709325584A6E00E02BBF /* Cocoa.framework in Frameworks */,
+				E4183306255E91FD000B1F04 /* libcef_dll_wrapper.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4856FB62557F4EE00E02BBF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E4183385255EA396000B1F04 /* CoreFoundation.framework in Frameworks */,
+				E485709725584A8600E02BBF /* AppKit.framework in Frameworks */,
+				E485709625584A8200E02BBF /* Cocoa.framework in Frameworks */,
+				E4183307255E9202000B1F04 /* libcef_dll_wrapper.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4856FCE2557F69300E02BBF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E4183386255EA39C000B1F04 /* CoreFoundation.framework in Frameworks */,
+				E485709925584A9100E02BBF /* AppKit.framework in Frameworks */,
+				E485709825584A8C00E02BBF /* Cocoa.framework in Frameworks */,
+				E4183308255E9207000B1F04 /* libcef_dll_wrapper.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4856FDD2557F6AE00E02BBF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E4183387255EA3A3000B1F04 /* CoreFoundation.framework in Frameworks */,
+				E485709B25584A9B00E02BBF /* AppKit.framework in Frameworks */,
+				E485709A25584A9600E02BBF /* Cocoa.framework in Frameworks */,
+				E4183309255E920B000B1F04 /* libcef_dll_wrapper.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		E418326E255E90B1000B1F04 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E4183284255E90B2000B1F04 /* libcef_gtest.a */,
+				E4183286255E90B2000B1F04 /* cefclient */,
+				E4183288255E90B2000B1F04 /* cefclient Helper */,
+				33F6D1F32ED2D2780024D2C8 /* cefclient Helper (Alerts) */,
+				E418328A255E90B2000B1F04 /* cefclient Helper (GPU) */,
+				E418328C255E90B2000B1F04 /* cefclient Helper (Plugin) */,
+				E418328E255E90B2000B1F04 /* cefclient Helper (Renderer) */,
+				E4183290255E90B2000B1F04 /* cefsimple */,
+				E4183292255E90B2000B1F04 /* cefsimple Helper */,
+				33F6D1F52ED2D2780024D2C8 /* cefsimple Helper (Alerts) */,
+				E4183294255E90B2000B1F04 /* cefsimple Helper (GPU) */,
+				E4183296255E90B2000B1F04 /* cefsimple Helper (Plugin) */,
+				E4183298255E90B2000B1F04 /* cefsimple Helper (Renderer) */,
+				E461B8AF255EB167005667A3 /* ceftests */,
+				E461B8B1255EB167005667A3 /* ceftests Helper */,
+				33F6D1F72ED2D2780024D2C8 /* ceftests Helper (Alerts) */,
+				E461B8B3255EB167005667A3 /* ceftests Helper (GPU) */,
+				E461B8B5255EB167005667A3 /* ceftests Helper (Plugin) */,
+				E461B8B7255EB167005667A3 /* ceftests Helper (Renderer) */,
+				E41832A4255E90B2000B1F04 /* libcef_dll_wrapper.a */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		E4856B8525552D6800E02BBF = {
+			isa = PBXGroup;
+			children = (
+				E41833E6255EA9C4000B1F04 /* README.md */,
+				E418330E255E927A000B1F04 /* Chromium Embedded Framework.framework */,
+				E418326D255E90B1000B1F04 /* cef.xcodeproj */,
+				E4856B9025552D6800E02BBF /* cef-app */,
+				E4856F2C2557ECED00E02BBF /* cef-app Helper */,
+				E4856BF92556F46B00E02BBF /* Frameworks */,
+				E48E9B3A255D821000EEA71D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		E4856B9025552D6800E02BBF /* cef-app */ = {
+			isa = PBXGroup;
+			children = (
+				E4856B9125552D6800E02BBF /* AppDelegate.h */,
+				E48571342559551100E02BBF /* AppDelegate.m */,
+				E4856B9425552D6800E02BBF /* ViewController.h */,
+				E4856B9525552D6800E02BBF /* ViewController.mm */,
+				E4856B9725552D6800E02BBF /* Assets.xcassets */,
+				E4856B9925552D6800E02BBF /* Main.storyboard */,
+				E4856B9C25552D6800E02BBF /* Info.plist */,
+				E4856B9D25552D6800E02BBF /* main.mm */,
+				E4856B9F25552D6800E02BBF /* cef-app.entitlements */,
+				E4CBAD48255A810D005220CE /* Shaders.metal */,
+				E4CBAD94255D6ADC005220CE /* Renderer.h */,
+				E4CBADA8255D6B40005220CE /* Renderer.mm */,
+			);
+			path = "cef-app";
+			sourceTree = "<group>";
+		};
+		E4856BF92556F46B00E02BBF /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				33F6D1FF2ED2D34A0024D2C8 /* IOSurface.framework */,
+				33F6D1FD2ED2D3400024D2C8 /* IOKit.framework */,
+				33F6D1FA2ED2D3250024D2C8 /* CoreGraphics.framework */,
+				33F6D1F82ED2D30A0024D2C8 /* libcef_demo.a */,
+				E4183370255EA38D000B1F04 /* CoreFoundation.framework */,
+				E485716F255978A000E02BBF /* QuartzCore.framework */,
+				E485716C2559789800E02BBF /* Metal.framework */,
+				E485716B2559789800E02BBF /* MetalKit.framework */,
+				E485709425584A7300E02BBF /* AppKit.framework */,
+				E485709225584A6E00E02BBF /* Cocoa.framework */,
+				E4856EA82557047500E02BBF /* libcef_dll_wrapper.a */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		E4856F2C2557ECED00E02BBF /* cef-app Helper */ = {
+			isa = PBXGroup;
+			children = (
+				E461B8B9255EB171005667A3 /* cef-app Helper (GPU)-Info.plist */,
+				E461B8BA255EB171005667A3 /* cef-app Helper (Plugin)-Info.plist */,
+				E461B8B8255EB171005667A3 /* cef-app Helper (Renderer)-Info.plist */,
+				E41831FC255E8C3B000B1F04 /* Info.plist */,
+				E41831FD255E8C3B000B1F04 /* process_helper_mac.cc */,
+			);
+			path = "cef-app Helper";
+			sourceTree = "<group>";
+		};
+		E48E9B3A255D821000EEA71D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E4856FFC25583BC500E02BBF /* cef-app.app */,
+				E4857066255845CD00E02BBF /* cef-app Helper.app */,
+				E4857067255845DD00E02BBF /* cef-app Helper (GPU).app */,
+				E4857074255845EA00E02BBF /* cef-app Helper (Plugin).app */,
+				E4857075255845F600E02BBF /* cef-app Helper (Renderer).app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E4856B8D25552D6800E02BBF /* cef-app */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E4856BB825552D6900E02BBF /* Build configuration list for PBXNativeTarget "cef-app" */;
+			buildPhases = (
+				E5D1B0012A0DDEAD00C0FFEE /* Run build-rust */,
+				E4856B8A25552D6800E02BBF /* Sources */,
+				E4856B8B25552D6800E02BBF /* Frameworks */,
+				E4856B8C25552D6800E02BBF /* Resources */,
+				E4856C172556FAED00E02BBF /* CopyFiles */,
+				E485701D25583DB500E02BBF /* ShellScript */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E4856FEF2557F77F00E02BBF /* PBXTargetDependency */,
+				E4856FF12557F77F00E02BBF /* PBXTargetDependency */,
+				E4856FF32557F77F00E02BBF /* PBXTargetDependency */,
+				E4856FF52557F77F00E02BBF /* PBXTargetDependency */,
+			);
+			name = "cef-app";
+			productName = "cef-app";
+			productReference = E4856FFC25583BC500E02BBF /* cef-app.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E4856F2A2557ECED00E02BBF /* cef-app Helper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E4856F3C2557ECEF00E02BBF /* Build configuration list for PBXNativeTarget "cef-app Helper" */;
+			buildPhases = (
+				E4856F272557ECED00E02BBF /* Sources */,
+				E4856F282557ECED00E02BBF /* Frameworks */,
+				E4856F292557ECED00E02BBF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "cef-app Helper";
+			productName = "cef-app Helper";
+			productReference = E4857066255845CD00E02BBF /* cef-app Helper.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E4856FB32557F4EE00E02BBF /* cef-app Helper (GPU) */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E4856FBA2557F4EE00E02BBF /* Build configuration list for PBXNativeTarget "cef-app Helper (GPU)" */;
+			buildPhases = (
+				E4856FB42557F4EE00E02BBF /* Sources */,
+				E4856FB62557F4EE00E02BBF /* Frameworks */,
+				E4856FB82557F4EE00E02BBF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "cef-app Helper (GPU)";
+			productName = "cef-app Helper";
+			productReference = E4857067255845DD00E02BBF /* cef-app Helper (GPU).app */;
+			productType = "com.apple.product-type.application";
+		};
+		E4856FCB2557F69300E02BBF /* cef-app Helper (Plugin) */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E4856FD22557F69300E02BBF /* Build configuration list for PBXNativeTarget "cef-app Helper (Plugin)" */;
+			buildPhases = (
+				E4856FCC2557F69300E02BBF /* Sources */,
+				E4856FCE2557F69300E02BBF /* Frameworks */,
+				E4856FD02557F69300E02BBF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "cef-app Helper (Plugin)";
+			productName = "cef-app Helper";
+			productReference = E4857074255845EA00E02BBF /* cef-app Helper (Plugin).app */;
+			productType = "com.apple.product-type.application";
+		};
+		E4856FDA2557F6AE00E02BBF /* cef-app Helper (Renderer) */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E4856FE12557F6AE00E02BBF /* Build configuration list for PBXNativeTarget "cef-app Helper (Renderer)" */;
+			buildPhases = (
+				E4856FDB2557F6AE00E02BBF /* Sources */,
+				E4856FDD2557F6AE00E02BBF /* Frameworks */,
+				E4856FDF2557F6AE00E02BBF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "cef-app Helper (Renderer)";
+			productName = "cef-app Helper";
+			productReference = E4857075255845F600E02BBF /* cef-app Helper (Renderer).app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E4856B8625552D6800E02BBF /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 1210;
+				TargetAttributes = {
+					E4856B8D25552D6800E02BBF = {
+						CreatedOnToolsVersion = 12.1;
+					};
+					E4856F2A2557ECED00E02BBF = {
+						CreatedOnToolsVersion = 12.1;
+					};
+				};
+			};
+			buildConfigurationList = E4856B8925552D6800E02BBF /* Build configuration list for PBXProject "cef-app" */;
+			compatibilityVersion = "Xcode 9.3";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = E4856B8525552D6800E02BBF;
+			productRefGroup = E48E9B3A255D821000EEA71D /* Products */;
+			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = E418326E255E90B1000B1F04 /* Products */;
+					ProjectRef = E418326D255E90B1000B1F04 /* cef.xcodeproj */;
+				},
+			);
+			projectRoot = "";
+			targets = (
+				E4856B8D25552D6800E02BBF /* cef-app */,
+				E4856F2A2557ECED00E02BBF /* cef-app Helper */,
+				E4856FB32557F4EE00E02BBF /* cef-app Helper (GPU) */,
+				E4856FCB2557F69300E02BBF /* cef-app Helper (Plugin) */,
+				E4856FDA2557F6AE00E02BBF /* cef-app Helper (Renderer) */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXReferenceProxy section */
+		33F6D1F32ED2D2780024D2C8 /* cefclient Helper (Alerts) */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "cefclient Helper (Alerts)";
+			path = "cefclient Helper (Alerts).app";
+			remoteRef = 33F6D1F22ED2D2780024D2C8 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		33F6D1F52ED2D2780024D2C8 /* cefsimple Helper (Alerts) */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "cefsimple Helper (Alerts)";
+			path = "cefsimple Helper (Alerts).app";
+			remoteRef = 33F6D1F42ED2D2780024D2C8 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		33F6D1F72ED2D2780024D2C8 /* ceftests Helper (Alerts) */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "ceftests Helper (Alerts)";
+			path = "ceftests Helper (Alerts).app";
+			remoteRef = 33F6D1F62ED2D2780024D2C8 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E4183284255E90B2000B1F04 /* libcef_gtest.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libcef_gtest.a;
+			remoteRef = E4183283255E90B2000B1F04 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E4183286255E90B2000B1F04 /* cefclient */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = cefclient;
+			path = cefclient.app;
+			remoteRef = E4183285255E90B2000B1F04 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E4183288255E90B2000B1F04 /* cefclient Helper */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "cefclient Helper";
+			path = "cefclient Helper.app";
+			remoteRef = E4183287255E90B2000B1F04 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E418328A255E90B2000B1F04 /* cefclient Helper (GPU) */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "cefclient Helper (GPU)";
+			path = "cefclient Helper (GPU).app";
+			remoteRef = E4183289255E90B2000B1F04 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E418328C255E90B2000B1F04 /* cefclient Helper (Plugin) */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "cefclient Helper (Plugin)";
+			path = "cefclient Helper (Plugin).app";
+			remoteRef = E418328B255E90B2000B1F04 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E418328E255E90B2000B1F04 /* cefclient Helper (Renderer) */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "cefclient Helper (Renderer)";
+			path = "cefclient Helper (Renderer).app";
+			remoteRef = E418328D255E90B2000B1F04 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E4183290255E90B2000B1F04 /* cefsimple */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = cefsimple;
+			path = cefsimple.app;
+			remoteRef = E418328F255E90B2000B1F04 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E4183292255E90B2000B1F04 /* cefsimple Helper */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "cefsimple Helper";
+			path = "cefsimple Helper.app";
+			remoteRef = E4183291255E90B2000B1F04 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E4183294255E90B2000B1F04 /* cefsimple Helper (GPU) */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "cefsimple Helper (GPU)";
+			path = "cefsimple Helper (GPU).app";
+			remoteRef = E4183293255E90B2000B1F04 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E4183296255E90B2000B1F04 /* cefsimple Helper (Plugin) */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "cefsimple Helper (Plugin)";
+			path = "cefsimple Helper (Plugin).app";
+			remoteRef = E4183295255E90B2000B1F04 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E4183298255E90B2000B1F04 /* cefsimple Helper (Renderer) */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "cefsimple Helper (Renderer)";
+			path = "cefsimple Helper (Renderer).app";
+			remoteRef = E4183297255E90B2000B1F04 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E41832A4255E90B2000B1F04 /* libcef_dll_wrapper.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libcef_dll_wrapper.a;
+			remoteRef = E41832A3255E90B2000B1F04 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E461B8AF255EB167005667A3 /* ceftests */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = ceftests;
+			path = ceftests.app;
+			remoteRef = E461B8AE255EB167005667A3 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E461B8B1255EB167005667A3 /* ceftests Helper */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "ceftests Helper";
+			path = "ceftests Helper.app";
+			remoteRef = E461B8B0255EB167005667A3 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E461B8B3255EB167005667A3 /* ceftests Helper (GPU) */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "ceftests Helper (GPU)";
+			path = "ceftests Helper (GPU).app";
+			remoteRef = E461B8B2255EB167005667A3 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E461B8B5255EB167005667A3 /* ceftests Helper (Plugin) */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "ceftests Helper (Plugin)";
+			path = "ceftests Helper (Plugin).app";
+			remoteRef = E461B8B4255EB167005667A3 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E461B8B7255EB167005667A3 /* ceftests Helper (Renderer) */ = {
+			isa = PBXReferenceProxy;
+			fileType = "compiled.mach-o.executable";
+			name = "ceftests Helper (Renderer)";
+			path = "ceftests Helper (Renderer).app";
+			remoteRef = E461B8B6255EB167005667A3 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+/* End PBXReferenceProxy section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E4856B8C25552D6800E02BBF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E4856B9825552D6800E02BBF /* Assets.xcassets in Resources */,
+				E4856B9B25552D6800E02BBF /* Main.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4856F292557ECED00E02BBF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E461B8BC255EB171005667A3 /* cef-app Helper (GPU)-Info.plist in Resources */,
+				E461B8BB255EB171005667A3 /* cef-app Helper (Renderer)-Info.plist in Resources */,
+				E461B8BD255EB171005667A3 /* cef-app Helper (Plugin)-Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4856FB82557F4EE00E02BBF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4856FD02557F69300E02BBF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4856FDF2557F6AE00E02BBF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		E5D1B0012A0DDEAD00C0FFEE /* Run build-rust */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"$SRCROOT/build-rust.sh\"\\n";
+		};
+		E485701D25583DB500E02BBF /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "cp -R \"$BUILT_PRODUCTS_DIR/$EXECUTABLE_NAME Helper.app\" \"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Frameworks/\"\ncp -R \"$BUILT_PRODUCTS_DIR/$EXECUTABLE_NAME Helper (GPU).app\" \"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Frameworks/\"\ncp -R \"$BUILT_PRODUCTS_DIR/$EXECUTABLE_NAME Helper (Renderer).app\" \"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Frameworks/\"\ncp -R \"$BUILT_PRODUCTS_DIR/$EXECUTABLE_NAME Helper (Plugin).app\" \"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Frameworks/\"\n\n# Create symlink for framework at build products level for helper apps\nln -sf \"$EXECUTABLE_NAME.app/Contents/Frameworks/Chromium Embedded Framework.framework\" \"$BUILT_PRODUCTS_DIR/Chromium Embedded Framework.framework\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		E4856B8A25552D6800E02BBF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E4CBAD49255A810D005220CE /* Shaders.metal in Sources */,
+				E4856B9625552D6800E02BBF /* ViewController.mm in Sources */,
+				E48571352559551100E02BBF /* AppDelegate.m in Sources */,
+				E4CBADA9255D6B40005220CE /* Renderer.mm in Sources */,
+				E4856B9E25552D6800E02BBF /* main.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4856F272557ECED00E02BBF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E41831FF255E8C3B000B1F04 /* process_helper_mac.cc in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4856FB42557F4EE00E02BBF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E4183232255E8CB1000B1F04 /* process_helper_mac.cc in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4856FCC2557F69300E02BBF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E4183237255E8CB6000B1F04 /* process_helper_mac.cc in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4856FDB2557F6AE00E02BBF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E418323C255E8CBD000B1F04 /* process_helper_mac.cc in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		E4856FEF2557F77F00E02BBF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E4856F2A2557ECED00E02BBF /* cef-app Helper */;
+			targetProxy = E4856FEE2557F77F00E02BBF /* PBXContainerItemProxy */;
+		};
+		E4856FF12557F77F00E02BBF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E4856FB32557F4EE00E02BBF /* cef-app Helper (GPU) */;
+			targetProxy = E4856FF02557F77F00E02BBF /* PBXContainerItemProxy */;
+		};
+		E4856FF32557F77F00E02BBF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E4856FCB2557F69300E02BBF /* cef-app Helper (Plugin) */;
+			targetProxy = E4856FF22557F77F00E02BBF /* PBXContainerItemProxy */;
+		};
+		E4856FF52557F77F00E02BBF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E4856FDA2557F6AE00E02BBF /* cef-app Helper (Renderer) */;
+			targetProxy = E4856FF42557F77F00E02BBF /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		E4856B9925552D6800E02BBF /* Main.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				E4856B9A25552D6800E02BBF /* Base */,
+			);
+			name = Main.storyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		E4856BB625552D6900E02BBF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/cef";
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/cef/Debug",
+					"$(PROJECT_DIR)/cef/build/libcef_dll_wrapper/Debug",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		E4856BB725552D6900E02BBF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/cef";
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/cef/Release",
+					"$(PROJECT_DIR)/cef/build/libcef_dll_wrapper/Release",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		E4856BB925552D6900E02BBF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				FRAMEWORK_SEARCH_PATHS = "$(inherited)";
+				INFOPLIST_FILE = "cef-app/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/cef/Debug",
+					"$(PROJECT_DIR)/cef/build/libcef_dll_wrapper/Debug",
+					"$(PROJECT_DIR)/lib",
+				);
+				OTHER_CODE_SIGN_FLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rune.cef-app";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+			};
+			name = Debug;
+		};
+		E4856BBA25552D6900E02BBF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				FRAMEWORK_SEARCH_PATHS = "$(inherited)";
+				INFOPLIST_FILE = "cef-app/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/cef/Release",
+					"$(PROJECT_DIR)/cef/build/libcef_dll_wrapper/Release",
+					"$(PROJECT_DIR)/lib",
+				);
+				OTHER_CODE_SIGN_FLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rune.cef-app";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+			};
+			name = Release;
+		};
+		E4856F3D2557ECEF00E02BBF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = "cef-app Helper/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/cef/Release",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rune.cef-app.helper";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+			};
+			name = Debug;
+		};
+		E4856F3E2557ECEF00E02BBF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = "cef-app Helper/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/cef/Debug",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rune.cef-app.helper";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+			};
+			name = Release;
+		};
+		E4856FBB2557F4EE00E02BBF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = "cef-app Helper/cef-app Helper (GPU)-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/cef/Release",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rune.cef-app.helper.gpu";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+			};
+			name = Debug;
+		};
+		E4856FBC2557F4EE00E02BBF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = "cef-app Helper/cef-app Helper (GPU)-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/cef/Debug",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rune.cef-app.helper.gpu";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+			};
+			name = Release;
+		};
+		E4856FD32557F69300E02BBF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = "cef-app Helper/cef-app Helper (Plugin)-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/cef/Release",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rune.cef-app.helper.plugin";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+			};
+			name = Debug;
+		};
+		E4856FD42557F69300E02BBF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = "cef-app Helper/cef-app Helper (Plugin)-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/cef/Debug",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rune.cef-app.helper.plugin";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+			};
+			name = Release;
+		};
+		E4856FE22557F6AE00E02BBF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = "cef-app Helper/cef-app Helper (Renderer)-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/cef/Release",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rune.cef-app.helper.renderer";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+			};
+			name = Debug;
+		};
+		E4856FE32557F6AE00E02BBF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = "cef-app Helper/cef-app Helper (Renderer)-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/cef/Debug",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rune.cef-app.helper.renderer";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		E4856B8925552D6800E02BBF /* Build configuration list for PBXProject "cef-app" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E4856BB625552D6900E02BBF /* Debug */,
+				E4856BB725552D6900E02BBF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E4856BB825552D6900E02BBF /* Build configuration list for PBXNativeTarget "cef-app" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E4856BB925552D6900E02BBF /* Debug */,
+				E4856BBA25552D6900E02BBF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E4856F3C2557ECEF00E02BBF /* Build configuration list for PBXNativeTarget "cef-app Helper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E4856F3D2557ECEF00E02BBF /* Debug */,
+				E4856F3E2557ECEF00E02BBF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E4856FBA2557F4EE00E02BBF /* Build configuration list for PBXNativeTarget "cef-app Helper (GPU)" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E4856FBB2557F4EE00E02BBF /* Debug */,
+				E4856FBC2557F4EE00E02BBF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E4856FD22557F69300E02BBF /* Build configuration list for PBXNativeTarget "cef-app Helper (Plugin)" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E4856FD32557F69300E02BBF /* Debug */,
+				E4856FD42557F69300E02BBF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E4856FE12557F6AE00E02BBF /* Build configuration list for PBXNativeTarget "cef-app Helper (Renderer)" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E4856FE22557F6AE00E02BBF /* Debug */,
+				E4856FE32557F6AE00E02BBF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E4856B8625552D6800E02BBF /* Project object */;
+}

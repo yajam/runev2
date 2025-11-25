@@ -147,6 +147,7 @@ impl HtmlTranslator {
             view_id,
             root: builder.root_view_id.clone(),
             nodes: builder.view_nodes,
+            animations: Default::default(),
         };
 
         let data_document = DataDocument {
@@ -540,6 +541,11 @@ impl TranslatorState {
                             }),
                             children: Vec::new(),
                             placements: Vec::new(),
+                            transition: None,
+                            animation: None,
+                            transform: None,
+                            opacity: None,
+                            visibility: None,
                         };
                         if let Some(v2) = &v2_style {
                             if !style.backgrounds.is_empty() {
@@ -974,6 +980,7 @@ impl TranslatorState {
                         widget_id: Some(widget_id),
                         kind: ViewNodeKind::InputBox(InputBoxSpec {
                             width,
+                            text_style: TextStyle::default(),
                             placeholder,
                             input_type,
                             control_id,
@@ -1005,6 +1012,8 @@ impl TranslatorState {
                         widget_id: Some(widget_id),
                         kind: ViewNodeKind::TextArea(TextAreaSpec {
                             width,
+                            style: SurfaceStyle::default(),
+                            text_style: TextStyle::default(),
                             placeholder,
                             control_id,
                             form_id: None,
@@ -2576,6 +2585,11 @@ fn empty_container_spec() -> FlexContainerSpec {
         box_shadow: None,
         scroll: ScrollBehavior::default(),
         children: Vec::new(),
+        transition: None,
+        animation: None,
+        transform: None,
+        opacity: None,
+        visibility: None,
     }
 }
 

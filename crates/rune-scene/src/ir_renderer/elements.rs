@@ -4,18 +4,22 @@ use super::hit_region::HitRegionRegistry;
 use crate::elements::{Alert, AlertPosition, ConfirmDialog, Modal, ModalButton};
 use engine_core::ColorLinPremul;
 use rune_ir::data::document::DataDocument;
-use rune_ir::view::{OverlayContainerSpec, OverlayPosition, ViewNodeId};
+use rune_ir::view::{OverlayContainerSpec, OverlayPosition, TextAlign, ViewNodeId};
 
 /// Render a generic background for any element that exposes a single
 /// `ViewBackground` field (FlexContainer, GridContainer, FormContainer, overlays, etc).
+///
+/// Supports animated background colors via the resolver.
 pub(super) fn render_background_element(
     canvas: &mut rune_surface::Canvas,
     background: &Option<rune_ir::view::ViewBackground>,
     rect: engine_core::Rect,
     z: i32,
+    node_id: &str,
+    resolver: Option<&crate::animation::resolver::AnimatedPropertyResolver>,
 ) {
     if let Some(bg) = background {
-        let brush = brush_from_view_background(bg, rect);
+        let brush = brush_from_view_background_animated(bg, rect, node_id, resolver);
         if std::env::var("RUNE_IR_DEBUG")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
             .unwrap_or(false)
@@ -35,9 +39,11 @@ pub(super) fn render_container_element(
     spec: &rune_ir::view::FlexContainerSpec,
     rect: engine_core::Rect,
     z: i32,
+    node_id: &str,
+    resolver: Option<&crate::animation::resolver::AnimatedPropertyResolver>,
 ) {
     // Render background if present
-    render_background_element(canvas, &spec.background, rect, z);
+    render_background_element(canvas, &spec.background, rect, z, node_id, resolver);
 
     // TODO: Render border if present
     // Children are rendered by recursion from the caller.
@@ -96,11 +102,27 @@ pub(super) fn render_text_element(
         },
     );
 
+    let content_width = (rect.w - pad_x - pad_right).max(0.0);
+    let align = spec
+        .style
+        .text_align
+        .unwrap_or(rune_ir::view::TextAlign::Start);
+    let approx_line_width = |line: &str| line.chars().count() as f32 * size * 0.55;
+
     let base_y = (rect.y + pad_y + lines.ascent).round();
-    let base_x = (rect.x + pad_x).round();
+    let base_x = rect.x + pad_x;
     for (i, line) in lines.lines.iter().enumerate() {
         let y = base_y + (i as f32) * lines.line_height;
-        canvas.draw_text_run([base_x, y], line.clone(), size, color, z);
+        let line_width = approx_line_width(line);
+        let aligned_x = match align {
+            rune_ir::view::TextAlign::Center => {
+                base_x + (content_width - line_width).max(0.0) * 0.5
+            }
+            rune_ir::view::TextAlign::End => base_x + (content_width - line_width).max(0.0),
+            rune_ir::view::TextAlign::Start => base_x,
+        };
+
+        canvas.draw_text_run([aligned_x.round(), y], line.clone(), size, color, z);
     }
 }
 
@@ -318,22 +340,33 @@ pub(super) fn render_select_element(
 ) {
     let options: Vec<String> = spec.options.iter().map(|opt| opt.label.clone()).collect();
 
-    let selected_index = spec
-        .options
-        .iter()
-        .position(|opt| opt.selected)
-        .or_else(|| if options.is_empty() { None } else { Some(0) });
-
-    let label = selected_index
-        .and_then(|idx| options.get(idx).cloned())
-        .or_else(|| spec.placeholder.clone())
-        .unwrap_or_default();
+    let selected_index = spec.options.iter().position(|opt| opt.selected);
+    let placeholder = spec
+        .placeholder
+        .clone()
+        .unwrap_or_else(|| "Select an option".to_string());
+    let label_style = spec.label_style.clone();
+    let label_color = crate::ir_adapter::IrAdapter::color_from_text_style(&label_style);
+    let placeholder_color = engine_core::ColorLinPremul {
+        r: label_color.r,
+        g: label_color.g,
+        b: label_color.b,
+        a: label_color.a * 0.6,
+    };
+    let label_size = crate::ir_adapter::IrAdapter::font_size_from_text_style(&label_style);
+    let (label, is_placeholder) = match selected_index {
+        Some(idx) if idx < options.len() => (options[idx].clone(), false),
+        _ => (placeholder.clone(), true),
+    };
 
     let mut select = crate::elements::Select {
         rect,
         label,
-        label_size: 16.0,
-        label_color: engine_core::ColorLinPremul::from_srgba_u8([20, 24, 30, 255]),
+        placeholder,
+        label_size,
+        label_color,
+        placeholder_color,
+        is_placeholder,
         open: false,
         focused: false,
         options,
@@ -368,10 +401,11 @@ pub(super) fn render_input_box_element(
     use engine_core::{Brush, Color, RoundedRadii, RoundedRect};
     use rune_surface::shapes;
 
-    // Styling driven by spec.style with sensible defaults
+    // Styling driven by spec.style/text_style with sensible defaults
     let radius = spec.style.corner_radius.unwrap_or(6.0) as f32;
     let padding = spec.style.padding;
-    let text_size = 16.0;
+    let text_size = spec.text_style.font_size.unwrap_or(16.0) as f32;
+    let text_color = crate::ir_adapter::IrAdapter::color_from_text_style(&spec.text_style);
 
     let rrect = RoundedRect {
         rect,
@@ -426,25 +460,38 @@ pub(super) fn render_input_box_element(
     let placeholder = spec.placeholder.clone();
     // Center text vertically within the content box
     let content_height = rect.h - (padding.top as f32 + padding.bottom as f32);
-    let text_y = rect.y + padding.top as f32 + (content_height - text_size) * 0.5 + text_size * 0.8;
-    let text_x = rect.x + padding.left as f32;
+    let text_y =
+        rect.y + padding.top as f32 + (content_height - text_size) * 0.5 + text_size * 0.8;
+
+    // Approximate text width so we can honor text_align on inputs.
+    // This mirrors the simple heuristic used in elements::Button (0.5em per char).
+    let compute_x = |text: &str| {
+        let approx_width = text.len() as f32 * text_size * 0.5;
+        let content_width = (rect.w - padding.left as f32 - padding.right as f32).max(0.0);
+        match spec.text_style.text_align.unwrap_or(TextAlign::Start) {
+            TextAlign::Center => {
+                rect.x + padding.left as f32 + (content_width - approx_width).max(0.0) * 0.5
+            }
+            TextAlign::End => {
+                rect.x + padding.left as f32 + (content_width - approx_width).max(0.0)
+            }
+            TextAlign::Start => rect.x + padding.left as f32,
+        }
+    };
 
     if !value.is_empty() {
-        canvas.draw_text_run(
-            [text_x, text_y],
-            value,
-            text_size,
-            engine_core::ColorLinPremul::from_srgba_u8([51, 65, 85, 255]),
-            z + 2,
-        );
+        let text_x = compute_x(&value);
+        canvas.draw_text_run([text_x, text_y], value, text_size, text_color, z + 2);
     } else if let Some(ph) = placeholder {
-        canvas.draw_text_run(
-            [text_x, text_y],
-            ph,
-            text_size,
-            engine_core::ColorLinPremul::from_srgba_u8([148, 163, 184, 255]),
-            z + 2,
-        );
+        // Soften placeholder color relative to text
+        let placeholder_color = engine_core::ColorLinPremul {
+            r: text_color.r,
+            g: text_color.g,
+            b: text_color.b,
+            a: text_color.a * 0.6,
+        };
+        let text_x = compute_x(&ph);
+        canvas.draw_text_run([text_x, text_y], ph, text_size, placeholder_color, z + 2);
     }
 }
 
@@ -458,34 +505,8 @@ pub(super) fn render_text_area_element(
     rect: engine_core::Rect,
     z: i32,
 ) {
-    use engine_core::{Brush, Color, RoundedRadii, RoundedRect};
-    use rune_surface::shapes;
-
-    let radius = 6.0;
-    let rrect = RoundedRect {
-        rect,
-        radii: RoundedRadii {
-            tl: radius,
-            tr: radius,
-            br: radius,
-            bl: radius,
-        },
-    };
-
-    // Background
-    let bg = Color::rgba(45, 52, 71, 255);
-    canvas.rounded_rect(rrect, Brush::Solid(bg), z);
-
-    // Border
-    let border_color = Color::rgba(80, 90, 110, 255);
-    shapes::draw_rounded_rectangle(
-        canvas,
-        rrect,
-        None,
-        Some(1.0),
-        Some(Brush::Solid(border_color)),
-        z + 1,
-    );
+    let pad = 12.0;
+    // Background: none by default (respect "no background" when not provided)
 
     let value = if let Some(node_id) = &view_node.node_id {
         resolve_text_from_data(data_doc, node_id)
@@ -496,23 +517,24 @@ pub(super) fn render_text_area_element(
     };
 
     let placeholder = spec.placeholder.clone();
-    let text_size = 16.0;
+    let text_size = spec.text_style.font_size.unwrap_or(16.0) as f32;
+    let text_color = crate::ir_adapter::IrAdapter::color_from_text_style(&spec.text_style);
+    let placeholder_color = engine_core::ColorLinPremul {
+        r: text_color.r,
+        g: text_color.g,
+        b: text_color.b,
+        a: text_color.a * 0.6,
+    };
     let line_height = text_size * 1.3;
-    let mut y = rect.y + 12.0 + text_size;
-    let x = rect.x + 12.0;
+    let mut y = rect.y + pad + text_size;
+    let x = rect.x + pad;
 
     if !value.is_empty() {
         for line in value.lines() {
             if y > rect.y + rect.h {
                 break;
             }
-            canvas.draw_text_run(
-                [x, y],
-                line.to_string(),
-                text_size,
-                engine_core::ColorLinPremul::from_srgba_u8([240, 240, 240, 255]),
-                z + 2,
-            );
+            canvas.draw_text_run([x, y], line.to_string(), text_size, text_color, z + 2);
             y += line_height;
         }
     } else if let Some(ph) = placeholder {
@@ -520,7 +542,7 @@ pub(super) fn render_text_area_element(
             [x, y],
             ph,
             text_size,
-            engine_core::ColorLinPremul::from_srgba_u8([120, 120, 130, 255]),
+            placeholder_color,
             z + 2,
         );
     }
@@ -685,7 +707,9 @@ pub(super) fn render_table_element(
         // Avoid double-drawing square borders inside the rounded cloak.
         table.border_width = 0.0;
     } else {
-        render_background_element(canvas, &spec.style.background, rect, z);
+        // Table has access to view_node, but no animation resolver in this context
+        // For now, we don't support animated backgrounds on tables
+        render_background_element(canvas, &spec.style.background, rect, z, &view_node.id, None);
     }
 
     table.render(canvas, z);
@@ -1034,6 +1058,7 @@ fn resolve_action_href_from_data(data_doc: &DataDocument, node_id: &str) -> Opti
 }
 
 /// Resolve image source from DataDocument by node_id.
+/// Checks multiple locations for the image file.
 fn resolve_image_source_from_data(
     data_doc: &DataDocument,
     node_id: &str,
@@ -1041,7 +1066,43 @@ fn resolve_image_source_from_data(
     use rune_ir::data::document::DataNodeKind;
     let data_node = data_doc.node(node_id)?;
     match &data_node.kind {
-        DataNodeKind::Image(image_data) => Some(std::path::PathBuf::from(&image_data.source)),
+        DataNodeKind::Image(image_data) => {
+            let source = &image_data.source;
+            let path = std::path::PathBuf::from(source);
+
+            // If absolute path exists, use it
+            if path.is_absolute() && path.exists() {
+                return Some(path);
+            }
+
+            // Try relative to current directory
+            if path.exists() {
+                return Some(path);
+            }
+
+            // Try in macOS app bundle Resources directory
+            if let Ok(exe_path) = std::env::current_exe() {
+                // exe is at App.app/Contents/MacOS/binary
+                // resources are at App.app/Contents/Resources/
+                if let Some(contents_dir) = exe_path.parent().and_then(|p| p.parent()) {
+                    let resources_path = contents_dir.join("Resources").join(source);
+                    if resources_path.exists() {
+                        return Some(resources_path);
+                    }
+                    // Also try without the leading directory (e.g., "images/foo.png" -> "foo.png")
+                    if let Some(filename) = path.file_name() {
+                        let resources_path = contents_dir.join("Resources").join(filename);
+                        if resources_path.exists() {
+                            return Some(resources_path);
+                        }
+                    }
+                }
+            }
+
+            // Return the original path even if it doesn't exist
+            // (the caller will show a placeholder)
+            Some(path)
+        }
         _ => None,
     }
 }
@@ -1060,17 +1121,36 @@ fn resolve_table_from_data(
 }
 
 /// Convert rune-ir ViewBackground to engine-core Brush.
-fn brush_from_view_background(
+/// Create a brush from ViewBackground with optional animation support.
+fn brush_from_view_background_animated(
     bg: &rune_ir::view::ViewBackground,
     rect: engine_core::Rect,
+    node_id: &str,
+    resolver: Option<&crate::animation::resolver::AnimatedPropertyResolver>,
 ) -> engine_core::Brush {
+    use crate::animation::types::AnimatableProperty;
     use rune_ir::view::ViewBackground;
     let default_color = engine_core::ColorLinPremul::from_srgba_u8([40, 45, 65, 255]);
 
     match bg {
-        ViewBackground::Solid { color } => crate::ir_adapter::parse_color(color)
-            .map(engine_core::Brush::Solid)
-            .unwrap_or(engine_core::Brush::Solid(default_color)),
+        ViewBackground::Solid { color } => {
+            let base_color = crate::ir_adapter::parse_color(color).unwrap_or(default_color);
+
+            // Resolve animated background color if available
+            let rgba = if let Some(resolver) = resolver {
+                let base_rgba = [base_color.r, base_color.g, base_color.b, base_color.a];
+                resolver.resolve_color(node_id, AnimatableProperty::BackgroundColor, base_rgba)
+            } else {
+                [base_color.r, base_color.g, base_color.b, base_color.a]
+            };
+
+            engine_core::Brush::Solid(engine_core::ColorLinPremul {
+                r: rgba[0],
+                g: rgba[1],
+                b: rgba[2],
+                a: rgba[3],
+            })
+        }
         ViewBackground::LinearGradient { angle, stops } => {
             let angle_rad = (*angle as f32).to_radians();
             let cx = rect.x + rect.w * 0.5;
@@ -1133,4 +1213,13 @@ fn brush_from_view_background(
             }
         }
     }
+}
+
+/// Non-animated version for backward compatibility.
+#[allow(dead_code)]
+fn brush_from_view_background(
+    bg: &rune_ir::view::ViewBackground,
+    rect: engine_core::Rect,
+) -> engine_core::Brush {
+    brush_from_view_background_animated(bg, rect, "", None)
 }

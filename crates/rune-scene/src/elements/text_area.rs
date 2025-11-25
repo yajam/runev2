@@ -1027,18 +1027,24 @@ impl TextArea {
             base_border_color
         };
         let border_width = if self.focused {
-            base_border_width.max(2.0)
+            if base_border_width > 0.0 {
+                base_border_width.max(2.0)
+            } else {
+                0.0
+            }
         } else {
             base_border_width
         };
-        shapes::draw_rounded_rectangle(
-            canvas,
-            rrect,
-            None,
-            Some(border_width),
-            Some(Brush::Solid(border_color)),
-            z + 1,
-        );
+        if border_width > 0.0 {
+            shapes::draw_rounded_rectangle(
+                canvas,
+                rrect,
+                None,
+                Some(border_width),
+                Some(Brush::Solid(border_color)),
+                z + 1,
+            );
+        }
 
         // Update scroll before rendering
         self.update_scroll();
@@ -1049,13 +1055,23 @@ impl TextArea {
         let content_width = self.rect.w - self.padding_x * 2.0;
         let content_height = self.rect.h - self.padding_y * 2.0;
 
+        // Logical content rect used for text, selection, and caret positioning.
         let content_rect = Rect {
             x: content_x,
             y: content_y,
             w: content_width,
             h: content_height,
         };
-        canvas.push_clip_rect(content_rect);
+
+        // Slightly wider clip rect used only for clipping, so glyphs with negative
+        // left side bearings don't get visually clipped at the left edge.
+        let clip_rect = Rect {
+            x: content_x - 2.0,
+            y: content_y,
+            w: content_width + 4.0,
+            h: content_height,
+        };
+        canvas.push_clip_rect(clip_rect);
 
         if !self.text.is_empty() {
             // Render selection using shared module
@@ -1071,6 +1087,7 @@ impl TextArea {
                     let selection_config = SelectionRenderConfig {
                         content_rect,
                         text_baseline_y: content_y + baseline_offset,
+                        align_x: 0.0,
                         scroll_x: 0.0,
                         scroll_y: self.scroll_y,
                         color: Color::rgba(63, 130, 246, 80),
@@ -1126,6 +1143,7 @@ impl TextArea {
                         content_rect,
                         text_baseline_y,
                         baseline_offset,
+                        align_x: 0.0,
                         scroll_x: 0.0,
                         scroll_y: self.scroll_y,
                         color: Color::rgba(63, 130, 246, 255),

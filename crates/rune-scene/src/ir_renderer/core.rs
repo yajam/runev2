@@ -5,10 +5,14 @@ use std::collections::HashMap;
 use anyhow::{Context as AnyhowContext, Result};
 use rune_ir::{
     data::document::DataDocument,
-    view::{FlexContainerSpec, LayoutDirection, ViewDocument, ViewNode, ViewNodeId, ViewNodeKind},
+    view::{
+        FlexContainerSpec, FormContainerSpec, LayoutDirection, ViewDocument, ViewNode, ViewNodeId,
+        ViewNodeKind,
+    },
 };
 use taffy::prelude::*;
 
+use crate::animation::{AnimationManager, StateTracker};
 use crate::layout::{LayoutContext, Point};
 
 use super::elements;
@@ -64,6 +68,8 @@ pub struct IrRenderer {
 
     /// Last rendered content height in scene space (used for scrolling)
     pub(super) last_content_height: f32,
+    /// Last rendered content width in scene space (used for horizontal scrolling)
+    pub(super) last_content_width: f32,
 
     /// Current content height (layout extent) for element positioning like popups
     pub(super) current_content_height: f32,
@@ -73,6 +79,12 @@ pub struct IrRenderer {
 
     /// Registry for mapping ViewNodeId ↔ hit region IDs
     pub(super) hit_registry: super::hit_region::HitRegionRegistry,
+
+    /// Animation manager for CSS-like transitions and keyframe animations.
+    pub(super) animation_manager: AnimationManager,
+
+    /// State tracker for detecting property changes and triggering transitions.
+    pub(super) state_tracker: StateTracker,
 }
 
 impl IrRenderer {
@@ -85,9 +97,12 @@ impl IrRenderer {
             last_view_signature: None,
             last_layout_size: None,
             last_content_height: 0.0,
+            last_content_width: 0.0,
             current_content_height: 800.0,
             element_state: super::state::IrElementState::new(),
             hit_registry: super::hit_region::HitRegionRegistry::new(),
+            animation_manager: AnimationManager::new(),
+            state_tracker: StateTracker::new(),
         }
     }
 
@@ -106,8 +121,65 @@ impl IrRenderer {
         &self.hit_registry
     }
 
+    /// Get mutable access to animation manager (for starting/controlling animations)
+    pub fn animation_manager_mut(&mut self) -> &mut AnimationManager {
+        &mut self.animation_manager
+    }
+
+    /// Get access to animation manager (for reading animation state)
+    pub fn animation_manager(&self) -> &AnimationManager {
+        &self.animation_manager
+    }
+
+    /// Update animations by the given delta time in milliseconds.
+    ///
+    /// Returns true if any animations are still active and need continuous redraw.
+    pub fn update_animations(&mut self, delta_ms: f32) -> bool {
+        self.animation_manager.update(delta_ms);
+        self.animation_manager.has_active_animations()
+    }
+
+    /// Check if any animations need redraw.
+    pub fn has_active_animations(&self) -> bool {
+        self.animation_manager.has_active_animations()
+    }
+
+    /// Get mutable access to state tracker (for configuring transitions and tracking state).
+    pub fn state_tracker_mut(&mut self) -> &mut StateTracker {
+        &mut self.state_tracker
+    }
+
+    /// Get access to state tracker (for reading state).
+    pub fn state_tracker(&self) -> &StateTracker {
+        &self.state_tracker
+    }
+
+    /// Update hover state for a node and trigger transitions if configured.
+    ///
+    /// Returns true if the hover state changed.
+    pub fn set_node_hovered(&mut self, node_id: &str, hovered: bool) -> bool {
+        self.state_tracker.set_hovered(node_id, hovered)
+    }
+
+    /// Update focus state for a node and trigger transitions if configured.
+    ///
+    /// Returns true if the focus state changed.
+    pub fn set_node_focused(&mut self, node_id: &str, focused: bool) -> bool {
+        self.state_tracker.set_focused(node_id, focused)
+    }
+
+    /// Update active (pressed) state for a node and trigger transitions if configured.
+    ///
+    /// Returns true if the active state changed.
+    pub fn set_node_active(&mut self, node_id: &str, active: bool) -> bool {
+        self.state_tracker.set_active(node_id, active)
+    }
+
     /// Render IR content into a `Canvas` at a given offset/size.
-    pub(crate) fn render_canvas_at_offset(
+    ///
+    /// This is the primary rendering method for embedding IR content within
+    /// a viewport. Returns (content_height, content_width) on success.
+    pub fn render_canvas_at_offset(
         &mut self,
         canvas: &mut rune_surface::Canvas,
         data_doc: &DataDocument,
@@ -117,9 +189,10 @@ impl IrRenderer {
         width: f32,
         layout_height: f32,
         viewport_height: f32,
-        scroll_offset: f32,
+        scroll_offset_x: f32,
+        scroll_offset_y: f32,
         provider: &dyn engine_core::TextProvider,
-    ) -> Result<f32> {
+    ) -> Result<(f32, f32)> {
         let debug_logging = std::env::var("RUNE_IR_DEBUG")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
             .unwrap_or(false);
@@ -188,8 +261,10 @@ impl IrRenderer {
             eprintln!("Starting recursive render...");
         }
         self.last_content_height = 0.0;
-        // Use layout extent (not just visible viewport) so popups decide with full content space.
-        self.current_content_height = layout_height;
+        self.last_content_width = 0.0;
+        // Base popup positioning on the visible viewport height so it doesn't depend
+        // on prior content measurements or render feedback.
+        self.current_content_height = viewport_height;
 
         self.render_view_node_with_elements(
             canvas,
@@ -207,16 +282,45 @@ impl IrRenderer {
             view_doc,
             width,
             viewport_height,
-            scroll_offset,
+            scroll_offset_x,
+            scroll_offset_y,
             provider,
         )?;
 
         let content_height = (self.last_content_height - offset_y).max(layout_height);
+        let content_width = (self.last_content_width - offset_x).max(width);
+
+        // Ensure the root container background extends to the full IR content
+        // height, not just the initial viewport height, so page backgrounds
+        // fill the entire scrollable area.
+        if let Some(root_node) = view_doc.node(&view_doc.root) {
+            use engine_core::Rect;
+            use rune_ir::view::ViewNodeKind;
+
+            let background = match &root_node.kind {
+                ViewNodeKind::FlexContainer(spec) => &spec.background,
+                ViewNodeKind::GridContainer(spec) => &spec.background,
+                ViewNodeKind::FormContainer(spec) => &spec.background,
+                _ => &None,
+            };
+
+            if background.is_some() {
+                let bg_rect = Rect {
+                    x: offset_x,
+                    y: offset_y,
+                    w: width,
+                    h: content_height,
+                };
+                // Use a low z so all content and overlays render above it.
+                // Background has no node_id, so no animation support
+                super::elements::render_background_element(canvas, background, bg_rect, 0, "", None);
+            }
+        }
 
         if debug_logging {
             eprintln!("=== render_ir_document END ===\n");
         }
-        Ok(content_height)
+        Ok((content_height, content_width))
     }
 
     /// Render IR content into a `Canvas` at origin (0,0).
@@ -228,9 +332,9 @@ impl IrRenderer {
         width: f32,
         height: f32,
         provider: &dyn engine_core::TextProvider,
-    ) -> Result<f32> {
+    ) -> Result<(f32, f32)> {
         self.render_canvas_at_offset(
-            canvas, data_doc, view_doc, 0.0, 0.0, width, height, height, 0.0, provider,
+            canvas, data_doc, view_doc, 0.0, 0.0, width, height, height, 0.0, 0.0, provider,
         )
     }
 
@@ -253,7 +357,7 @@ impl IrRenderer {
         // while still expanding to fit content (including padding) when taller.
         if is_root {
             style.size.width = percent(1.0);
-            style.size.height = auto_dimension();
+            style.size.height = percent(1.0);
             style.min_size.width = percent(1.0);
             style.min_size.height = percent(1.0);
         }
@@ -305,10 +409,16 @@ impl IrRenderer {
         Ok(taffy_node)
     }
 
-    /// Convert ViewNode to Taffy Style.
+    /// Convert ViewNode to Taffy Style with animated property resolution.
     fn view_node_to_taffy_style(&self, node: &ViewNode, data_doc: &DataDocument) -> Result<Style> {
+        use crate::animation::resolver::AnimatedPropertyResolver;
+
+        let resolver = AnimatedPropertyResolver::new(&self.animation_manager);
+        let node_id = &node.id;
+
         match &node.kind {
-            ViewNodeKind::FlexContainer(spec) => self.flex_container_style(spec),
+            ViewNodeKind::FlexContainer(spec) => self.flex_container_style_animated(spec, node_id, &resolver),
+            ViewNodeKind::FormContainer(spec) => self.form_container_style_animated(spec, node_id, &resolver),
             ViewNodeKind::Text(spec) => Ok(self.text_style_from_spec(spec)),
             ViewNodeKind::Button(spec) => Ok(self.button_style(spec)),
             ViewNodeKind::Image(spec) => Ok(self.image_style(spec)),
@@ -321,6 +431,7 @@ impl IrRenderer {
             ViewNodeKind::Select(spec) => Ok(self.select_style(spec)),
             ViewNodeKind::FileInput(spec) => Ok(self.file_input_style(spec)),
             ViewNodeKind::DatePicker(spec) => Ok(self.date_picker_style(spec)),
+            ViewNodeKind::WebView(spec) => Ok(self.webview_style(spec)),
             ViewNodeKind::Alert(_) | ViewNodeKind::Modal(_) | ViewNodeKind::Confirm(_) => {
                 Ok(Style {
                     // Overlays are rendered separately; exclude them from flow layout.
@@ -333,7 +444,93 @@ impl IrRenderer {
         }
     }
 
-    /// Convert FlexContainerSpec to Taffy Style.
+    /// Convert FlexContainerSpec to Taffy Style with animated property resolution.
+    fn flex_container_style_animated(
+        &self,
+        spec: &FlexContainerSpec,
+        node_id: &str,
+        resolver: &crate::animation::resolver::AnimatedPropertyResolver,
+    ) -> Result<Style> {
+        use crate::animation::types::AnimatableProperty;
+
+        // Resolve animated layout properties
+        let width = spec.width.map(|w| resolver.resolve_f64(node_id, AnimatableProperty::Width, w) as f32);
+        let height = spec.height.map(|h| resolver.resolve_f64(node_id, AnimatableProperty::Height, h) as f32);
+        let min_width = spec.min_width.map(|w| resolver.resolve_f64(node_id, AnimatableProperty::MinWidth, w) as f32);
+        let min_height = spec.min_height.map(|h| resolver.resolve_f64(node_id, AnimatableProperty::MinHeight, h) as f32);
+        let max_width = spec.max_width.map(|w| resolver.resolve_f64(node_id, AnimatableProperty::MaxWidth, w) as f32);
+        let max_height = spec.max_height.map(|h| resolver.resolve_f64(node_id, AnimatableProperty::MaxHeight, h) as f32);
+
+        let padding_top = resolver.resolve_f64(node_id, AnimatableProperty::PaddingTop, spec.padding.top) as f32;
+        let padding_right = resolver.resolve_f64(node_id, AnimatableProperty::PaddingRight, spec.padding.right) as f32;
+        let padding_bottom = resolver.resolve_f64(node_id, AnimatableProperty::PaddingBottom, spec.padding.bottom) as f32;
+        let padding_left = resolver.resolve_f64(node_id, AnimatableProperty::PaddingLeft, spec.padding.left) as f32;
+
+        let margin_top = resolver.resolve_f64(node_id, AnimatableProperty::MarginTop, spec.margin.top) as f32;
+        let margin_right = resolver.resolve_f64(node_id, AnimatableProperty::MarginRight, spec.margin.right) as f32;
+        let margin_bottom = resolver.resolve_f64(node_id, AnimatableProperty::MarginBottom, spec.margin.bottom) as f32;
+        let margin_left = resolver.resolve_f64(node_id, AnimatableProperty::MarginLeft, spec.margin.left) as f32;
+
+        Ok(Style {
+            display: Display::Flex,
+            flex_direction: match spec.layout.direction {
+                LayoutDirection::Row => FlexDirection::Row,
+                LayoutDirection::Column => FlexDirection::Column,
+            },
+            align_items: layout_align_to_taffy(spec.layout.align),
+            justify_content: layout_justify_to_taffy(spec.layout.justify),
+            flex_wrap: if spec.layout.wrap {
+                FlexWrap::Wrap
+            } else {
+                FlexWrap::NoWrap
+            },
+            gap: Size {
+                width: length_percentage(spec.layout.gap as f32),
+                height: length_percentage(spec.layout.gap as f32),
+            },
+            padding: taffy::Rect {
+                left: length_percentage(padding_left),
+                right: length_percentage(padding_right),
+                top: length_percentage(padding_top),
+                bottom: length_percentage(padding_bottom),
+            },
+            margin: taffy::Rect {
+                left: self.margin_value(margin_left, spec.margin_left_auto),
+                right: self.margin_value(margin_right, spec.margin_right_auto),
+                top: length(margin_top),
+                bottom: length(margin_bottom),
+            },
+            size: Size {
+                width: width
+                    .map(|w| dimension(w))
+                    .unwrap_or(auto_dimension()),
+                height: height
+                    .map(|h| dimension(h))
+                    .unwrap_or(auto_dimension()),
+            },
+            min_size: Size {
+                width: min_width
+                    .map(|w| dimension(w))
+                    .unwrap_or(auto_dimension()),
+                height: min_height
+                    .map(|h| dimension(h))
+                    .unwrap_or(auto_dimension()),
+            },
+            max_size: Size {
+                width: max_width
+                    .map(|w| dimension(w))
+                    .unwrap_or(auto_dimension()),
+                height: max_height
+                    .map(|h| dimension(h))
+                    .unwrap_or(auto_dimension()),
+            },
+            flex_shrink: 0.0,
+            ..Default::default()
+        })
+    }
+
+    /// Convert FlexContainerSpec to Taffy Style (non-animated fallback).
+    #[allow(dead_code)]
     fn flex_container_style(&self, spec: &FlexContainerSpec) -> Result<Style> {
         Ok(Style {
             display: Display::Flex,
@@ -492,7 +689,7 @@ impl IrRenderer {
                     .map(|h| dimension(h as f32))
                     .unwrap_or(auto_dimension()),
             },
-            align_self: Some(AlignSelf::Stretch),
+            align_self: None, // Let parent align_items decide unless explicitly set in style.
             flex_shrink: 0.0,
             ..Default::default()
         }
@@ -517,6 +714,119 @@ impl IrRenderer {
         }
 
         style
+    }
+
+    /// Convert FormContainerSpec to Taffy Style (same flex defaults as containers).
+    /// Convert FormContainerSpec to Taffy Style with animated property resolution.
+    fn form_container_style_animated(
+        &self,
+        spec: &FormContainerSpec,
+        node_id: &str,
+        resolver: &crate::animation::resolver::AnimatedPropertyResolver,
+    ) -> Result<Style> {
+        use crate::animation::types::AnimatableProperty;
+
+        // Resolve animated layout properties
+        let width = spec.width.map(|w| resolver.resolve_f64(node_id, AnimatableProperty::Width, w) as f32);
+        let height = spec.height.map(|h| resolver.resolve_f64(node_id, AnimatableProperty::Height, h) as f32);
+
+        let padding_top = resolver.resolve_f64(node_id, AnimatableProperty::PaddingTop, spec.padding.top) as f32;
+        let padding_right = resolver.resolve_f64(node_id, AnimatableProperty::PaddingRight, spec.padding.right) as f32;
+        let padding_bottom = resolver.resolve_f64(node_id, AnimatableProperty::PaddingBottom, spec.padding.bottom) as f32;
+        let padding_left = resolver.resolve_f64(node_id, AnimatableProperty::PaddingLeft, spec.padding.left) as f32;
+
+        let margin_top = resolver.resolve_f64(node_id, AnimatableProperty::MarginTop, spec.margin.top) as f32;
+        let margin_right = resolver.resolve_f64(node_id, AnimatableProperty::MarginRight, spec.margin.right) as f32;
+        let margin_bottom = resolver.resolve_f64(node_id, AnimatableProperty::MarginBottom, spec.margin.bottom) as f32;
+        let margin_left = resolver.resolve_f64(node_id, AnimatableProperty::MarginLeft, spec.margin.left) as f32;
+
+        Ok(Style {
+            display: Display::Flex,
+            flex_direction: match spec.layout.direction {
+                LayoutDirection::Row => FlexDirection::Row,
+                LayoutDirection::Column => FlexDirection::Column,
+            },
+            align_items: layout_align_to_taffy(spec.layout.align),
+            justify_content: layout_justify_to_taffy(spec.layout.justify),
+            flex_wrap: if spec.layout.wrap {
+                FlexWrap::Wrap
+            } else {
+                FlexWrap::NoWrap
+            },
+            gap: Size {
+                width: length_percentage(spec.layout.gap as f32),
+                height: length_percentage(spec.layout.gap as f32),
+            },
+            padding: taffy::Rect {
+                left: length_percentage(padding_left),
+                right: length_percentage(padding_right),
+                top: length_percentage(padding_top),
+                bottom: length_percentage(padding_bottom),
+            },
+            margin: taffy::Rect {
+                left: length(margin_left),
+                right: length(margin_right),
+                top: length(margin_top),
+                bottom: length(margin_bottom),
+            },
+            size: Size {
+                width: width
+                    .map(|w| dimension(w))
+                    .unwrap_or(auto_dimension()),
+                height: height
+                    .map(|h| dimension(h))
+                    .unwrap_or(auto_dimension()),
+            },
+            flex_shrink: 0.0,
+            ..Default::default()
+        })
+    }
+
+    /// Convert FormContainerSpec to Taffy Style (non-animated fallback).
+    #[allow(dead_code)]
+    fn form_container_style(&self, spec: &FormContainerSpec) -> Result<Style> {
+        Ok(Style {
+            display: Display::Flex,
+            flex_direction: match spec.layout.direction {
+                LayoutDirection::Row => FlexDirection::Row,
+                LayoutDirection::Column => FlexDirection::Column,
+            },
+            align_items: layout_align_to_taffy(spec.layout.align),
+            justify_content: layout_justify_to_taffy(spec.layout.justify),
+            flex_wrap: if spec.layout.wrap {
+                FlexWrap::Wrap
+            } else {
+                FlexWrap::NoWrap
+            },
+            gap: Size {
+                width: length_percentage(spec.layout.gap as f32),
+                height: length_percentage(spec.layout.gap as f32),
+            },
+            padding: taffy::Rect {
+                left: length_percentage(spec.padding.left as f32),
+                right: length_percentage(spec.padding.right as f32),
+                top: length_percentage(spec.padding.top as f32),
+                bottom: length_percentage(spec.padding.bottom as f32),
+            },
+            margin: taffy::Rect {
+                left: length(spec.margin.left as f32),
+                right: length(spec.margin.right as f32),
+                top: length(spec.margin.top as f32),
+                bottom: length(spec.margin.bottom as f32),
+            },
+            size: Size {
+                width: spec
+                    .width
+                    .map(|w| dimension(w as f32))
+                    .unwrap_or(auto_dimension()),
+                height: spec
+                    .height
+                    .map(|h| dimension(h as f32))
+                    .unwrap_or(auto_dimension()),
+            },
+            flex_shrink: 0.0,
+            ..Default::default()
+        })
     }
 
     /// InputBox style combines SurfaceStyle with width fallback and default height.
@@ -560,15 +870,15 @@ impl IrRenderer {
 
     /// TextArea style combines SurfaceStyle with width/height defaults.
     fn text_area_style(&self, spec: &rune_ir::view::TextAreaSpec) -> Style {
-        let mut style = Style::default();
+        let mut style = self.surface_style(&spec.style);
 
         if let Some(w) = spec.width {
             style.size.width = dimension(w as f32);
         }
 
-        // Give text areas a reasonable height if not specified.
+        // Give text areas a reasonable height if not specified in style.
         if matches!(style.size.height, Dimension::Auto) {
-            let h = 140.0_f32;
+            let h = spec.style.height.unwrap_or(140.0) as f32;
             style.size.height = dimension(h);
             style.min_size.height = dimension(h);
         }
@@ -694,23 +1004,30 @@ impl IrRenderer {
 
     /// File input style: stretch by default with a sensible height.
     fn file_input_style(&self, spec: &rune_ir::view::FileInputSpec) -> Style {
-        let mut style = Style {
-            align_self: Some(AlignSelf::Stretch),
-            flex_shrink: 0.0,
-            ..Default::default()
-        };
+        // Start from generic surface style so background/padding/radius from IR
+        // are honored consistently across widgets.
+        let mut style = self.surface_style(&spec.style);
 
+        // Ensure file inputs stretch to fill available width by default.
         if let Some(w) = spec.width {
             style.size.width = dimension(w as f32);
-        } else {
+        } else if matches!(style.size.width, Dimension::Auto) {
             style.size.width = percent(1.0);
         }
 
         // File inputs should keep a consistent field height similar to selects.
-        let h = 44.0_f32;
-        style.size.height = dimension(h);
-        style.min_size.height = dimension(h);
+        if matches!(style.size.height, Dimension::Auto) {
+            let h = 44.0_f32;
+            style.size.height = dimension(h);
+            style.min_size.height = dimension(h);
+        }
 
+        // Default to stretch if align_self was not specified.
+        if style.align_self.is_none() {
+            style.align_self = Some(AlignSelf::Stretch);
+        }
+
+        style.flex_shrink = 0.0;
         style
     }
 
@@ -747,6 +1064,30 @@ impl IrRenderer {
             style.min_size.height = dimension(padding + base_row_height + border * 2.0);
         }
 
+        style
+    }
+
+    /// WebView style: honor explicit width/height, otherwise fill available space
+    fn webview_style(&self, spec: &rune_ir::view::WebViewSpec) -> Style {
+        let mut style = self.surface_style(&spec.style);
+
+        // Use explicit dimensions if provided, otherwise default to full width/height
+        if matches!(style.size.width, Dimension::Auto) {
+            style.size.width = percent(1.0); // Full width by default
+        }
+        if matches!(style.size.height, Dimension::Auto) {
+            // Fill the parent height (viewport) by default so WebView
+            // content occupies the full vertical space of its zone.
+            style.size.height = percent(1.0);
+        }
+        if matches!(style.min_size.width, Dimension::Auto) {
+            style.min_size.width = dimension(100.0);
+        }
+        if matches!(style.min_size.height, Dimension::Auto) {
+            style.min_size.height = dimension(100.0);
+        }
+
+        style.flex_shrink = 0.0;
         style
     }
 
@@ -909,7 +1250,8 @@ impl IrRenderer {
     /// Render a single ViewNode tree into a `Canvas` using element helpers.
     ///
     /// This function now uses stateful elements for interactive components
-    /// and adds hit regions for click detection.
+    /// and adds hit regions for click detection. It also applies CSS-like
+    /// animations (opacity, transform, colors, etc.) during rendering.
     fn render_view_node_with_elements(
         &mut self,
         canvas: &mut rune_surface::Canvas,
@@ -943,8 +1285,93 @@ impl IrRenderer {
         let scene_rect = ctx.to_scene_rect(layout);
         let z = ctx.z_index(layout.order);
 
+        // Create animation resolver for this render pass
+        use crate::animation::resolver::AnimatedPropertyResolver;
+        use crate::animation::transform::TransformOrigin;
+        use crate::animation::types::{AnimatableTransform, Visibility};
+
+        let resolver = AnimatedPropertyResolver::new(&self.animation_manager);
+
+        // Check visibility (skip rendering if Hidden or Collapsed)
+        let visibility = resolver.resolve_visibility(view_node_id, Visibility::Visible);
+        if visibility != Visibility::Visible {
+            // Collapsed elements are removed from layout (handled by Taffy)
+            // Hidden elements skip rendering but maintain layout space
+            if visibility == Visibility::Hidden {
+                // Skip rendering children too
+                return Ok(());
+            }
+        }
+
+        // Resolve opacity (applies to entire element tree)
+        let base_opacity = match &view_node.kind {
+            ViewNodeKind::FlexContainer(spec) => spec.opacity.unwrap_or(1.0),
+            ViewNodeKind::GridContainer(spec) => spec.opacity.unwrap_or(1.0),
+            _ => 1.0,
+        };
+        let opacity = resolver.resolve_opacity(view_node_id, base_opacity);
+
+        // Resolve transform
+        let base_transform = match &view_node.kind {
+            ViewNodeKind::FlexContainer(spec) => {
+                if let Some(ref transform_spec) = spec.transform {
+                    crate::animation::types::AnimatableTransform::from_spec(transform_spec)
+                } else {
+                    AnimatableTransform::default()
+                }
+            }
+            ViewNodeKind::GridContainer(spec) => {
+                if let Some(ref transform_spec) = spec.transform {
+                    crate::animation::types::AnimatableTransform::from_spec(transform_spec)
+                } else {
+                    AnimatableTransform::default()
+                }
+            }
+            _ => AnimatableTransform::default(),
+        };
+
+        let transform_origin = TransformOrigin::center(); // TODO: Get from spec
+        let transform_matrix = resolver.resolve_transform_matrix(
+            view_node_id,
+            base_transform,
+            scene_rect.w as f64,
+            scene_rect.h as f64,
+            transform_origin,
+        );
+
+        // Apply transform and opacity to canvas state
+        let has_transform = !transform_matrix.is_identity(0.001);
+        let has_opacity = (opacity - 1.0).abs() > 0.001;
+
+        if has_transform {
+            // Apply transform via canvas transform stack
+            // Note: Animation transform is already composed with origin via resolve_transform_matrix
+            use engine_core::Transform2D;
+            let matrix = transform_matrix.to_matrix4x4();
+            // engine_core::Transform2D uses a 3x2 affine matrix: [a b c d e f]
+            // From 4x4 [[a, c, 0, tx], [b, d, 0, ty], ...]:
+            // a=matrix[0][0], b=matrix[1][0], c=matrix[0][1], d=matrix[1][1], e=matrix[0][3], f=matrix[1][3]
+            canvas.push_transform(Transform2D {
+                m: [
+                    matrix[0][0] as f32, // a
+                    matrix[1][0] as f32, // b
+                    matrix[0][1] as f32, // c
+                    matrix[1][1] as f32, // d
+                    matrix[0][3] as f32, // e (tx)
+                    matrix[1][3] as f32, // f (ty)
+                ],
+            });
+        }
+
+        if has_opacity && opacity < 1.0 {
+            // Note: Canvas doesn't have direct opacity support yet
+            // For now, we'll apply opacity to individual colors during rendering
+            // TODO: Implement canvas.push_opacity() for proper opacity layers
+        }
+
         // Track rendered bounds to compute scrollable content height.
         self.last_content_height = self.last_content_height.max(scene_rect.y + scene_rect.h);
+        self.last_content_width = self.last_content_width.max(scene_rect.x + scene_rect.w);
 
         let node_type = match &view_node.kind {
             ViewNodeKind::FlexContainer(_) => "FlexContainer",
@@ -963,6 +1390,7 @@ impl IrRenderer {
             ViewNodeKind::FileInput(_) => "FileInput",
             ViewNodeKind::DatePicker(_) => "DatePicker",
             ViewNodeKind::Table(_) => "Table",
+            ViewNodeKind::WebView(_) => "WebView",
             ViewNodeKind::Alert(_) => "Alert",
             ViewNodeKind::Modal(_) => "Modal",
             ViewNodeKind::Confirm(_) => "Confirm",
@@ -978,13 +1406,13 @@ impl IrRenderer {
         // Render this node using appropriate element
         match &view_node.kind {
             ViewNodeKind::FlexContainer(spec) => {
-                elements::render_container_element(canvas, spec, scene_rect, z);
+                elements::render_container_element(canvas, spec, scene_rect, z, view_node_id, Some(&resolver));
             }
             ViewNodeKind::GridContainer(spec) => {
-                elements::render_background_element(canvas, &spec.background, scene_rect, z);
+                elements::render_background_element(canvas, &spec.background, scene_rect, z, view_node_id, Some(&resolver));
             }
             ViewNodeKind::FormContainer(spec) => {
-                elements::render_background_element(canvas, &spec.background, scene_rect, z);
+                elements::render_background_element(canvas, &spec.background, scene_rect, z, view_node_id, Some(&resolver));
             }
             ViewNodeKind::Text(spec) => {
                 elements::render_text_element(canvas, data_doc, view_node, spec, scene_rect, z);
@@ -1120,6 +1548,88 @@ impl IrRenderer {
             ViewNodeKind::Table(spec) => {
                 elements::render_table_element(canvas, data_doc, view_node, spec, scene_rect, z);
             }
+            #[cfg(feature = "webview-cef")]
+            ViewNodeKind::WebView(spec) => {
+                // Get or create stateful WebView element
+                let webview =
+                    self.element_state
+                        .get_or_create_webview(view_node_id, spec, scene_rect);
+
+                // Render the WebView container (background, border, loading indicator)
+                webview.render(canvas, z);
+
+                // Register hit region for mouse events
+                let region_id = self.hit_registry.register(view_node_id);
+                canvas.hit_region_rect(region_id, scene_rect, z + 10);
+
+                // Note: The actual browser texture is rendered via the image pipeline
+                // after the CEF frame is captured and uploaded. This requires additional
+                // integration in the render loop to call webview.update_frame() and
+                // render the texture via the image shader.
+            }
+            #[cfg(not(feature = "webview-cef"))]
+            ViewNodeKind::WebView(_spec) => {
+                // Store the WebView rect for FFI queries (size and position).
+                // Apply the canvas transform to get screen coordinates (same as draw_raw_image).
+                // This allows FFI hit testing to work correctly even before pixels arrive.
+                let transform = canvas.current_transform();
+                let [a, b, c, d, e, f] = transform.m;
+                let screen_x = a * scene_rect.x + c * scene_rect.y + e;
+                let screen_y = b * scene_rect.x + d * scene_rect.y + f;
+                crate::elements::webview::set_webview_rect(
+                    screen_x,
+                    screen_y,
+                    scene_rect.w,
+                    scene_rect.h,
+                );
+
+                // Native NSView-based CEF rendering: CEF renders to its own native view
+                // which is composited by macOS on top of our wgpu surface. We just need
+                // to register a hit region for any non-webview hit testing and leave a
+                // transparent hole in the wgpu surface where the webview appears.
+                //
+                // The native CEF view is positioned by ViewController.mm based on the
+                // webview rect we set above via set_webview_rect().
+                let webview_z = 500;
+
+                // Check if native CEF view is active (set by FFI from Objective-C side)
+                if crate::elements::webview::has_native_cef_view() {
+                    // Native mode: CEF renders to its own NSView, composited by macOS.
+                    // We don't render anything here - just register a hit region so
+                    // clicks outside the webview are handled by our hit testing.
+                    // Clicks inside the webview go to CEF's native view directly.
+                    let region_id = self.hit_registry.register(view_node_id);
+                    canvas.hit_region_rect(region_id, scene_rect, webview_z + 10);
+                } else {
+                    // No native CEF view - show placeholder until one is created.
+                    let placeholder_color =
+                        engine_core::ColorLinPremul::from_srgba_u8([240, 240, 240, 255]);
+                    canvas.fill_rect(
+                        scene_rect.x,
+                        scene_rect.y,
+                        scene_rect.w,
+                        scene_rect.h,
+                        engine_core::Brush::Solid(placeholder_color),
+                        z,
+                    );
+                    let text_color =
+                        engine_core::ColorLinPremul::from_srgba_u8([100, 100, 100, 255]);
+                    canvas.draw_text_run(
+                        [
+                            scene_rect.x + scene_rect.w * 0.5 - 50.0,
+                            scene_rect.y + scene_rect.h * 0.5,
+                        ],
+                        "WebView loading...".to_string(),
+                        14.0,
+                        text_color,
+                        z + 1,
+                    );
+
+                    // Register hit region even when placeholder is shown.
+                    let region_id = self.hit_registry.register(view_node_id);
+                    canvas.hit_region_rect(region_id, scene_rect, z + 10);
+                }
+            }
             ViewNodeKind::Alert(_) | ViewNodeKind::Modal(_) | ViewNodeKind::Confirm(_) => {
                 // Overlays are rendered separately in a post-render pass
                 // only when they are active. Skip rendering here.
@@ -1142,6 +1652,11 @@ impl IrRenderer {
             ctx.pop(); // Pop transform
         }
 
+        // Pop animation transforms
+        if has_transform {
+            canvas.pop_transform(); // Pop the transform matrix
+        }
+
         Ok(())
     }
 
@@ -1153,7 +1668,8 @@ impl IrRenderer {
         view_doc: &ViewDocument,
         viewport_width: f32,
         viewport_height: f32,
-        scroll_offset: f32,
+        scroll_offset_x: f32,
+        scroll_offset_y: f32,
         _provider: &dyn engine_core::TextProvider,
     ) -> Result<()> {
         use engine_core::Transform2D;
@@ -1169,7 +1685,7 @@ impl IrRenderer {
 
         // Counteract the scroll transform so overlays stay fixed relative to the viewport.
         // The viewport position is handled by the canvas transform stack (set by runner.rs).
-        canvas.push_transform(Transform2D::translate(0.0, scroll_offset));
+        canvas.push_transform(Transform2D::translate(scroll_offset_x, scroll_offset_y));
 
         for (overlay_index, active_overlay) in active_overlays.iter().enumerate() {
             let overlay_z = overlay_base_z + (overlay_index as i32 * 100);

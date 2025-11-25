@@ -33,8 +33,10 @@ use engine_core::{ColorLinPremul, Rect};
 use rune_ir::data::document::DataDocument;
 use rune_ir::view::{
     ButtonSpec, CheckboxSpec, DatePickerSpec, FileInputSpec, InputBoxSpec, RadioSpec, SelectSpec,
-    TextAreaSpec, ViewNode, ViewNodeId,
+    TextAlign, TextAreaSpec, ViewNode, ViewNodeId,
 };
+#[cfg(feature = "webview-cef")]
+use rune_ir::view::WebViewSpec;
 use std::collections::HashMap;
 
 /// Element type identifier for focus management
@@ -52,6 +54,8 @@ pub enum IrElementType {
     Modal,
     Alert,
     Confirm,
+    #[cfg(feature = "webview-cef")]
+    WebView,
 }
 
 /// Represents an active overlay (modal, alert, or confirm)
@@ -107,6 +111,15 @@ pub struct IrElementState {
     /// File input elements
     file_inputs: HashMap<ViewNodeId, elements::FileInput>,
 
+    /// WebView elements (CEF/Chrome browser instances)
+    #[cfg(feature = "webview-cef")]
+    webviews: HashMap<ViewNodeId, elements::WebView>,
+
+    /// Home-tab chat state: once a query has been submitted from the
+    /// home_tab input, we treat the hero banner and greeting as dismissed
+    /// so subsequent renders can hide them.
+    home_chat_started: bool,
+
     /// Currently focused element (if any)
     focused_element: Option<(ViewNodeId, IrElementType)>,
 
@@ -132,6 +145,9 @@ impl IrElementState {
             selects: HashMap::new(),
             date_pickers: HashMap::new(),
             file_inputs: HashMap::new(),
+            #[cfg(feature = "webview-cef")]
+            webviews: HashMap::new(),
+            home_chat_started: false,
             focused_element: None,
             dirty: false,
             active_overlays: Vec::new(),
@@ -150,6 +166,9 @@ impl IrElementState {
         self.selects.clear();
         self.date_pickers.clear();
         self.file_inputs.clear();
+        #[cfg(feature = "webview-cef")]
+        self.webviews.clear();
+        self.home_chat_started = false;
         self.focused_element = None;
         self.dirty = false;
         self.active_overlays.clear();
@@ -168,6 +187,17 @@ impl IrElementState {
     /// Mark state as dirty (needs redraw)
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
+    }
+
+    /// Mark that Home Tab chat has started (first query submitted).
+    pub fn mark_home_chat_started(&mut self) {
+        self.home_chat_started = true;
+        self.dirty = true;
+    }
+
+    /// Check if Home Tab chat has started.
+    pub fn home_chat_started(&self) -> bool {
+        self.home_chat_started
     }
 
     // ========================================================================
@@ -195,26 +225,64 @@ impl IrElementState {
                 // Use default value from spec (data binding would be resolved separately)
                 let text = spec.default_value.clone().unwrap_or_default();
 
-                // Default to dark text so it works on light backgrounds (IR spec has no text color).
+                // Default text styling; overridden below if IR provides text_style.
                 let text_color = ColorLinPremul::from_srgba_u8([26, 32, 44, 255]);
-
-                // Use default font size (IR specs use SurfaceStyle which doesn't expose font_size)
                 let text_size = 16.0;
 
-                elements::InputBox::new(
+                let mut input = elements::InputBox::new(
                     rect,
                     text,
                     text_size,
                     text_color,
                     spec.placeholder.clone(),
                     false, // initial focus state
-                )
+                );
+                input.apply_surface_style(&spec.style);
+                if spec.style.background.is_none() {
+                    input.bg_color = ColorLinPremul::from_srgba_u8([0, 0, 0, 0]);
+                }
+                input
             });
-        entry.apply_surface_style(&spec.style);
 
         // CRITICAL: Update rect every frame to handle window resize and layout changes
         entry.rect = rect;
+        entry.apply_surface_style(&spec.style);
+        if spec.style.background.is_none() {
+            entry.bg_color = ColorLinPremul::from_srgba_u8([0, 0, 0, 0]);
+        }
+        // Apply text styling from IR
+        if let Some(color) = spec
+            .text_style
+            .color
+            .as_ref()
+            .and_then(|c| crate::ir_adapter::parse_color(c))
+        {
+            entry.text_color = color;
+        }
+        if let Some(size) = spec.text_style.font_size {
+            entry.text_size = size as f32;
+        }
+        entry.text_align = spec
+            .text_style
+            .text_align
+            .unwrap_or(TextAlign::Start);
         entry
+    }
+
+    /// Get a mutable reference to an InputBox by view node id.
+    pub fn get_input_box_mut(
+        &mut self,
+        view_node_id: &ViewNodeId,
+    ) -> Option<&mut elements::InputBox> {
+        self.input_boxes.get_mut(view_node_id)
+    }
+
+    /// Get an immutable reference to an InputBox by view node id.
+    pub fn get_input_box(
+        &self,
+        view_node_id: &ViewNodeId,
+    ) -> Option<&elements::InputBox> {
+        self.input_boxes.get(view_node_id)
     }
 
     /// Get or create a TextArea element for the given ViewNode
@@ -235,18 +303,38 @@ impl IrElementState {
                 let text_color = ColorLinPremul::from_srgba_u8([26, 32, 44, 255]);
                 let text_size = 16.0;
 
-                elements::TextArea::new(
+                let mut textarea = elements::TextArea::new(
                     rect,
                     text,
                     text_size,
                     text_color,
                     spec.placeholder.clone(),
                     false, // initial focus state
-                )
+                );
+                textarea.apply_surface_style(&spec.style);
+                if spec.style.background.is_none() {
+                    textarea.bg_color = ColorLinPremul::from_srgba_u8([0, 0, 0, 0]);
+                }
+                textarea
             });
 
         // CRITICAL: Update rect every frame to handle window resize and layout changes
-        entry.rect = rect;
+        entry.set_rect(rect);
+        entry.apply_surface_style(&spec.style);
+        if spec.style.background.is_none() {
+            entry.bg_color = ColorLinPremul::from_srgba_u8([0, 0, 0, 0]);
+        }
+        if let Some(color) = spec
+            .text_style
+            .color
+            .as_ref()
+            .and_then(|c| crate::ir_adapter::parse_color(c))
+        {
+            entry.text_color = color;
+        }
+        if let Some(size) = spec.text_style.font_size {
+            entry.text_size = size as f32;
+        }
         entry
     }
 
@@ -350,7 +438,27 @@ impl IrElementState {
         checkbox.box_fill = colors.fill;
         checkbox.border_color = colors.border;
         checkbox.border_width = colors.border_width;
-        checkbox.label_color = ColorLinPremul::from_srgba_u8([51, 65, 85, 255]);
+        // Use IR-provided label color when present
+        if let Some(style) = spec.label_style.as_ref() {
+            if let Some(c) = style
+                .color
+                .as_ref()
+                .and_then(|c| crate::ir_adapter::parse_color(c))
+            {
+                checkbox.label_color = c;
+            }
+            if let Some(size) = style.font_size {
+                checkbox.label_size = size as f32;
+            }
+        } else if let Some(c) = spec
+            .label_color
+            .as_ref()
+            .and_then(|c| crate::ir_adapter::parse_color(c))
+        {
+            checkbox.label_color = c;
+        } else {
+            checkbox.label_color = ColorLinPremul::from_srgba_u8([51, 65, 85, 255]);
+        }
         checkbox.check_color = ColorLinPremul::from_srgba_u8([63, 130, 246, 255]);
         checkbox
     }
@@ -402,7 +510,29 @@ impl IrElementState {
             entry.bg = colors.fill;
             entry.border_color = colors.border;
             entry.border_width = colors.border_width;
-            entry.label_color = ColorLinPremul::from_srgba_u8([51, 65, 85, 255]);
+            // Use IR-provided label color when present
+            if let Some(c) = spec
+                .label_color
+                .as_ref()
+                .and_then(|c| crate::ir_adapter::parse_color(c))
+            {
+                entry.label_color = c;
+            } else if let Some(style) = spec.label_style.as_ref() {
+                if let Some(c) = style.color.as_ref().and_then(|c| crate::ir_adapter::parse_color(c))
+                {
+                    entry.label_color = c;
+                }
+                if let Some(size) = style.font_size {
+                    entry.label_size = size as f32;
+                }
+            } else {
+                entry.label_color = ColorLinPremul::from_srgba_u8([51, 65, 85, 255]);
+            }
+            if let Some(style) = spec.label_style.as_ref() {
+                if let Some(size) = style.font_size {
+                    entry.label_size = size as f32;
+                }
+            }
             entry.dot_color = ColorLinPremul::from_srgba_u8([63, 130, 246, 255]);
             entry.selected
         };
@@ -455,22 +585,35 @@ impl IrElementState {
         let entry = self.selects.entry(view_node_id.clone()).or_insert_with(|| {
             let options: Vec<String> = spec.options.iter().map(|opt| opt.label.clone()).collect();
 
-            let selected_index = spec
-                .options
-                .iter()
-                .position(|opt| opt.selected)
-                .or_else(|| if options.is_empty() { None } else { Some(0) });
+            let selected_index = spec.options.iter().position(|opt| opt.selected);
+            let placeholder = spec
+                .placeholder
+                .clone()
+                .unwrap_or_else(|| "Select an option".to_string());
+            let (label, is_placeholder) = match selected_index {
+                Some(idx) if idx < options.len() => (options[idx].clone(), false),
+                _ => (placeholder.clone(), true),
+            };
+            let label_color = spec
+                .label_style
+                .color
+                .as_ref()
+                .and_then(|c| crate::ir_adapter::parse_color(c))
+                // Default select text color to black when IR doesn't specify one.
+                .unwrap_or_else(|| ColorLinPremul::from_srgba_u8([0, 0, 0, 255]));
+            // Placeholder text uses the same color by default.
+            let placeholder_color = label_color;
+            let label_size =
+                crate::ir_adapter::IrAdapter::font_size_from_text_style(&spec.label_style);
 
-            let label = selected_index
-                .and_then(|idx| options.get(idx).cloned())
-                .or_else(|| spec.placeholder.clone())
-                .unwrap_or_default();
-
-            elements::Select {
+            let mut select = elements::Select {
                 rect,
                 label,
-                label_size: 16.0,
-                label_color: ColorLinPremul::from_srgba_u8([20, 24, 30, 255]),
+                placeholder,
+                label_size,
+                label_color,
+                placeholder_color,
+                is_placeholder,
                 open: false,
                 focused: false,
                 options,
@@ -483,12 +626,31 @@ impl IrElementState {
                 border_color: ColorLinPremul::from_srgba_u8([200, 208, 216, 255]),
                 border_width: 1.0,
                 radius: 8.0,
+            };
+            select.apply_surface_style(&spec.style);
+            if spec.style.background.is_none() {
+                select.bg_color = ColorLinPremul::from_srgba_u8([0, 0, 0, 0]);
             }
+            select
         });
 
         // Keep layout in sync with Taffy output each frame.
         entry.rect = rect;
         entry.apply_surface_style(&spec.style);
+        if spec.style.background.is_none() {
+            entry.bg_color = ColorLinPremul::from_srgba_u8([0, 0, 0, 0]);
+        }
+        // Update text styling each frame in case IR changed
+        entry.label_size =
+            crate::ir_adapter::IrAdapter::font_size_from_text_style(&spec.label_style);
+        let label_color = spec
+            .label_style
+            .color
+            .as_ref()
+            .and_then(|c| crate::ir_adapter::parse_color(c))
+            .unwrap_or_else(|| ColorLinPremul::from_srgba_u8([0, 0, 0, 255]));
+        entry.label_color = label_color;
+        entry.placeholder_color = label_color;
         entry
     }
 
@@ -525,6 +687,22 @@ impl IrElementState {
                 "Choose File".to_string()
             }
         });
+        // Apply surface style (background, radius, etc.) from IR.
+        entry.apply_surface_style(&spec.style);
+
+        // Apply label/text styling overrides
+        let label_style = &spec.label_style;
+        entry.label_size = label_style.font_size.unwrap_or(entry.label_size as f64) as f32;
+        // Default file input text color to black when IR does not specify a color.
+        let label_color = label_style
+            .color
+            .as_ref()
+            .and_then(|c| crate::ir_adapter::parse_color(c))
+            .unwrap_or_else(|| ColorLinPremul::from_srgba_u8([0, 0, 0, 255]));
+        entry.label_color = label_color;
+        // Use same color for placeholder/button text and selected file text.
+        entry.button_text_color = label_color;
+        entry.file_text_color = label_color;
 
         entry
     }
@@ -541,6 +719,12 @@ impl IrElementState {
             .date_pickers
             .entry(view_node_id.clone())
             .or_insert_with(|| {
+                let label_size = spec
+                    .label_style
+                    .font_size
+                    .unwrap_or(16.0) as f32;
+                let label_color =
+                    crate::ir_adapter::IrAdapter::color_from_text_style(&spec.label_style);
                 // Parse initial date from spec if provided (YYYY-MM-DD format)
                 let initial_date = spec.default_value.as_ref().and_then(|s| {
                     let parts: Vec<&str> = s.split('-').collect();
@@ -556,8 +740,8 @@ impl IrElementState {
 
                 elements::DatePicker::new(
                     rect,
-                    16.0,                                             // label_size
-                    ColorLinPremul::from_srgba_u8([20, 24, 30, 255]), // label_color (dark for light bg)
+                    label_size,
+                    label_color,
                     initial_date,
                 )
             });
@@ -568,7 +752,81 @@ impl IrElementState {
         entry.set_viewport_height(viewport_height);
         // Apply surface styling
         entry.apply_surface_style(&spec.style);
+        // Apply label style overrides
+        entry.label_size = spec.label_style.font_size.unwrap_or(entry.label_size as f64) as f32;
+        entry.label_color = crate::ir_adapter::IrAdapter::color_from_text_style(&spec.label_style);
         entry
+    }
+
+    /// Get or create a WebView element for the given ViewNode
+    #[cfg(feature = "webview-cef")]
+    pub fn get_or_create_webview(
+        &mut self,
+        view_node_id: &ViewNodeId,
+        spec: &WebViewSpec,
+        rect: Rect,
+    ) -> &mut elements::WebView {
+        let entry = self
+            .webviews
+            .entry(view_node_id.clone())
+            .or_insert_with(|| {
+                let mut webview =
+                    elements::WebView::new(rect, spec.url.clone(), spec.html.clone());
+
+                // Apply configuration from spec
+                if let Some(base_url) = &spec.base_url {
+                    webview.base_url = Some(base_url.clone());
+                }
+                if let Some(scale) = spec.scale_factor {
+                    webview.scale_factor = scale as f32;
+                }
+                if let Some(js_enabled) = spec.javascript_enabled {
+                    webview.javascript_enabled = js_enabled;
+                }
+                if let Some(ua) = &spec.user_agent {
+                    webview.user_agent = Some(ua.clone());
+                }
+
+                webview
+            });
+
+        // CRITICAL: Update rect every frame to handle window resize and layout changes
+        entry.rect = rect;
+
+        // Apply surface styling
+        if let Some(bg) = &spec.style.background {
+            if let Some(color) = crate::ir_adapter::view_background_to_color(bg) {
+                entry.bg_color = color;
+            }
+        }
+        if let Some(border_color) = spec
+            .style
+            .border_color
+            .as_ref()
+            .and_then(|c| crate::ir_adapter::parse_color(c))
+        {
+            entry.border_color = border_color;
+        }
+        if let Some(border_width) = spec.style.border_width {
+            entry.border_width = border_width as f32;
+        }
+        if let Some(radius) = spec.style.corner_radius {
+            entry.corner_radius = radius as f32;
+        }
+
+        entry
+    }
+
+    /// Get a mutable reference to a WebView element
+    #[cfg(feature = "webview-cef")]
+    pub fn get_webview_mut(&mut self, view_node_id: &ViewNodeId) -> Option<&mut elements::WebView> {
+        self.webviews.get_mut(view_node_id)
+    }
+
+    /// Get all WebView elements for frame updates
+    #[cfg(feature = "webview-cef")]
+    pub fn webviews_mut(&mut self) -> impl Iterator<Item = (&ViewNodeId, &mut elements::WebView)> {
+        self.webviews.iter_mut()
     }
 
     // ========================================================================
@@ -622,6 +880,12 @@ impl IrElementState {
                     file_input.set_focused(true);
                 }
             }
+            #[cfg(feature = "webview-cef")]
+            IrElementType::WebView => {
+                if let Some(webview) = self.webviews.get_mut(&view_node_id) {
+                    webview.set_focused(true);
+                }
+            }
             _ => {}
         }
 
@@ -654,6 +918,10 @@ impl IrElementState {
         }
         for file_input in self.file_inputs.values_mut() {
             file_input.set_focused(false);
+        }
+        #[cfg(feature = "webview-cef")]
+        for webview in self.webviews.values_mut() {
+            webview.set_focused(false);
         }
 
         self.focused_element = None;
@@ -942,6 +1210,16 @@ impl IrElementState {
             }
         }
 
+        #[cfg(feature = "webview-cef")]
+        if let Some(webview) = self.webviews.get_mut(view_node_id) {
+            let result = webview.handle_mouse_click(event);
+            if result.is_handled() {
+                self.set_focus(view_node_id.clone(), IrElementType::WebView);
+                self.dirty = true;
+                return EventResult::Handled;
+            }
+        }
+
         EventResult::Ignored
     }
 
@@ -1002,6 +1280,16 @@ impl IrElementState {
                 IrElementType::FileInput => {
                     if let Some(file_input) = self.file_inputs.get_mut(view_node_id) {
                         let result = file_input.handle_keyboard(event);
+                        if result.is_handled() {
+                            self.dirty = true;
+                        }
+                        return result;
+                    }
+                }
+                #[cfg(feature = "webview-cef")]
+                IrElementType::WebView => {
+                    if let Some(webview) = self.webviews.get_mut(view_node_id) {
+                        let result = webview.handle_keyboard(event);
                         if result.is_handled() {
                             self.dirty = true;
                         }
@@ -1095,6 +1383,16 @@ impl IrElementState {
                 IrElementType::TextArea => {
                     if let Some(textarea) = self.text_areas.get_mut(view_node_id) {
                         let result = textarea.handle_mouse_move(event);
+                        if result.is_handled() {
+                            self.dirty = true;
+                        }
+                        return result;
+                    }
+                }
+                #[cfg(feature = "webview-cef")]
+                IrElementType::WebView => {
+                    if let Some(webview) = self.webviews.get_mut(view_node_id) {
+                        let result = webview.handle_mouse_move(event);
                         if result.is_handled() {
                             self.dirty = true;
                         }

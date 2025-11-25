@@ -37,6 +37,23 @@ impl Transform2D {
             m: [1.0, 0.0, 0.0, 1.0, tx, ty],
         }
     }
+
+    /// Create a rotation transform (angle in radians, counter-clockwise).
+    pub fn rotate(angle: f32) -> Self {
+        let cos = angle.cos();
+        let sin = angle.sin();
+        Self {
+            m: [cos, sin, -sin, cos, 0.0, 0.0],
+        }
+    }
+
+    /// Create a rotation transform around a specific center point.
+    pub fn rotate_around(angle: f32, cx: f32, cy: f32) -> Self {
+        // Translate to origin, rotate, translate back
+        Self::translate(cx, cy)
+            .concat(Self::rotate(angle))
+            .concat(Self::translate(-cx, -cy))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

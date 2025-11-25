@@ -57,7 +57,12 @@ fn main() -> Result<()> {
     surface.configure(&engine.device(), &config);
 
     // Scene selection and initialization
-    let scene_name = rune_config.demo.scene.as_deref();
+    // Command-line --scene=X argument takes priority over config file
+    let scene_from_args = std::env::args().find_map(|a| {
+        a.strip_prefix("--scene=").map(|s| s.to_string())
+    });
+    let cef_url_arg = std::env::args().find_map(|a| a.strip_prefix("--cef-url=").map(|s| s.to_string()));
+    let scene_name = scene_from_args.as_deref().or(rune_config.demo.scene.as_deref());
     let mut scene: Box<dyn Scene> = if scene_name == Some("radial")
         || std::env::args().any(|a| a == "--scene=radial" || a == "--radial")
     {
@@ -109,6 +114,33 @@ fn main() -> Result<()> {
         || std::env::args().any(|a| a == "--scene=unified-test" || a == "--unified-test")
     {
         Box::new(scenes::unified_test::UnifiedTestScene::default())
+    } else if cfg!(any(feature = "cef", feature = "cdp"))
+        && (scene_name == Some("cef")
+            || std::env::args().any(|a| a == "--scene=cef" || a == "--cef"))
+    {
+        #[cfg(any(feature = "cef", feature = "cdp"))]
+        {
+            eprintln!(">>> CEF Scene selected!");
+            // Also write to file for debugging
+            {
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open("/tmp/demo_app_trace.log")
+                {
+                    let _ = writeln!(f, "CEF Scene selected!");
+                    let _ = f.flush();
+                }
+            }
+            Box::new(scenes::cef::CefScene::new(cef_url_arg))
+        }
+        #[cfg(not(any(feature = "cef", feature = "cdp")))]
+        {
+            eprintln!("CEF/CDP feature not enabled. Run with: cargo run -p demo-app --features cef -- --scene=cef");
+            eprintln!("Or for easier setup: cargo run -p demo-app --features cdp -- --scene=cef");
+            Box::new(scenes::default::DefaultScene::default())
+        }
     } else {
         Box::new(scenes::default::DefaultScene::default())
     };
@@ -524,6 +556,19 @@ fn main() -> Result<()> {
                         }
                     }
                     SceneKind::FullscreenBackground => {
+                        // Trace log (only on first frame)
+                        static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                        if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                            use std::io::Write;
+                            if let Ok(mut f) = std::fs::OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open("/tmp/demo_app_trace.log")
+                            {
+                                let _ = writeln!(f, "FullscreenBackground paint called");
+                                let _ = f.flush();
+                            }
+                        }
                         // Render fullscreen background (gradients, etc.)
                         let queue = engine.queue();
                         if use_intermediate {

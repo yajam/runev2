@@ -8,13 +8,15 @@
 
 use anyhow::Result;
 
+pub mod animation;
 pub mod elements;
 pub mod event_handler;
 pub mod event_router;
 pub mod ir_adapter;
 pub mod ir_renderer;
 pub mod layout;
-mod persistence;
+pub mod navigation;
+pub mod persistence;
 pub mod scene;
 pub mod text;
 pub mod zones;

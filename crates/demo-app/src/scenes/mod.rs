@@ -57,3 +57,6 @@ pub mod svg_geom;
 pub mod ui;
 pub mod unified_test;
 pub mod zones;
+
+#[cfg(any(feature = "cef", feature = "cdp"))]
+pub mod cef;

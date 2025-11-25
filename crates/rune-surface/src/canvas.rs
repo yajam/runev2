@@ -45,6 +45,8 @@ pub struct Canvas {
         i32,
         Transform2D,
     )>, // (path, origin, size, fit, z, transform)
+    /// Raw pixel data draws: (pixels_rgba, src_width, src_height, origin, dst_size, z, transform)
+    pub(crate) raw_image_draws: Vec<RawImageDraw>,
     pub(crate) dpi_scale: f32, // DPI scale factor for text rendering
     // Effective clip stack in device coordinates for direct text rendering.
     // Each entry is the intersection of all active clips at that depth.
@@ -67,9 +69,35 @@ pub enum ScrimDraw {
     },
 }
 
+/// Raw image draw request for rendering pixel data directly.
+#[derive(Clone)]
+pub struct RawImageDraw {
+    /// BGRA pixel data (4 bytes per pixel) - matches CEF native format
+    pub pixels: Vec<u8>,
+    /// Source image width
+    pub src_width: u32,
+    /// Source image height
+    pub src_height: u32,
+    /// Destination origin in scene coordinates
+    pub origin: [f32; 2],
+    /// Destination size in scene coordinates
+    pub dst_size: [f32; 2],
+    /// Z-index for depth ordering
+    pub z: i32,
+    /// Transform at draw time
+    pub transform: Transform2D,
+    /// Dirty rectangles for partial update (x, y, w, h) - empty = full frame
+    pub dirty_rects: Vec<(u32, u32, u32, u32)>,
+}
+
 impl Canvas {
     pub fn viewport(&self) -> Viewport {
         self.viewport
+    }
+
+    /// Get the current transform from the painter's transform stack.
+    pub fn current_transform(&self) -> Transform2D {
+        self.painter.current_transform()
     }
 
     /// Set the frame clear/background color (premultiplied linear RGBA).
@@ -541,6 +569,57 @@ impl Canvas {
         let transform = self.painter.current_transform();
         self.image_draws
             .push((path.into(), origin, size, fit, z, transform));
+    }
+
+    /// Queue raw pixel data to be drawn at origin with the given size.
+    /// Pixels should be in BGRA format (4 bytes per pixel) to match CEF native output.
+    /// Captures the current transform from the painter's transform stack.
+    pub fn draw_raw_image(
+        &mut self,
+        pixels: Vec<u8>,
+        src_width: u32,
+        src_height: u32,
+        origin: [f32; 2],
+        dst_size: [f32; 2],
+        z: i32,
+    ) {
+        let transform = self.painter.current_transform();
+        self.raw_image_draws.push(RawImageDraw {
+            pixels,
+            src_width,
+            src_height,
+            origin,
+            dst_size,
+            z,
+            transform,
+            dirty_rects: Vec::new(), // Full frame update
+        });
+    }
+
+    /// Queue raw pixel data with dirty rects for partial update.
+    /// Pixels should be in BGRA format (4 bytes per pixel) to match CEF native output.
+    /// Only the dirty rectangles will be uploaded to the GPU texture.
+    pub fn draw_raw_image_with_dirty_rects(
+        &mut self,
+        pixels: Vec<u8>,
+        src_width: u32,
+        src_height: u32,
+        origin: [f32; 2],
+        dst_size: [f32; 2],
+        z: i32,
+        dirty_rects: Vec<(u32, u32, u32, u32)>,
+    ) {
+        let transform = self.painter.current_transform();
+        self.raw_image_draws.push(RawImageDraw {
+            pixels,
+            src_width,
+            src_height,
+            origin,
+            dst_size,
+            z,
+            transform,
+            dirty_rects,
+        });
     }
 
     // Expose some painter helpers for advanced users
