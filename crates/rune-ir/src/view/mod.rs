@@ -1,4 +1,14 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+pub mod animation;
+
+pub use animation::{
+    AnimationDirectionSpec, AnimationFillModeSpec, AnimationRefSpec, EasingSpec,
+    IterationCountSpec, KeyframeAnimationSpec, KeyframeSpec, NamedOriginSpec,
+    NodeAnimationFields, StepPositionSpec, TransformOriginSpec, TransformSpec,
+    TransitionGroupSpec, TransitionSpecDef, TransitionTargetSpec, VisibilitySpec,
+};
 
 pub type ViewNodeId = String;
 
@@ -8,6 +18,10 @@ pub struct ViewDocument {
     pub root: ViewNodeId,
     #[serde(default)]
     pub nodes: Vec<ViewNode>,
+    /// Named keyframe animations that can be referenced by nodes.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub animations: HashMap<String, KeyframeAnimationSpec>,
 }
 
 impl ViewDocument {
@@ -186,6 +200,27 @@ pub struct FlexContainerSpec {
     pub scroll: ScrollBehavior,
     #[serde(default)]
     pub children: Vec<ViewNodeId>,
+    // Animation properties
+    /// Transition configuration for property changes.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transition: Option<TransitionGroupSpec>,
+    /// Keyframe animation reference.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animation: Option<AnimationRefSpec>,
+    /// 2D transform (translate, scale, rotate, skew).
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transform: Option<TransformSpec>,
+    /// Opacity (0.0 = fully transparent, 1.0 = fully opaque).
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f64>,
+    /// Visibility state (visible, hidden, collapsed).
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<VisibilitySpec>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -266,6 +301,27 @@ pub struct GridContainerSpec {
     /// Per-child placement aligned with `children` length
     #[serde(default)]
     pub placements: Vec<GridItemPlacement>,
+    // Animation properties
+    /// Transition configuration for property changes.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transition: Option<TransitionGroupSpec>,
+    /// Keyframe animation reference.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animation: Option<AnimationRefSpec>,
+    /// 2D transform (translate, scale, rotate, skew).
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transform: Option<TransformSpec>,
+    /// Opacity (0.0 = fully transparent, 1.0 = fully opaque).
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f64>,
+    /// Visibility state (visible, hidden, collapsed).
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<VisibilitySpec>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -890,6 +946,9 @@ pub struct SelectOptionSpec {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FileInputSpec {
+    /// Container styling (background, padding, margin, radius, width/height)
+    #[serde(default)]
+    pub style: SurfaceStyle,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<f64>,

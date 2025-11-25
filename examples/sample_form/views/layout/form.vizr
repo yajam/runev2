@@ -666,6 +666,21 @@
       "label_style": {
         "color": "#ffffff",
         "font_size": 14
+      },
+      "style": {
+        "background": {
+          "type": "solid",
+          "color": "#0b1220"
+        },
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "corner_radius": 10,
+        "border_width": 1,
+        "border_color": "rgba(148, 163, 184, 0.35)"
       }
     },
     {

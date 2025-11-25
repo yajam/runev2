@@ -8,14 +8,18 @@ use rune_ir::view::{OverlayContainerSpec, OverlayPosition, TextAlign, ViewNodeId
 
 /// Render a generic background for any element that exposes a single
 /// `ViewBackground` field (FlexContainer, GridContainer, FormContainer, overlays, etc).
+///
+/// Supports animated background colors via the resolver.
 pub(super) fn render_background_element(
     canvas: &mut rune_surface::Canvas,
     background: &Option<rune_ir::view::ViewBackground>,
     rect: engine_core::Rect,
     z: i32,
+    node_id: &str,
+    resolver: Option<&crate::animation::resolver::AnimatedPropertyResolver>,
 ) {
     if let Some(bg) = background {
-        let brush = brush_from_view_background(bg, rect);
+        let brush = brush_from_view_background_animated(bg, rect, node_id, resolver);
         if std::env::var("RUNE_IR_DEBUG")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
             .unwrap_or(false)
@@ -35,9 +39,11 @@ pub(super) fn render_container_element(
     spec: &rune_ir::view::FlexContainerSpec,
     rect: engine_core::Rect,
     z: i32,
+    node_id: &str,
+    resolver: Option<&crate::animation::resolver::AnimatedPropertyResolver>,
 ) {
     // Render background if present
-    render_background_element(canvas, &spec.background, rect, z);
+    render_background_element(canvas, &spec.background, rect, z, node_id, resolver);
 
     // TODO: Render border if present
     // Children are rendered by recursion from the caller.
@@ -701,7 +707,9 @@ pub(super) fn render_table_element(
         // Avoid double-drawing square borders inside the rounded cloak.
         table.border_width = 0.0;
     } else {
-        render_background_element(canvas, &spec.style.background, rect, z);
+        // Table has access to view_node, but no animation resolver in this context
+        // For now, we don't support animated backgrounds on tables
+        render_background_element(canvas, &spec.style.background, rect, z, &view_node.id, None);
     }
 
     table.render(canvas, z);
@@ -1113,17 +1121,36 @@ fn resolve_table_from_data(
 }
 
 /// Convert rune-ir ViewBackground to engine-core Brush.
-fn brush_from_view_background(
+/// Create a brush from ViewBackground with optional animation support.
+fn brush_from_view_background_animated(
     bg: &rune_ir::view::ViewBackground,
     rect: engine_core::Rect,
+    node_id: &str,
+    resolver: Option<&crate::animation::resolver::AnimatedPropertyResolver>,
 ) -> engine_core::Brush {
+    use crate::animation::types::AnimatableProperty;
     use rune_ir::view::ViewBackground;
     let default_color = engine_core::ColorLinPremul::from_srgba_u8([40, 45, 65, 255]);
 
     match bg {
-        ViewBackground::Solid { color } => crate::ir_adapter::parse_color(color)
-            .map(engine_core::Brush::Solid)
-            .unwrap_or(engine_core::Brush::Solid(default_color)),
+        ViewBackground::Solid { color } => {
+            let base_color = crate::ir_adapter::parse_color(color).unwrap_or(default_color);
+
+            // Resolve animated background color if available
+            let rgba = if let Some(resolver) = resolver {
+                let base_rgba = [base_color.r, base_color.g, base_color.b, base_color.a];
+                resolver.resolve_color(node_id, AnimatableProperty::BackgroundColor, base_rgba)
+            } else {
+                [base_color.r, base_color.g, base_color.b, base_color.a]
+            };
+
+            engine_core::Brush::Solid(engine_core::ColorLinPremul {
+                r: rgba[0],
+                g: rgba[1],
+                b: rgba[2],
+                a: rgba[3],
+            })
+        }
         ViewBackground::LinearGradient { angle, stops } => {
             let angle_rad = (*angle as f32).to_radians();
             let cx = rect.x + rect.w * 0.5;
@@ -1186,4 +1213,13 @@ fn brush_from_view_background(
             }
         }
     }
+}
+
+/// Non-animated version for backward compatibility.
+#[allow(dead_code)]
+fn brush_from_view_background(
+    bg: &rune_ir::view::ViewBackground,
+    rect: engine_core::Rect,
+) -> engine_core::Brush {
+    brush_from_view_background_animated(bg, rect, "", None)
 }

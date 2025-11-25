@@ -127,10 +127,7 @@ pub fn run() -> Result<()> {
     let mut click_count: u32 = 0;
     let double_click_threshold = Duration::from_millis(500);
     let mut needs_redraw = true;
-    // Debounce resize redraws similar to legacy lib_old to avoid hot redraw loops.
-    let mut last_resize_time: Option<Instant> = None;
-    let mut first_resize_time: Option<Instant> = None;
-    let mut needs_background_redraw = false;
+    // Resize debounce removed: redraw immediately when needed for smoother resizing.
 
     eprintln!("✓ Rendering pipeline initialized");
     eprintln!("✓ Zone layout: viewport={:?}", zone_manager.layout.viewport);
@@ -168,12 +165,7 @@ pub fn run() -> Result<()> {
                     window_state.update_size(logical.width, logical.height);
                     window_state.update_maximized(window.is_maximized());
 
-                    let now = Instant::now();
-                    if first_resize_time.is_none() {
-                        first_resize_time = Some(now);
-                    }
-                    last_resize_time = Some(now);
-                    needs_background_redraw = true;
+                    // Mark that we need a redraw for the new size immediately.
                     needs_redraw = true;
                 }
                 WindowEvent::CursorMoved { position, .. } => {
@@ -275,6 +267,13 @@ pub fn run() -> Result<()> {
                                         CHAT_CLOSE_BUTTON_REGION_ID, CHAT_INPUT_REGION_ID,
                                         CHAT_SEND_BUTTON_REGION_ID,
                                     };
+
+                                    // Blur chat input for any click that is not on the chat
+                                    // input region itself so keyboard events don't keep routing
+                                    // to the sidebar once focus moves elsewhere.
+                                    if region_id != CHAT_INPUT_REGION_ID {
+                                        zone_manager.chat.input.focused = false;
+                                    }
 
                                     match region_id {
                                         TOGGLE_BUTTON_REGION_ID => {
@@ -825,6 +824,20 @@ pub fn run() -> Result<()> {
                                 needs_redraw = true;
                                 window.request_redraw();
                             }
+                        } else if zone_manager.chat.input.focused && zone_manager.chat.is_visible()
+                        {
+                            let mut inserted = false;
+                            for ch in text.chars() {
+                                if !ch.is_control() || ch == ' ' {
+                                    zone_manager.chat.input.insert_char(ch);
+                                    inserted = true;
+                                }
+                            }
+                            if inserted {
+                                zone_manager.chat.input.update_scroll();
+                                needs_redraw = true;
+                                window.request_redraw();
+                            }
                         } else if !has_cmd && !has_ctrl && !has_alt && !text.is_empty() {
                             let result = ir_renderer.element_state_mut().handle_text_input(&text);
                             if result.is_handled() {
@@ -843,55 +856,29 @@ pub fn run() -> Result<()> {
                         let has_cmd = modifiers_state.contains(ModifiersState::SUPER);
                         let has_ctrl = modifiers_state.contains(ModifiersState::CONTROL);
                         let has_alt = modifiers_state.contains(ModifiersState::ALT);
-                        let has_shift = modifiers_state.contains(ModifiersState::SHIFT);
 
-                        let line_modifier = has_cmd || has_ctrl;
-                        let word_modifier = has_alt;
+                        // First, delegate navigation/editing shortcuts (selection, clipboard, undo/redo, etc.)
+                        // to the shared InputBox keyboard handler so the toolbar address bar matches
+                        // the behavior of in-viewport input boxes.
+                        if let PhysicalKey::Code(key_code) = event.physical_key {
+                            let keyboard_event = crate::event_handler::KeyboardEvent {
+                                key: key_code,
+                                state: event.state,
+                                modifiers: modifiers_state,
+                            };
 
+                            let result = crate::event_handler::EventHandler::handle_keyboard(
+                                &mut zone_manager.toolbar.address_bar,
+                                keyboard_event,
+                            );
+                            if result.is_handled() {
+                                needs_redraw = true;
+                                window.request_redraw();
+                            }
+                        }
+
+                        // Then handle toolbar-specific keys that InputBox doesn't know about.
                         match event.physical_key {
-                            PhysicalKey::Code(KeyCode::KeyA) if line_modifier && !has_shift => {
-                                zone_manager.toolbar.address_bar.select_all();
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
-                            PhysicalKey::Code(KeyCode::Backspace) => {
-                                zone_manager.toolbar.address_bar.delete_before_cursor();
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
-                            PhysicalKey::Code(KeyCode::Delete) => {
-                                zone_manager.toolbar.address_bar.delete_after_cursor();
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
-                            PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                                if word_modifier {
-                                    zone_manager.toolbar.address_bar.move_cursor_left_word();
-                                } else {
-                                    zone_manager.toolbar.address_bar.move_cursor_left();
-                                }
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
-                            PhysicalKey::Code(KeyCode::ArrowRight) => {
-                                if word_modifier {
-                                    zone_manager.toolbar.address_bar.move_cursor_right_word();
-                                } else {
-                                    zone_manager.toolbar.address_bar.move_cursor_right();
-                                }
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
-                            PhysicalKey::Code(KeyCode::Home) => {
-                                zone_manager.toolbar.address_bar.move_cursor_to_start();
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
-                            PhysicalKey::Code(KeyCode::End) => {
-                                zone_manager.toolbar.address_bar.move_cursor_to_end();
-                                needs_redraw = true;
-                                window.request_redraw();
-                            }
                             PhysicalKey::Code(KeyCode::Escape) => {
                                 zone_manager.toolbar.address_bar.focused = false;
                                 // Also dismiss dock if visible
@@ -924,7 +911,8 @@ pub fn run() -> Result<()> {
                                     // Update layout for new navigation mode
                                     let logical_width = (size.width as f32 / scale_factor) as u32;
                                     let logical_height = (size.height as f32 / scale_factor) as u32;
-                                    zone_manager.update_for_navigation_mode(logical_width, logical_height);
+                                    zone_manager
+                                        .update_for_navigation_mode(logical_width, logical_height);
 
                                     // Blur address bar after navigation
                                     zone_manager.toolbar.address_bar.focused = false;
@@ -953,6 +941,45 @@ pub fn run() -> Result<()> {
                             }
                         }
                     } else if event.state == winit::event::ElementState::Pressed {
+                        // Chat input keyboard handling (navigation/editing shortcuts + Enter to send)
+                        if zone_manager.chat.input.focused && zone_manager.chat.is_visible() {
+                            use crate::event_handler::{EventHandler, KeyboardEvent};
+
+                            if let PhysicalKey::Code(key_code) = event.physical_key {
+                                // Treat Enter as "send" for the chat panel.
+                                if let KeyCode::Enter | KeyCode::NumpadEnter = key_code {
+                                    let text =
+                                        zone_manager.chat.input.text.trim().to_string();
+                                    if !text.is_empty() {
+                                        zone_manager.chat.add_user_message(text);
+                                        zone_manager.chat.input.text.clear();
+                                        zone_manager.chat.input.cursor_position = 0;
+                                        println!("Chat message sent via Enter key");
+                                    }
+                                    needs_redraw = true;
+                                    window.request_redraw();
+                                    return;
+                                }
+
+                                let keyboard_event = KeyboardEvent {
+                                    key: key_code,
+                                    state: winit::event::ElementState::Pressed,
+                                    modifiers: modifiers_state,
+                                };
+
+                                if zone_manager
+                                    .chat
+                                    .input
+                                    .handle_keyboard(keyboard_event)
+                                    .is_handled()
+                                {
+                                    needs_redraw = true;
+                                    window.request_redraw();
+                                    return;
+                                }
+                            }
+                        }
+
                         // Global keyboard shortcuts (regardless of focus)
                         if let PhysicalKey::Code(KeyCode::Escape) = event.physical_key {
                             // Escape dismisses dock if visible
@@ -1005,19 +1032,14 @@ pub fn run() -> Result<()> {
                     }
                 }
                 WindowEvent::RedrawRequested => {
-                    // Respect resize debounce like legacy implementation to reduce churn.
-                    let resize_settled = last_resize_time
-                        .map(|t| t.elapsed() >= Duration::from_millis(200))
-                        .unwrap_or(false);
-                    let max_debounce_exceeded = first_resize_time
-                        .map(|t| t.elapsed() >= Duration::from_millis(300))
-                        .unwrap_or(false);
-                    let should_render = (needs_redraw || needs_background_redraw)
-                        && (last_resize_time.is_none() || resize_settled || max_debounce_exceeded);
+                    // Render immediately when a redraw is needed instead of debouncing
+                    // window resize events. This keeps IR layout updates smooth during
+                    // interactive window resizing (matching native CEF behavior).
+                    let should_render = needs_redraw;
 
                     if should_render {
                         needs_redraw = false;
-                        needs_background_redraw = false;
+                        // no-op: no resize debounce state to reset
 
                         // Get current logical size
                         let logical_width = (size.width as f32 / scale_factor) as u32;
@@ -1026,11 +1048,15 @@ pub fn run() -> Result<()> {
                         // Update toolbar and IR element caret blink
                         let now = Instant::now();
                         let delta_time = (now - last_frame_time).as_secs_f32();
+                        let delta_ms = delta_time * 1000.0;
                         last_frame_time = now;
                         zone_manager.toolbar.address_bar.update_blink(delta_time);
                         ir_renderer
                             .element_state_mut()
                             .update_blink_animation(delta_time);
+
+                        // Update CSS-like animations (transitions and keyframes)
+                        let has_active_animations = ir_renderer.update_animations(delta_ms);
 
                         // Render frame with zones
                         match render_frame_with_zones(
@@ -1048,9 +1074,12 @@ pub fn run() -> Result<()> {
                         ) {
                             Ok(index) => {
                                 hit_index = Some(index);
-                                // Keep redraws flowing while the address bar or any IR element is focused so the caret blinks.
+                                // Keep redraws flowing while:
+                                // - Address bar or IR element is focused (caret blink)
+                                // - CSS-like animations are active
                                 if zone_manager.toolbar.address_bar.focused
                                     || ir_renderer.element_state().get_focused_element().is_some()
+                                    || has_active_animations
                                 {
                                     needs_redraw = true;
                                 }
@@ -1060,30 +1089,13 @@ pub fn run() -> Result<()> {
                             }
                         }
 
-                        // Reset resize timers once we've painted a settled frame.
-                        if resize_settled || max_debounce_exceeded {
-                            last_resize_time = None;
-                            first_resize_time = None;
-                            needs_background_redraw = false;
-                        }
+                        // No resize debounce state to reset.
                     }
                 }
                 _ => {}
             },
             Event::AboutToWait => {
-                if let Some(last_time) = last_resize_time {
-                    let settled = last_time.elapsed() >= Duration::from_millis(200);
-                    let max_exceeded = first_resize_time
-                        .map(|t| t.elapsed() >= Duration::from_millis(300))
-                        .unwrap_or(false);
-
-                    if settled || max_exceeded {
-                        last_resize_time = None;
-                        needs_background_redraw = true;
-                        needs_redraw = true;
-                        window.request_redraw();
-                    }
-                } else if needs_redraw {
+                if needs_redraw {
                     window.request_redraw();
                 }
             }

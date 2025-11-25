@@ -185,6 +185,16 @@ void rune_ffi_position_cef_view(float x, float y, float width, float height);
  */
 bool rune_ffi_get_webview_rect(float* x, float* y, float* width, float* height);
 
+/*
+ * Check if navigation mode is Browser (CEF visible) vs Home/IRApp (CEF hidden).
+ *
+ * When this returns false, the native CEF view should be hidden regardless
+ * of any previously reported WebView rect.
+ *
+ * @return true if in Browser mode, false otherwise
+ */
+bool rune_ffi_is_browser_mode(void);
+
 /* ==========================================================================
  * Navigation API
  * ========================================================================== */

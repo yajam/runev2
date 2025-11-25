@@ -229,19 +229,27 @@ impl IrElementState {
                 let text_color = ColorLinPremul::from_srgba_u8([26, 32, 44, 255]);
                 let text_size = 16.0;
 
-                elements::InputBox::new(
+                let mut input = elements::InputBox::new(
                     rect,
                     text,
                     text_size,
                     text_color,
                     spec.placeholder.clone(),
                     false, // initial focus state
-                )
+                );
+                input.apply_surface_style(&spec.style);
+                if spec.style.background.is_none() {
+                    input.bg_color = ColorLinPremul::from_srgba_u8([0, 0, 0, 0]);
+                }
+                input
             });
-        entry.apply_surface_style(&spec.style);
 
         // CRITICAL: Update rect every frame to handle window resize and layout changes
         entry.rect = rect;
+        entry.apply_surface_style(&spec.style);
+        if spec.style.background.is_none() {
+            entry.bg_color = ColorLinPremul::from_srgba_u8([0, 0, 0, 0]);
+        }
         // Apply text styling from IR
         if let Some(color) = spec
             .text_style
@@ -586,17 +594,19 @@ impl IrElementState {
                 Some(idx) if idx < options.len() => (options[idx].clone(), false),
                 _ => (placeholder.clone(), true),
             };
-            let label_color = crate::ir_adapter::IrAdapter::color_from_text_style(&spec.label_style);
-            let placeholder_color = engine_core::ColorLinPremul {
-                r: label_color.r,
-                g: label_color.g,
-                b: label_color.b,
-                a: label_color.a * 0.6,
-            };
+            let label_color = spec
+                .label_style
+                .color
+                .as_ref()
+                .and_then(|c| crate::ir_adapter::parse_color(c))
+                // Default select text color to black when IR doesn't specify one.
+                .unwrap_or_else(|| ColorLinPremul::from_srgba_u8([0, 0, 0, 255]));
+            // Placeholder text uses the same color by default.
+            let placeholder_color = label_color;
             let label_size =
                 crate::ir_adapter::IrAdapter::font_size_from_text_style(&spec.label_style);
 
-            elements::Select {
+            let mut select = elements::Select {
                 rect,
                 label,
                 placeholder,
@@ -616,22 +626,31 @@ impl IrElementState {
                 border_color: ColorLinPremul::from_srgba_u8([200, 208, 216, 255]),
                 border_width: 1.0,
                 radius: 8.0,
+            };
+            select.apply_surface_style(&spec.style);
+            if spec.style.background.is_none() {
+                select.bg_color = ColorLinPremul::from_srgba_u8([0, 0, 0, 0]);
             }
+            select
         });
 
         // Keep layout in sync with Taffy output each frame.
         entry.rect = rect;
         entry.apply_surface_style(&spec.style);
+        if spec.style.background.is_none() {
+            entry.bg_color = ColorLinPremul::from_srgba_u8([0, 0, 0, 0]);
+        }
         // Update text styling each frame in case IR changed
         entry.label_size =
             crate::ir_adapter::IrAdapter::font_size_from_text_style(&spec.label_style);
-        entry.label_color = crate::ir_adapter::IrAdapter::color_from_text_style(&spec.label_style);
-        entry.placeholder_color = engine_core::ColorLinPremul {
-            r: entry.label_color.r,
-            g: entry.label_color.g,
-            b: entry.label_color.b,
-            a: entry.label_color.a * 0.6,
-        };
+        let label_color = spec
+            .label_style
+            .color
+            .as_ref()
+            .and_then(|c| crate::ir_adapter::parse_color(c))
+            .unwrap_or_else(|| ColorLinPremul::from_srgba_u8([0, 0, 0, 255]));
+        entry.label_color = label_color;
+        entry.placeholder_color = label_color;
         entry
     }
 
@@ -668,13 +687,22 @@ impl IrElementState {
                 "Choose File".to_string()
             }
         });
-        // Apply label style overrides
+        // Apply surface style (background, radius, etc.) from IR.
+        entry.apply_surface_style(&spec.style);
+
+        // Apply label/text styling overrides
         let label_style = &spec.label_style;
         entry.label_size = label_style.font_size.unwrap_or(entry.label_size as f64) as f32;
-        entry.label_color = crate::ir_adapter::IrAdapter::color_from_text_style(label_style);
-        // Use same color for button/file text to keep legibility aligned
-        entry.button_text_color = entry.label_color;
-        entry.file_text_color = entry.label_color;
+        // Default file input text color to black when IR does not specify a color.
+        let label_color = label_style
+            .color
+            .as_ref()
+            .and_then(|c| crate::ir_adapter::parse_color(c))
+            .unwrap_or_else(|| ColorLinPremul::from_srgba_u8([0, 0, 0, 255]));
+        entry.label_color = label_color;
+        // Use same color for placeholder/button text and selected file text.
+        entry.button_text_color = label_color;
+        entry.file_text_color = label_color;
 
         entry
     }

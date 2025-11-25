@@ -1100,14 +1100,27 @@ impl InputBox {
         let content_height = self.rect.h - self.padding_y * 2.0;
         let align_offset = self.alignment_offset(content_width);
 
-        // Set up clipping for text area
+        // Logical content rect used for text, selection, and caret positioning.
         let content_rect = Rect {
             x: content_x,
             y: content_y,
             w: content_width,
             h: content_height,
         };
-        canvas.push_clip_rect(content_rect);
+
+        // Clip rect is slightly wider than the logical content rect to accommodate
+        // fonts with negative left side bearings so the first glyph (placeholder
+        // or input text) isn't visually clipped at the left edge. This should
+        // affect clipping only, not caret/text positioning.
+        let clip_rect = Rect {
+            x: content_x - 2.0,
+            y: content_y,
+            w: content_width + 4.0,
+            h: content_height,
+        };
+        canvas.push_clip_rect(clip_rect);
+
+        let is_empty = self.text.is_empty();
 
         // Text origin/baseline: align to the layout's baseline offset, centered
         // vertically in the content box so caret/selection track the glyphs.
@@ -1130,7 +1143,7 @@ impl InputBox {
         };
         let text_x = content_x + align_offset - self.scroll_x;
 
-        if !self.text.is_empty() {
+        if !is_empty {
             // Draw selection highlight before text using shared renderer
             if self.focused && !self.rt_selection.is_collapsed() {
                 if let Some(layout) = self.rt_layout.as_ref() {

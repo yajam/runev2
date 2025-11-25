@@ -356,6 +356,13 @@ pub extern "C" fn rune_ffi_get_webview_rect(
     false
 }
 
+/// Check if navigation mode is Browser (CEF visible) vs Home/IRApp.
+#[unsafe(no_mangle)]
+pub extern "C" fn rune_ffi_is_browser_mode() -> bool {
+    use rune_scene::navigation::{get_navigation_mode, NavigationMode};
+    matches!(get_navigation_mode(), NavigationMode::Browser)
+}
+
 /// Check if the dock overlay is currently visible.
 #[unsafe(no_mangle)]
 pub extern "C" fn rune_ffi_is_dock_visible() -> bool {

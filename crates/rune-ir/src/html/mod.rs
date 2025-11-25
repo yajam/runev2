@@ -147,6 +147,7 @@ impl HtmlTranslator {
             view_id,
             root: builder.root_view_id.clone(),
             nodes: builder.view_nodes,
+            animations: Default::default(),
         };
 
         let data_document = DataDocument {
@@ -540,6 +541,11 @@ impl TranslatorState {
                             }),
                             children: Vec::new(),
                             placements: Vec::new(),
+                            transition: None,
+                            animation: None,
+                            transform: None,
+                            opacity: None,
+                            visibility: None,
                         };
                         if let Some(v2) = &v2_style {
                             if !style.backgrounds.is_empty() {
@@ -2579,6 +2585,11 @@ fn empty_container_spec() -> FlexContainerSpec {
         box_shadow: None,
         scroll: ScrollBehavior::default(),
         children: Vec::new(),
+        transition: None,
+        animation: None,
+        transform: None,
+        opacity: None,
+        visibility: None,
     }
 }
 

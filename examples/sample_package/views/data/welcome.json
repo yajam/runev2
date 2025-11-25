@@ -1,0 +1,259 @@
+{
+  "$schema": "../../../../crates/rune-ir/schema/data_document.schema.json",
+  "document_id": "welcome-data",
+  "nodes": [
+    {
+      "node_id": "r8X4K1nP",
+      "kind": "group",
+      "label": "Rune Welcome Experience",
+      "description": "Primary entry document for the prototype UI",
+      "widget_id": "wvN8p2xQ"
+    },
+    {
+      "node_id": "FETCHR01",
+      "kind": "action",
+      "label": "Fetch IR Diff",
+      "intent": "fetch.ir_diff"
+    },
+    {
+      "node_id": "TBLDEMO1",
+      "kind": "table",
+      "columns": ["Status", "Email", "Amount"],
+      "rows": [
+        ["Success", "ken99@example.com", "$316.00"],
+        ["Success", "abe45@example.com", "$242.00"],
+        ["Processing", "monserrat44@example.com", "$837.00"],
+        ["Success", "silas22@example.com", "$874.00"],
+        ["Failed", "carmella@example.com", "$721.00"]
+      ]
+    },
+    {
+      "node_id": "MODLTTL1",
+      "kind": "text",
+      "text": "Edit your profile",
+      "semantic_role": { "role": "heading", "level": 3 }
+    },
+    {
+      "node_id": "MODLDSC1",
+      "kind": "text",
+      "text": "Make changes to your profile here.",
+      "semantic_role": { "role": "paragraph" }
+    },
+    {
+      "node_id": "MODLCAN1",
+      "kind": "action",
+      "label": "Cancel"
+    },
+    {
+      "node_id": "MODLSAV1",
+      "kind": "action",
+      "label": "Save changes"
+    },
+    {
+      "node_id": "OPALRT01",
+      "kind": "action",
+      "label": "Open Alert",
+      "intent": "overlay.open.alert"
+    },
+    {
+      "node_id": "OPMODL01",
+      "kind": "action",
+      "label": "Open Modal",
+      "intent": "overlay.open.modal"
+    },
+    {
+      "node_id": "OPCNFM01",
+      "kind": "action",
+      "label": "Open Confirm",
+      "intent": "overlay.open.confirm"
+    },
+    {
+      "node_id": "CTMORN01",
+      "kind": "text",
+      "text": "Morning",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "CTAFTR01",
+      "kind": "text",
+      "text": "Afternoon",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "TLCNTCT1",
+      "kind": "text",
+      "text": "Contact Form (inline onsubmit)",
+      "semantic_role": { "role": "heading", "level": 3 }
+    },
+    {
+      "node_id": "TLPLAIN1",
+      "kind": "text",
+      "text": "Plain Form (native default)",
+      "semantic_role": { "role": "heading", "level": 3 }
+    },
+    {
+      "node_id": "TLINTCP1",
+      "kind": "text",
+      "text": "Intercept Form (WASM cancels)",
+      "semantic_role": { "role": "heading", "level": 3 }
+    },
+    {
+      "node_id": "F0RMSUB1",
+      "kind": "action",
+      "label": "Submit",
+      "intent": "form.submit"
+    },
+    {
+      "node_id": "F0RMRES1",
+      "kind": "action",
+      "label": "Reset",
+      "intent": "form.reset"
+    },
+    {
+      "node_id": "K3S8WcLP",
+      "kind": "text",
+      "text": "Rune Browser Prototype",
+      "semantic_role": {
+        "role": "heading",
+        "level": 1
+      },
+      "widget_id": "whT3v6Lp"
+    },
+    {
+      "node_id": "P5Q9LkD2",
+      "kind": "text",
+      "text": "Rune renders structured documents using layered data, view, and logic packages. This sample bundle exercises the new manifest-driven loader while keeping layout and scene composition untouched.",
+      "semantic_role": {
+        "role": "paragraph"
+      },
+      "widget_id": "wcP5z9D2"
+    },
+    {
+      "node_id": "A1B2C3D4",
+      "kind": "action",
+      "label": "Launch quick tour",
+      "intent": "tour.start",
+      "widget_id": "wa1B2c3D"
+    },
+    {
+      "node_id": "M7N6V5T4",
+      "kind": "action",
+      "label": "Open HTML demo (IR from HTML)",
+      "href": "examples/html/demo.html",
+      "widget_id": "wm7N6v5T"
+    },
+    {
+      "node_id": "Z8Y7X6W5",
+      "kind": "image",
+      "source": "images/Designer.png",
+      "width": 240.0,
+      "description": "Concept illustration for the Rune editor",
+      "widget_id": "wz8Y7x6W"
+    },
+    {
+      "node_id": "H4J6L8N0",
+      "kind": "text",
+      "text": "Rendering backlog",
+      "semantic_role": {
+        "role": "heading",
+        "level": 2
+      },
+      "widget_id": "wh4J6l8N"
+    },
+    {
+      "node_id": "T2G4H6J8",
+      "kind": "text",
+      "text": "\u2022 Blend compute-based text with path-based vector rendering",
+      "semantic_role": {
+        "role": "paragraph"
+      },
+      "widget_id": "wt2G4h6J"
+    },
+    {
+      "node_id": "C9V7B5N3",
+      "kind": "text",
+      "text": "\u2022 Translate UI tree into render graph commands",
+      "semantic_role": {
+        "role": "paragraph"
+      },
+      "widget_id": "wc9V7b5N"
+    },
+    {
+      "node_id": "L1P3R5T7",
+      "kind": "text",
+      "text": "\u2022 Surface accessible semantics via platform bridges",
+      "semantic_role": {
+        "role": "paragraph"
+      },
+      "widget_id": "wl1P3r5T"
+    },
+    {
+      "node_id": "Q2W4E6R8",
+      "kind": "text",
+      "text": "The package manifest now drives data and view resolution, enabling deterministic caching and streaming loads.",
+      "semantic_role": {
+        "role": "paragraph"
+      },
+      "widget_id": "wq2W4e6R"
+    },
+    {
+      "node_id": "S3D5F7G9",
+      "kind": "text",
+      "text": "Prototype build \u2022 Local",
+      "semantic_role": {
+        "role": "label"
+      },
+      "widget_id": "ws3D5f7G"
+    },
+    {
+      "node_id": "SBSCB001",
+      "kind": "text",
+      "text": "Subscribe to newsletter",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "SBSCBWK1",
+      "kind": "text",
+      "text": "Weekly",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "SBSCBMN1",
+      "kind": "text",
+      "text": "Monthly",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "CTEMAL01",
+      "kind": "text",
+      "text": "Contact via Email",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "CTPHON01",
+      "kind": "text",
+      "text": "Contact via Phone",
+      "semantic_role": { "role": "label" }
+    },
+    {
+      "node_id": "SUBDAT01",
+      "kind": "text",
+      "text": "Subscription Date",
+      "semantic_role": { "role": "label" }
+    }
+  ],
+  "bindings": [
+    {
+      "target": "S3D5F7G9",
+      "path": "runtime.status",
+      "mode": "pull"
+    }
+  ],
+  "channels": [
+    {
+      "channel_id": "telemetry",
+      "kind": "broadcast",
+      "description": "Publishes incremental layout metrics to observers"
+    }
+  ]
+}

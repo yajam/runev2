@@ -26,8 +26,9 @@
 - [ ] Root level font definition inherit
 - [ ] Theming support dark mode, light mode system mode
 - [ ] Native menus support
+- [ ] IR Interactions - show hide through wasm mutations
 - [x] Web page rendering (NSView CEF via rune-ffi)
-- [x] Fallback theough headless CEF
+- [x] Fallback through headless CEF
 - [ ] Canvas with depth testing off with drag support
 
 ## IR Porting
@@ -66,6 +67,7 @@ Testing
 ## Additional
 
 - [ ] Video/Audio subsystem (core missing block)
+- [ ] Animation
 - [ ] A11y subsystem completion
 - [ ] Full input/focus model (pointer capture, inertial scroll, tab order)
 - [ ] CEF main-thread initialization wired into winit backend (current rune-app + rune-ffi path is a stop-gap until CEF OSR is fully hosted from the winit-owned window/surface)

@@ -127,7 +127,7 @@ impl Toolbar {
         const BUTTON_GAP: f32 = 8.0;
         const SECTION_GAP: f32 = 16.0;
         const MARGIN: f32 = 12.0;
-        const ADDRESS_HEIGHT: f32 = 32.0;
+        const ADDRESS_HEIGHT: f32 = 40.0;
 
         // Calculate positions in LOCAL coordinates (both rendering and hit regions use local coords)
         let center_y = (toolbar_rect.h - BUTTON_SIZE) * 0.5;

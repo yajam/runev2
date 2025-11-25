@@ -21,6 +21,17 @@ bool contextInitialized;
                 if (screen) {
                     NSRect visibleFrame = screen.visibleFrame;
                     [window setFrame:visibleFrame display:YES];
+
+                    // Enforce a reasonable minimum content size so the IR layout
+                    // doesn't collapse to extremely narrow widths. This matches
+                    // the behavior of browsers like Safari that prevent the
+                    // window from shrinking beyond a practical viewport width.
+                    // Width clamp reduces layout thrash and "micro shrink/expand"
+                    // artifacts during rapid resizing.
+                    // Allow the window to shrink down to a narrow mobile-like
+                    // width while still keeping a reasonable minimum height.
+                    NSSize minSize = NSMakeSize(480.0, 600.0);
+                    window.contentMinSize = minSize;
                 }
             }
         }

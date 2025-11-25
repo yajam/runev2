@@ -4207,6 +4207,7 @@ dependencies = [
  "rune-wasm",
  "serde",
  "serde_json",
+ "static_assertions",
  "taffy",
  "tracing",
  "urlencoding",

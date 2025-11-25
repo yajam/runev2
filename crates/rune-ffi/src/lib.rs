@@ -360,6 +360,13 @@ impl AppRenderer {
                             ADDRESS_BAR_REGION_ID
                         );
 
+                        // Blur chat input when clicking anything that's not the chat input
+                        // itself so keyboard events don't keep routing to the sidebar
+                        // after focus moves elsewhere (modals, form fields, etc.).
+                        if region_id != CHAT_INPUT_REGION_ID {
+                            self.zone_manager.chat.input.focused = false;
+                        }
+
                         match region_id {
                             TOGGLE_BUTTON_REGION_ID => {
                                 // Blur any focused fields when clicking toolbar chrome
@@ -759,6 +766,8 @@ impl AppRenderer {
                                 .address_bar
                                 .end_mouse_selection();
                         }
+                        // Also blur chat input when clicking empty surface
+                        self.zone_manager.chat.input.focused = false;
                         self.ir_renderer
                             .element_state_mut()
                             .clear_all_focus();
@@ -948,9 +957,44 @@ impl AppRenderer {
         // Forward key presses to IR elements for their own keyboard handling.
         if pressed {
             if let Some(key_code) = map_macos_keycode_to_winit(keycode) {
-                use rune_scene::event_handler::KeyboardEvent;
+                use rune_scene::event_handler::{EventHandler, KeyboardEvent};
                 use rune_scene::ir_renderer::IrElementType;
                 use winit::keyboard::KeyCode;
+
+                // When the chat input in the right panel is focused, route
+                // editing/navigation shortcuts there first so Backspace,
+                // arrows, etc. work as expected.
+                if self.zone_manager.chat.input.focused {
+                    // Treat Enter as "send" for the chat panel.
+                    if matches!(key_code, KeyCode::Enter | KeyCode::NumpadEnter) {
+                        let text = self.zone_manager.chat.input.text.trim().to_string();
+                        if !text.is_empty() {
+                            self.zone_manager.chat.add_user_message(text);
+                            self.zone_manager.chat.input.text.clear();
+                            self.zone_manager.chat.input.cursor_position = 0;
+                            log::info!("Chat message sent via Enter key");
+                        }
+                        self.needs_redraw = true;
+                        return;
+                    }
+
+                    let keyboard_event = KeyboardEvent {
+                        key: key_code,
+                        state: ElementState::Pressed,
+                        modifiers,
+                    };
+
+                    if self
+                        .zone_manager
+                        .chat
+                        .input
+                        .handle_keyboard(keyboard_event)
+                        .is_handled()
+                    {
+                        self.needs_redraw = true;
+                        return;
+                    }
+                }
 
                 let keyboard_event = KeyboardEvent {
                     key: key_code,
@@ -1034,6 +1078,23 @@ impl AppRenderer {
             }
             if inserted {
                 self.zone_manager.toolbar.address_bar.update_scroll();
+                self.needs_redraw = true;
+            }
+            return;
+        }
+
+        // When the chat input is focused, insert characters there instead of IR
+        // elements so typing in the right-hand chat panel works.
+        if self.zone_manager.chat.input.focused {
+            let mut inserted = false;
+            for ch in text.chars() {
+                if !ch.is_control() || ch == ' ' {
+                    self.zone_manager.chat.input.insert_char(ch);
+                    inserted = true;
+                }
+            }
+            if inserted {
+                self.zone_manager.chat.input.update_scroll();
                 self.needs_redraw = true;
             }
             return;
@@ -1407,8 +1468,13 @@ where
     F: FnOnce(&mut AppRenderer) -> R,
 {
     RENDERER.with(|r| {
-        let mut borrow = r.borrow_mut();
-        borrow.as_mut().map(f)
+        match r.try_borrow_mut() {
+            Ok(mut borrow) => borrow.as_mut().map(f),
+            Err(_) => {
+                log::warn!("with_renderer: renderer already borrowed on this thread; skipping call");
+                None
+            }
+        }
     })
 }
 

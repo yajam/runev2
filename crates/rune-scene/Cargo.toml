@@ -35,6 +35,7 @@ urlencoding = "2"
 log = "0.4"
 # Optional CEF integration for WebView elements
 rune-cef = { path = "../rune-cef", optional = true }
+static_assertions = "1.1"
 
 [package.metadata.packager]
 before-packaging-command = "cargo build --release -p rune-scene"

@@ -8,6 +8,7 @@
 
 use anyhow::Result;
 
+pub mod animation;
 pub mod elements;
 pub mod event_handler;
 pub mod event_router;

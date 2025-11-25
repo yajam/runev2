@@ -650,11 +650,6 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
 }
 
 - (void)navigateToURL:(NSString*)urlString {
-    if (!_cefHandler || !_cefHandler->browser) {
-        NSLog(@"Navigation: browser not ready, URL=%@", urlString);
-        return;
-    }
-
     // Check render target so we don't try to load IR URLs in CEF.
     uint32_t renderTarget = rune_ffi_get_render_target([urlString UTF8String]);
 
@@ -663,6 +658,15 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
         // For IR targets (rune://, ir://, .rune packages), we skip CEF
         // navigation and let the IR engine load the appropriate package.
         NSLog(@"Navigation: IR render target for %@ - skipping CEF load", urlString);
+        return;
+    }
+
+    // For Browser targets, ensure the native CEF browser exists. On initial
+    // app load we skip creating CEF while in Home/IRApp modes, so the first
+    // Browser navigation needs to create it on demand.
+    if (!_cefHandler || !_cefHandler->browser) {
+        NSLog(@"Navigation: CEF browser not ready, creating for URL=%@", urlString);
+        [self createCefBrowserWhenLayoutReady:0];
         return;
     }
 
@@ -746,8 +750,16 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
     rune_ffi_render();
     rune_ffi_render();
 
-    // Try to get the WebView rect from layout
-    [self createCefBrowserWhenLayoutReady:0];
+    // Only create the native CEF browser when we are in Browser navigation
+    // mode. In Home/IRApp modes (e.g., home_tab), CEF is not needed and
+    // creating it eagerly can cause a brief white panel flicker before it is
+    // hidden again.
+    if (rune_ffi_is_browser_mode()) {
+        // Try to get the WebView rect from layout
+        [self createCefBrowserWhenLayoutReady:0];
+    } else {
+        NSLog(@"Skipping initial CEF creation (not in Browser mode)");
+    }
 }
 
 - (void)createCefBrowserWhenLayoutReady:(int)attempt {
@@ -853,6 +865,18 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink,
         if (!_cefView.hidden) {
             _cefView.hidden = YES;
             NSLog(@"CEF view hidden (dock visible)");
+        }
+        return;
+    }
+
+    // When not in Browser navigation mode (i.e., Home/IRApp), always hide the
+    // native CEF view regardless of any previously reported WebView rect.
+    // This prevents a white CEF panel from briefly flickering when switching
+    // back to the home_tab IR view.
+    if (!rune_ffi_is_browser_mode()) {
+        if (!_cefView.hidden) {
+            _cefView.hidden = YES;
+            NSLog(@"CEF view hidden (not in Browser mode)");
         }
         return;
     }

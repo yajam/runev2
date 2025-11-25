@@ -1055,13 +1055,23 @@ impl TextArea {
         let content_width = self.rect.w - self.padding_x * 2.0;
         let content_height = self.rect.h - self.padding_y * 2.0;
 
+        // Logical content rect used for text, selection, and caret positioning.
         let content_rect = Rect {
             x: content_x,
             y: content_y,
             w: content_width,
             h: content_height,
         };
-        canvas.push_clip_rect(content_rect);
+
+        // Slightly wider clip rect used only for clipping, so glyphs with negative
+        // left side bearings don't get visually clipped at the left edge.
+        let clip_rect = Rect {
+            x: content_x - 2.0,
+            y: content_y,
+            w: content_width + 4.0,
+            h: content_height,
+        };
+        canvas.push_clip_rect(clip_rect);
 
         if !self.text.is_empty() {
             // Render selection using shared module
